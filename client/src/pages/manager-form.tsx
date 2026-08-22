@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { z } from "zod";
+import type { Resolver } from "react-hook-form";
 import {
   ArrowLeft,
   Loader2,
@@ -41,7 +42,7 @@ const managerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Valid email is required"),
   department: z.string().min(1, "Department is required"),
-  title: z.string().min(1, "Title is required"),
+  jobTitle: z.string().min(1, "Job title is required"),
   phone: z.string().optional(),
   isActive: z.boolean().default(true),
 });
@@ -60,20 +61,20 @@ export default function ManagerForm() {
   });
 
   const form = useForm<ManagerFormValues>({
-    resolver: zodResolver(managerFormSchema),
+    resolver: zodResolver(managerFormSchema) as Resolver<ManagerFormValues>,
     defaultValues: {
       name: "",
       email: "",
       department: "",
-      title: "",
+      jobTitle: "",
       phone: "",
       isActive: true,
     },
     values: manager ? {
       name: manager.name,
       email: manager.email,
-      department: manager.department,
-      title: manager.title,
+      department: manager.department ?? "",
+      jobTitle: manager.jobTitle,
       phone: manager.phone || "",
       isActive: manager.isActive ?? true,
     } : undefined,
@@ -225,7 +226,7 @@ export default function ManagerForm() {
 
             <FormField
               control={form.control}
-              name="title"
+              name="jobTitle"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">

@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
+import { resolvePassAccess } from "./pass-access";
 
 const anthropic = new Anthropic();
 
@@ -967,28 +968,29 @@ export async function registerRoutes(
   app.get("/api/manager-pass/:token", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid or inactive share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid or inactive share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
-      
-      if (shareLink.expiresAt && new Date(shareLink.expiresAt) < new Date()) {
-        return res.status(410).json({ error: "Share link has expired" });
-      }
+      const activeShareLink = access.link;
       
       // Update access tracking
-      await storage.updateShareLink(shareLink.id, {
-        accessCount: (shareLink.accessCount || 0) + 1,
+      await storage.updateShareLink(activeShareLink.id, {
+        accessCount: (activeShareLink.accessCount || 0) + 1,
         lastAccessedAt: new Date()
       });
       
-      const pass = await storage.getPassWithDetails(shareLink.passId);
-      const candidates = await storage.getPassCandidatesWithDetails(shareLink.passId);
-      const interviews = await storage.getInterviewsByPass(shareLink.passId);
-      const manager = shareLink.managerId ? await storage.getManager(shareLink.managerId) : null;
-      const interviewSlots = await storage.getInterviewSlotsByPass(shareLink.passId);
+      const pass = await storage.getPassWithDetails(activeShareLink.passId);
+      const candidates = await storage.getPassCandidatesWithDetails(activeShareLink.passId);
+      const interviews = await storage.getInterviewsByPass(activeShareLink.passId);
+      const manager = activeShareLink.managerId ? await storage.getManager(activeShareLink.managerId) : null;
+      const interviewSlots = await storage.getInterviewSlotsByPass(activeShareLink.passId);
       
       res.json({
-        shareLink,
+        shareLink: activeShareLink,
         pass,
         candidates,
         interviews,
@@ -1246,30 +1248,31 @@ export async function registerRoutes(
   app.get("/api/candidate-pass/:token", async (req, res) => {
     try {
       const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid or inactive link" });
+      const access = resolvePassAccess(candidateLink, {
+        inactive: "Invalid or inactive link",
+        expired: "Link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeCandidateLink = access.link;
       
-      if (candidateLink.expiresAt && new Date(candidateLink.expiresAt) < new Date()) {
-        return res.status(410).json({ error: "Link has expired" });
-      }
-      
-      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
+      const passCandidate = await storage.getPassCandidateById(activeCandidateLink.passCandidateId);
       if (!passCandidate) {
         return res.status(404).json({ error: "Candidate application not found" });
       }
       
       const candidate = await storage.getCandidate(passCandidate.candidateId);
       const pass = await storage.getPass(passCandidate.passId);
-      const messages = await storage.getCandidateMessages(candidateLink.passCandidateId);
-      const documents = await storage.getCandidateDocuments(candidateLink.passCandidateId);
-      const timeline = await storage.getCandidateTimelineEvents(candidateLink.passCandidateId);
-      const interviews = await storage.getInterviewsByPassCandidate(candidateLink.passCandidateId);
-      const offer = await storage.getOfferByPassCandidate(candidateLink.passCandidateId);
+      const messages = await storage.getCandidateMessages(activeCandidateLink.passCandidateId);
+      const documents = await storage.getCandidateDocuments(activeCandidateLink.passCandidateId);
+      const timeline = await storage.getCandidateTimelineEvents(activeCandidateLink.passCandidateId);
+      const interviews = await storage.getInterviewsByPassCandidate(activeCandidateLink.passCandidateId);
+      const offer = await storage.getOfferByPassCandidate(activeCandidateLink.passCandidateId);
       const interviewSlots = pass ? await storage.getAvailableInterviewSlots(pass.id) : [];
       
       res.json({
-        candidateLink,
+        candidateLink: activeCandidateLink,
         candidate,
         passCandidate,
         pass,
