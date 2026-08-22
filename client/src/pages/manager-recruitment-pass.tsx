@@ -20,7 +20,6 @@ import {
   Lock,
   MessageSquare,
   ShieldCheck,
-  Star,
   UserCheck,
   Users,
   XCircle,
@@ -67,16 +66,19 @@ type ManagerPassViewState = {
       id: number;
       name: string;
       title: string;
-      score: number;
       summary: string;
     };
   };
 };
 
+type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
+  candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
+};
+
 interface ManagerPassData {
-  shareLink: { id: number; token: string; passId: number; managerId: number | null; linkType: string; isActive: boolean; expiresAt?: string | null };
+  shareLink: { id: number; passId: number; managerId: number | null; linkType: string; isActive: boolean; expiresAt?: string | null };
   pass: Pass & { positions?: any[] };
-  candidates: (PassCandidate & { candidate: Candidate })[];
+  candidates: ManagerPassCandidate[];
   interviews: Interview[];
   manager: Manager | null;
   interviewSlots: any[];
@@ -398,7 +400,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
                 <p className="mt-1 font-medium text-white">{pass.positionTitle}</p>
                 <p>{pass.department || "Department not specified"} · {pass.location || "Location not specified"}</p>
               </div>
-              {targetCandidate && "candidate" in targetCandidate && (
+              {targetCandidate && "candidate" in targetCandidate && targetCandidate.candidate && (
                 <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Candidate</p>
                   <p className="mt-1 font-medium text-white">{targetCandidate.candidate.name}</p>
@@ -433,16 +435,10 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
                 candidates.slice(0, 4).map((passCandidate) => (
                   <div key={passCandidate.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{passCandidate.candidate.name}</p>
-                      <p className="truncate text-xs text-slate-500">{passCandidate.candidate.currentTitle || "Profile under review"}</p>
+                      <p className="truncate font-medium text-white">{passCandidate.candidate?.name || "Candidate"}</p>
+                      <p className="truncate text-xs text-slate-500">{passCandidate.candidate?.currentTitle || "Profile under review"}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {Boolean(passCandidate.aiScore) && (
-                        <span className="inline-flex items-center gap-1 text-xs text-amber-200">
-                          <Star className="h-3 w-3" />
-                          {passCandidate.aiScore}
-                        </span>
-                      )}
                       <Badge variant="outline" className="border-slate-600 text-slate-300">{statusLabel(passCandidate.status)}</Badge>
                     </div>
                   </div>

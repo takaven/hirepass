@@ -179,7 +179,7 @@ export interface IStorage {
   createCandidateDocument(data: InsertCandidateDocument): Promise<CandidateDocument>;
   getCandidateTimelineEvents(passCandidateId: number): Promise<CandidateTimelineEvent[]>;
   getAvailableInterviewSlots(passId: number): Promise<InterviewSlot[]>;
-  bookInterviewSlot(slotId: number, passCandidateId: number): Promise<InterviewSlot | undefined>;
+  bookInterviewSlot(slotId: number, passCandidateId: number, passId: number): Promise<InterviewSlot | undefined>;
   getOfferByPassCandidate(passCandidateId: number): Promise<Offer | undefined>;
 }
 
@@ -1001,16 +1001,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(interviewSlots.slotDate, interviewSlots.startTime);
   }
 
-  async bookInterviewSlot(slotId: number, passCandidateId: number): Promise<InterviewSlot | undefined> {
-    const [slot] = await db.select().from(interviewSlots).where(eq(interviewSlots.id, slotId));
-    
-    if (!slot || slot.isBooked) {
-      return undefined;
-    }
-    
+  async bookInterviewSlot(slotId: number, passCandidateId: number, passId: number): Promise<InterviewSlot | undefined> {
     const [updated] = await db.update(interviewSlots)
       .set({ isBooked: true, bookedBy: passCandidateId, bookedAt: new Date() })
-      .where(eq(interviewSlots.id, slotId))
+      .where(and(
+        eq(interviewSlots.id, slotId),
+        eq(interviewSlots.passId, passId),
+        eq(interviewSlots.isBooked, false),
+      ))
       .returning();
     
     return updated;

@@ -70,7 +70,6 @@ export type ManagerEvidenceSummary = {
     id: number;
     name: string;
     title: string;
-    score: number;
     summary: string;
   };
   role: string;
@@ -99,7 +98,7 @@ function isActiveCandidate(candidate: ManagerPassCandidateInput): boolean {
 
 function buildEvidence(pass: ManagerPassStateInput["pass"], candidates: ManagerPassCandidateInput[]): ManagerEvidenceSummary {
   const activeCandidates = candidates.filter(isActiveCandidate);
-  const topCandidate = [...activeCandidates].sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))[0];
+  const topCandidate = activeCandidates[0];
 
   return {
     candidateCount: candidates.length,
@@ -110,7 +109,6 @@ function buildEvidence(pass: ManagerPassStateInput["pass"], candidates: ManagerP
           id: topCandidate.id,
           name: topCandidate.candidate?.name || "Candidate",
           title: topCandidate.candidate?.currentTitle || "Profile under review",
-          score: topCandidate.aiScore || 0,
           summary: topCandidate.candidate?.cvSummary || "Use the available candidate evidence to make this decision.",
         }
       : undefined,

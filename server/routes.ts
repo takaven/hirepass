@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
@@ -19,6 +19,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { resolvePassAccess } from "./pass-access";
 import { resolveCandidatePassState } from "./candidate-pass-state";
 import { isPassScopedCandidate, isPassScopedInterview, resolveManagerPassState } from "./manager-pass-state";
+import {
+  buildCandidatePassPayload,
+  buildManagerPassPayload,
+  isCandidateScopedInterviewSlot,
+  isCandidateScopedMessage,
+  toManagerPassPassDto,
+} from "./external-pass-security";
 
 const anthropic = new Anthropic();
 
@@ -26,6 +33,19 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  async function getValidCandidateLink(token: string, res: Response) {
+    const candidateLink = await storage.getCandidateLinkByToken(token);
+    const access = resolvePassAccess(candidateLink, {
+      inactive: "Invalid or inactive link",
+      expired: "Link has expired",
+    });
+    if (!access.allowed) {
+      res.status(access.status).json({ error: access.error });
+      return null;
+    }
+
+    return access.link;
+  }
   
   // ============ ANALYTICS ROUTES ============
   app.get("/api/analytics/stats", async (req, res) => {
@@ -997,7 +1017,7 @@ export async function registerRoutes(
         interviews,
       });
       
-      res.json({
+      res.json(buildManagerPassPayload({
         shareLink: activeShareLink,
         pass,
         candidates,
@@ -1005,7 +1025,7 @@ export async function registerRoutes(
         manager,
         interviewSlots,
         managerPassState
-      });
+      }));
     } catch (error) {
       console.error("Error fetching manager pass:", error);
       res.status(500).json({ error: "Failed to fetch manager pass data" });
@@ -1031,7 +1051,7 @@ export async function registerRoutes(
         jdApprovedBy: activeShareLink.managerId
       });
       
-      res.json({ message: "JD approved successfully", pass });
+      res.json({ message: "JD approved successfully", pass: toManagerPassPassDto(pass) });
     } catch (error) {
       console.error("Error approving JD:", error);
       res.status(500).json({ error: "Failed to approve JD" });
@@ -1064,7 +1084,7 @@ export async function registerRoutes(
         jdStatus: 'changes_requested'
       });
       
-      res.json({ message: "Feedback submitted successfully", pass });
+      res.json({ message: "Feedback submitted successfully", pass: toManagerPassPassDto(pass) });
     } catch (error) {
       console.error("Error submitting JD feedback:", error);
       res.status(500).json({ error: "Failed to submit feedback" });
@@ -1091,7 +1111,7 @@ export async function registerRoutes(
         salaryRangeMax
       });
       
-      res.json({ message: "Salary range updated", pass });
+      res.json({ message: "Salary range updated", pass: toManagerPassPassDto(pass) });
     } catch (error) {
       console.error("Error updating salary range:", error);
       res.status(500).json({ error: "Failed to update salary range" });
@@ -1346,7 +1366,7 @@ export async function registerRoutes(
         interviewSlots,
       });
       
-      res.json({
+      res.json(buildCandidatePassPayload({
         candidateLink: activeCandidateLink,
         candidate,
         passCandidate,
@@ -1358,7 +1378,7 @@ export async function registerRoutes(
         offer,
         interviewSlots,
         passState
-      });
+      }));
     } catch (error) {
       console.error("Error fetching candidate pass:", error);
       res.status(500).json({ error: "Failed to fetch candidate pass data" });
@@ -1368,21 +1388,28 @@ export async function registerRoutes(
   // Candidate selects interview slot
   app.post("/api/candidate-pass/:token/interview-slot", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
       const { slotId } = req.body;
+      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
+      if (!passCandidate) {
+        return res.status(404).json({ error: "Candidate application not found" });
+      }
+
+      const availableSlots = await storage.getAvailableInterviewSlots(passCandidate.passId);
+      const requestedSlot = availableSlots.find((slot) => slot.id === slotId);
+      if (!isCandidateScopedInterviewSlot(passCandidate.passId, requestedSlot)) {
+        return res.status(404).json({ error: "Interview slot is not available for this Candidate Pass" });
+      }
       
       // Book the slot
-      const slot = await storage.bookInterviewSlot(slotId, candidateLink.passCandidateId);
+      const slot = await storage.bookInterviewSlot(slotId, candidateLink.passCandidateId, passCandidate.passId);
       if (!slot) {
         return res.status(400).json({ error: "Slot not available" });
       }
       
       // Create the interview
-      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
       if (passCandidate) {
         await storage.createInterview({
           passId: passCandidate.passId,
@@ -1413,10 +1440,8 @@ export async function registerRoutes(
   // Candidate uploads document
   app.post("/api/candidate-pass/:token/documents", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
       const { docType, label, fileName, filePath, fileSize } = req.body;
       
@@ -1441,10 +1466,8 @@ export async function registerRoutes(
   // Candidate sends message
   app.post("/api/candidate-pass/:token/messages", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
       const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
       const candidate = passCandidate ? await storage.getCandidate(passCandidate.candidateId) : null;
@@ -1469,12 +1492,17 @@ export async function registerRoutes(
   // Candidate marks message as read
   app.patch("/api/candidate-pass/:token/messages/:messageId/read", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
-      await storage.markMessageAsRead(parseInt(req.params.messageId));
+      const messageId = parseInt(req.params.messageId);
+      const messages = await storage.getCandidateMessages(candidateLink.passCandidateId);
+      const message = messages.find((candidateMessage) => candidateMessage.id === messageId);
+      if (!isCandidateScopedMessage(candidateLink.passCandidateId, message)) {
+        return res.status(404).json({ error: "Message is not available for this Candidate Pass" });
+      }
+
+      await storage.markMessageAsRead(messageId);
       res.json({ message: "Message marked as read" });
     } catch (error) {
       console.error("Error marking message as read:", error);
@@ -1485,10 +1513,8 @@ export async function registerRoutes(
   // Candidate responds to offer
   app.post("/api/candidate-pass/:token/offer-response", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
       const { response, reason, message: responseMessage } = req.body; // response: 'accept' | 'negotiate' | 'decline'
       
@@ -1534,10 +1560,8 @@ export async function registerRoutes(
   // Candidate confirms assessment completion
   app.post("/api/candidate-pass/:token/assessment-complete", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      if (!candidateLink || !candidateLink.isActive) {
-        return res.status(404).json({ error: "Invalid link" });
-      }
+      const candidateLink = await getValidCandidateLink(req.params.token, res);
+      if (!candidateLink) return;
       
       const { assessmentType } = req.body; // 'softSkills' | 'technical'
       

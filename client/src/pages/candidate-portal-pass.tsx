@@ -69,16 +69,21 @@ type CandidatePassViewState = {
   journey: Array<{ stage: CandidateHiringStage; status: "completed" | "current" | "upcoming" }>;
 };
 
+type CandidatePassCandidateProfile = Pick<Candidate, "id" | "name" | "email" | "phone" | "currentTitle" | "currentCompany" | "currentLocation">;
+type CandidatePassApplication = Pick<
+  PassCandidate,
+  "id" | "passId" | "candidateId" | "positionId" | "status" | "softSkillsCompletedAt" | "technicalCompletedAt" | "addedAt" | "shortlistedAt"
+>;
+
 interface CandidatePassData {
   candidateLink: {
     id: number;
-    token: string;
     passCandidateId: number;
     isActive: boolean;
     expiresAt: string | null;
   };
-  candidate: Candidate;
-  passCandidate: PassCandidate;
+  candidate: CandidatePassCandidateProfile;
+  passCandidate: CandidatePassApplication;
   pass: Pass;
   messages: CandidateMessage[];
   documents: CandidateDocument[];
