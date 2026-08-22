@@ -1,843 +1,599 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Calendar } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { format, differenceInDays } from "date-fns";
-import { 
-  FileText, CheckCircle, XCircle, Users, Calendar as CalendarIcon, 
-  Clock, Building2, MapPin, Check, Search, ChevronRight,
-  Plus, Star, MoreVertical, Upload, Settings, BarChart3,
-  ClipboardList, Send
+import {
+  AlertTriangle,
+  Briefcase,
+  Calendar,
+  CheckCircle,
+  Clock,
+  FileText,
+  Lock,
+  MessageSquare,
+  ShieldCheck,
+  Star,
+  UserCheck,
+  Users,
+  XCircle,
 } from "lucide-react";
-import type { Pass, Candidate, PassCandidate, Interview, Manager } from "@shared/schema";
+import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared/schema";
+
+type ManagerPassActionState =
+  | "ACTION_REQUIRED"
+  | "WAITING"
+  | "UPCOMING"
+  | "COMPLETED"
+  | "EXPIRED"
+  | "REVOKED";
+
+type ManagerHiringStage = "Request" | "Screening" | "Interview" | "Decision" | "Offer" | "Handoff";
+
+type ManagerNextDecision = {
+  kind:
+    | "APPROVE_JD"
+    | "REVIEW_CANDIDATE"
+    | "SET_INTERVIEW_AVAILABILITY"
+    | "SUBMIT_EVALUATION"
+    | "MAKE_FINAL_DECISION"
+    | "NONE";
+  label: string;
+  description: string;
+  target: "request" | "candidate" | "interview" | "evaluation" | "decision" | "none";
+  candidateId?: number;
+};
+
+type ManagerPassViewState = {
+  actionState: ManagerPassActionState;
+  hiringStage: ManagerHiringStage;
+  stateLabel: string;
+  headline: string;
+  summary: string;
+  urgency: "normal" | "attention";
+  nextDecision: ManagerNextDecision;
+  evidence: {
+    candidateCount: number;
+    activeCandidateCount: number;
+    role: string;
+    topCandidate?: {
+      id: number;
+      name: string;
+      title: string;
+      score: number;
+      summary: string;
+    };
+  };
+};
 
 interface ManagerPassData {
-  shareLink: { id: number; token: string; passId: number; managerId: number | null; linkType: string; isActive: boolean; };
+  shareLink: { id: number; token: string; passId: number; managerId: number | null; linkType: string; isActive: boolean; expiresAt?: string | null };
   pass: Pass & { positions?: any[] };
   candidates: (PassCandidate & { candidate: Candidate })[];
   interviews: Interview[];
   manager: Manager | null;
   interviewSlots: any[];
+  managerPassState: ManagerPassViewState;
 }
 
 interface ManagerRecruitmentPassProps {
   token: string;
 }
 
+const stateStyles: Record<ManagerPassActionState, string> = {
+  ACTION_REQUIRED: "border-amber-400 bg-amber-400/10 text-amber-200",
+  WAITING: "border-sky-400 bg-sky-400/10 text-sky-200",
+  UPCOMING: "border-blue-400 bg-blue-400/10 text-blue-200",
+  COMPLETED: "border-emerald-400 bg-emerald-400/10 text-emerald-200",
+  EXPIRED: "border-slate-500 bg-slate-500/10 text-slate-200",
+  REVOKED: "border-red-400 bg-red-400/10 text-red-200",
+};
+
+async function fetchManagerPass(token: string): Promise<ManagerPassData> {
+  const response = await fetch(`/api/manager-pass/${token}`);
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(payload.error || "Unable to open this Manager Pass");
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
+  }
+
+  return payload;
+}
+
+function AccessState({ status, message }: { status?: number; message?: string }) {
+  const isExpired = status === 410;
+
+  return (
+    <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
+      <Card className="mx-auto max-w-md border-slate-700 bg-slate-900">
+        <CardContent className="pt-8 text-center">
+          <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-slate-400" : "text-red-300"}`} />
+          <h1 className="mb-2 text-xl font-semibold text-white">
+            {isExpired ? "This Manager Pass has expired" : "This Manager Pass is not active"}
+          </h1>
+          <p className="text-sm text-slate-400">
+            {message || "Ask HR to issue a fresh Pass if your input is still required."}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function statusLabel(status?: string | null) {
+  return (status || "new").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPassProps) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("request");
-  const [selectedPosition, setSelectedPosition] = useState(0);
-  const [selectedCandidates, setSelectedCandidates] = useState<number[]>([]);
-  const [positionFilter, setPositionFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showInterviewSetup, setShowInterviewSetup] = useState(false);
-  const [interviewSetup, setInterviewSetup] = useState({
-    technicalAssessment: true,
-    format: "online",
-    rounds: "2",
-    dates: [] as Date[],
-    additionalInterviewer: "",
-  });
+  const [decisionNotes, setDecisionNotes] = useState("");
+  const [showRequestDialog, setShowRequestDialog] = useState(false);
+  const [showInterviewDialog, setShowInterviewDialog] = useState(false);
+  const [showEvaluationDialog, setShowEvaluationDialog] = useState(false);
+  const [showFinalDecisionDialog, setShowFinalDecisionDialog] = useState(false);
+  const [evaluationRecommendation, setEvaluationRecommendation] = useState("proceed");
+  const [finalDecision, setFinalDecision] = useState("hire");
 
   const { data, isLoading, error } = useQuery<ManagerPassData>({
     queryKey: ["/api/manager-pass", token],
-    queryFn: () => fetch(`/api/manager-pass/${token}`).then(res => res.json()),
+    queryFn: () => fetchManagerPass(token),
+  });
+
+  const approveRequestMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/approve-jd`, {}),
+    onSuccess: () => {
+      toast({ title: "Hiring request approved", description: "HR has your decision." });
+      setShowRequestDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Decision could not be submitted", variant: "destructive" }),
+  });
+
+  const requestChangesMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/request-jd-changes`, { feedback: decisionNotes }),
+    onSuccess: () => {
+      toast({ title: "Changes requested", description: "HR has your feedback." });
+      setDecisionNotes("");
+      setShowRequestDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Feedback could not be submitted", variant: "destructive" }),
   });
 
   const shortlistMutation = useMutation({
     mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/shortlist`),
-    onSuccess: () => { toast({ title: "Candidate shortlisted" }); queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] }); },
+    onSuccess: () => {
+      toast({ title: "Candidate shortlisted", description: "Your Manager Pass has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Candidate decision could not be submitted", variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/reject`, { reason: "Not suitable" }),
-    onSuccess: () => { toast({ title: "Candidate rejected" }); queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] }); },
+    mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
+    onSuccess: () => {
+      toast({ title: "Candidate rejected", description: "Your Manager Pass has been updated." });
+      setDecisionNotes("");
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Candidate decision could not be submitted", variant: "destructive" }),
   });
 
-  const { positions, daysOpen, topCandidate } = useMemo(() => {
-    if (!data?.pass) return { positions: [], daysOpen: 0, topCandidate: null };
-    const pass = data.pass;
-    const candidates = data.candidates || [];
-    
-    const sortedCandidates = [...candidates].sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0));
-    
-    return {
-      positions: pass.positions || [{ title: pass.positionTitle, id: 1 }],
-      daysOpen: pass.dateRequested ? differenceInDays(new Date(), new Date(pass.dateRequested)) : 0,
-      topCandidate: sortedCandidates[0] || null,
-    };
-  }, [data]);
+  const interviewSetupMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/manager-pass/${token}/interview-setup`, {
+        technicalAssessmentRequired: false,
+        interviewFormat: "online",
+        interviewRounds: 1,
+        interviewDuration: 45,
+        isPanelInterview: false,
+      }),
+    onSuccess: () => {
+      toast({ title: "Interview availability submitted", description: "HR can now schedule the next step." });
+      setShowInterviewDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Interview setup could not be submitted", variant: "destructive" }),
+  });
 
-  const filteredCandidates = useMemo(() => {
-    if (!data?.candidates) return [];
-    let filtered = data.candidates;
-    
-    if (positionFilter !== "all") {
-      filtered = filtered.filter(c => c.candidate.currentTitle?.toLowerCase().includes(positionFilter.toLowerCase()));
-    }
-    
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(c => 
-        c.candidate.name.toLowerCase().includes(query) ||
-        (c.candidate.email || '').toLowerCase().includes(query)
-      );
-    }
-    
-    return filtered.sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0));
-  }, [data?.candidates, positionFilter, searchQuery]);
+  const evaluationMutation = useMutation({
+    mutationFn: (interviewId: number) =>
+      apiRequest("POST", `/api/manager-pass/${token}/evaluations`, {
+        interviewId,
+        educationalBackground: 4,
+        priorWorkExperience: 4,
+        technicalSkills: 4,
+        personalityTeamFit: 4,
+        initiative: 4,
+        timeManagement: 4,
+        averageScore: "4.00",
+        recommendation: evaluationRecommendation,
+        notesObservations: decisionNotes,
+        finalComments: decisionNotes,
+      }),
+    onSuccess: () => {
+      toast({ title: "Evaluation submitted", description: "HR has your structured feedback." });
+      setDecisionNotes("");
+      setShowEvaluationDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Evaluation could not be submitted", variant: "destructive" }),
+  });
 
-  const handleSelectCandidate = (candidateId: number, checked: boolean) => {
-    if (checked) {
-      setSelectedCandidates(prev => [...prev, candidateId]);
-    } else {
-      setSelectedCandidates(prev => prev.filter(id => id !== candidateId));
-    }
-  };
+  const finalDecisionMutation = useMutation({
+    mutationFn: ({ candidateId, decision }: { candidateId: number; decision: string }) =>
+      apiRequest("POST", `/api/manager-pass/${token}/final-decisions`, {
+        decisions: [{ passCandidateId: candidateId, decision, notes: decisionNotes }],
+      }),
+    onSuccess: () => {
+      toast({ title: "Final decision submitted", description: "You're done for now. HR has your decision." });
+      setDecisionNotes("");
+      setShowFinalDecisionDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+    },
+    onError: () => toast({ title: "Final decision could not be submitted", variant: "destructive" }),
+  });
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-neutral-500">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
         <div className="text-center">
-          <XCircle className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
-          <p className="text-neutral-600">Unable to load recruitment pass</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-300" />
+          <p className="text-sm text-slate-400">Opening Manager Pass...</p>
         </div>
       </div>
     );
   }
 
-  const { pass, candidates, interviews } = data;
-  const currentPosition = positions[selectedPosition] || { title: pass.positionTitle };
+  if (error || !data?.managerPassState) {
+    const typedError = error as Error & { status?: number };
+    return <AccessState status={typedError?.status} message={typedError?.message} />;
+  }
 
-  const tabs = [
-    { id: "request", label: "Request", icon: FileText },
-    { id: "screening", label: "Screening", icon: Search },
-    { id: "interviews", label: "Interviews", icon: Users },
-    { id: "decision", label: "Decision", icon: CheckCircle },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
-  ];
+  const { pass, candidates, interviews, manager, managerPassState } = data;
+  const targetCandidate = candidates.find((candidate) => candidate.id === managerPassState.nextDecision.candidateId) || managerPassState.evidence.topCandidate;
+  const targetInterview = interviews.find((interview) => interview.passCandidateId === managerPassState.nextDecision.candidateId) || interviews[0];
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "shortlisted": return "bg-emerald-100 text-emerald-700";
-      case "screening": return "bg-amber-100 text-amber-700";
-      case "interview": return "bg-blue-100 text-blue-700";
-      case "rejected": return "bg-red-100 text-red-700";
-      default: return "bg-neutral-100 text-neutral-600";
+  const actionButton = useMemo(() => {
+    switch (managerPassState.nextDecision.kind) {
+      case "APPROVE_JD":
+        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowRequestDialog(true)}>Review hiring request</Button>;
+      case "REVIEW_CANDIDATE":
+        return (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button className="min-h-11 bg-emerald-500 hover:bg-emerald-600" onClick={() => targetCandidate?.id && shortlistMutation.mutate(targetCandidate.id)}>
+              Shortlist candidate
+            </Button>
+            <Button variant="destructive" className="min-h-11" onClick={() => targetCandidate?.id && rejectMutation.mutate(targetCandidate.id)}>
+              Reject candidate
+            </Button>
+          </div>
+        );
+      case "SET_INTERVIEW_AVAILABILITY":
+        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowInterviewDialog(true)}>Set interview availability</Button>;
+      case "SUBMIT_EVALUATION":
+        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowEvaluationDialog(true)}>Submit evaluation</Button>;
+      case "MAKE_FINAL_DECISION":
+        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowFinalDecisionDialog(true)}>Make final decision</Button>;
+      default:
+        return <Button className="min-h-11" disabled>No decision required</Button>;
     }
-  };
+  }, [managerPassState.nextDecision.kind, rejectMutation, shortlistMutation, targetCandidate?.id]);
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Clean Tab Navigation */}
-      <div className="border-b sticky top-0 bg-white z-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-8" data-testid="tab-navigation">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 flex items-center gap-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id 
-                    ? "border-neutral-900 text-neutral-900" 
-                    : "border-transparent text-neutral-500 hover:text-neutral-700"
-                }`}
-                data-testid={`tab-${tab.id}`}
-              >
-                <tab.icon className="w-4 h-4" strokeWidth={1.5} />
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Manager Pass</p>
+              <h1 className="truncate text-base font-semibold text-white">{pass.positionTitle}</h1>
+            </div>
+          </div>
+          <Badge className={`shrink-0 border ${stateStyles[managerPassState.actionState]}`}>{managerPassState.stateLabel}</Badge>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* REQUEST TAB */}
-        {activeTab === "request" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Request Details */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center">
-                  <ClipboardList className="w-5 h-5 text-neutral-600" strokeWidth={1.5} />
-                </div>
-                <h2 className="text-lg font-semibold text-neutral-900">Request Details</h2>
-              </div>
-
-              {/* Position Selector */}
-              <div className="mb-6">
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Select Position</p>
-                <div className="space-y-2">
-                  {positions.map((pos: any, idx: number) => (
-                    <button
-                      key={idx}
-                      onClick={() => setSelectedPosition(idx)}
-                      className={`w-full p-4 rounded-xl border text-left transition-all ${
-                        selectedPosition === idx 
-                          ? "border-neutral-900 bg-neutral-50" 
-                          : "border-neutral-200 hover:border-neutral-300"
-                      }`}
-                      data-testid={`position-${idx}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-neutral-900">Position {idx + 1}</p>
-                          <p className="text-sm text-neutral-500">{pos.title || pass.positionTitle}</p>
-                        </div>
-                        <Badge className="bg-neutral-100 text-neutral-600 border-0 text-xs">Open</Badge>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Position Details */}
-              <div>
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-4">Position Details</p>
-                <div className="space-y-4">
-                  {[
-                    { label: "Job Title", value: currentPosition.title || pass.positionTitle },
-                    { label: "Recruitment Reference", value: pass.passId || `REQ-${pass.id}` },
-                    { label: "Department", value: pass.department || "Engineering / R&D" },
-                    { label: "Location", value: pass.location || "Abu Dhabi, UAE" },
-                    { label: "Employment Type", value: pass.employmentType || "Full-time" },
-                    { label: "Salary Range", value: pass.salaryRangeMax ? `AED ${pass.salaryRangeMin?.toLocaleString()} - ${pass.salaryRangeMax?.toLocaleString()}` : "Competitive" },
-                    { label: "Experience Required", value: pass.experienceMin ? `${pass.experienceMin}-${pass.experienceMax} years` : "2-4 years" },
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center py-2 border-b border-neutral-100 last:border-0">
-                      <span className="text-sm text-neutral-500">{item.label}</span>
-                      <span className="text-sm font-medium text-neutral-900">{item.value}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-sm text-neutral-500">Approval Status</span>
-                    <Badge className="bg-emerald-500 text-white border-0 gap-1">
-                      <Check className="w-3 h-3" /> APPROVED
-                    </Badge>
+      <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <Card className={`border ${stateStyles[managerPassState.actionState]} bg-slate-900`}>
+            <CardContent className="space-y-5 p-5 sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                    <span className="inline-flex items-center gap-1">
+                      <Briefcase className="h-4 w-4" />
+                      {pass.department || "Hiring request"}
+                    </span>
+                    {manager?.name && (
+                      <span className="inline-flex items-center gap-1">
+                        <UserCheck className="h-4 w-4" />
+                        {manager.name}
+                      </span>
+                    )}
                   </div>
+                  <h2 className="text-2xl font-semibold text-white sm:text-3xl">{managerPassState.headline}</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">{managerPassState.summary}</p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm">
+                  <p className="text-slate-500">Stage</p>
+                  <p className="font-medium text-white">{managerPassState.hiringStage}</p>
                 </div>
               </div>
-            </div>
 
-            {/* Manager Actions */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center">
-                  <Settings className="w-5 h-5 text-neutral-600" strokeWidth={1.5} />
-                </div>
-                <h2 className="text-lg font-semibold text-neutral-900">Manager Actions</h2>
-              </div>
-
-              <div className="space-y-4">
-                {/* Recruitment Requisition */}
-                <div className="flex items-center justify-between py-3 border-b border-neutral-100">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-4 h-4 text-neutral-400" strokeWidth={1.5} />
-                    <span className="text-sm text-neutral-700">Recruitment Requisition</span>
+              <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Required decision</p>
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{managerPassState.nextDecision.label}</h3>
+                    <p className="mt-1 text-sm text-slate-400">{managerPassState.nextDecision.description}</p>
                   </div>
-                  <Select defaultValue="under-process">
-                    <SelectTrigger className="w-36 h-9 border-neutral-200" data-testid="select-requisition-status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="under-process">Under Process</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Job Description */}
-                <div className="flex items-center justify-between py-3 border-b border-neutral-100">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-4 h-4 text-neutral-400" strokeWidth={1.5} />
-                    <span className="text-sm text-neutral-700">Job Description</span>
-                  </div>
-                  <Select defaultValue="to-review">
-                    <SelectTrigger className="w-36 h-9 border-neutral-200" data-testid="select-jd-status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="to-review">To Review</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="changes-requested">Changes Requested</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Interview Setup */}
-                <div className="flex items-center justify-between py-3 border-b border-neutral-100">
-                  <div className="flex items-center gap-3">
-                    <CalendarIcon className="w-4 h-4 text-neutral-400" strokeWidth={1.5} />
-                    <span className="text-sm text-neutral-700">Interview Setup</span>
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    className="h-9 text-neutral-600 gap-1"
-                    onClick={() => setShowInterviewSetup(true)}
-                    data-testid="btn-configure-interview"
-                  >
-                    Configure <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                {/* Custom Action */}
-                <div className="flex items-center gap-2 mt-6">
-                  <Input 
-                    placeholder="Add custom action..." 
-                    className="flex-1 h-10 border-neutral-200"
-                    data-testid="input-custom-action"
-                  />
-                  <Button size="icon" className="bg-neutral-900 hover:bg-neutral-800 h-10 w-10" data-testid="btn-add-action">
-                    <Plus className="w-4 h-4" />
-                  </Button>
+                  {actionButton}
                 </div>
               </div>
-            </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-5">
+            <Card className="border-slate-800 bg-slate-900/80">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-white">Urgency</CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-start gap-3 text-sm text-slate-300">
+                {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-300" /> : <Clock className="h-5 w-5 text-sky-300" />}
+                <span>{managerPassState.urgency === "attention" ? "Your decision is needed to keep the process moving." : "No immediate decision is needed."}</span>
+              </CardContent>
+            </Card>
+            <Card className="border-slate-800 bg-slate-900/80">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-white">Hiring context</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm text-slate-300">
+                <p>Role: {managerPassState.evidence.role}</p>
+                <p>Active candidates: {managerPassState.evidence.activeCandidateCount}</p>
+                <p>Total candidates in this request: {managerPassState.evidence.candidateCount}</p>
+              </CardContent>
+            </Card>
           </div>
+        </section>
+
+        {["WAITING", "COMPLETED"].includes(managerPassState.actionState) && (
+          <Card className="border-emerald-500/40 bg-emerald-500/10">
+            <CardContent className="flex items-start gap-4 p-5">
+              <CheckCircle className="mt-1 h-6 w-6 shrink-0 text-emerald-200" />
+              <div>
+                <h3 className="font-semibold text-white">You're done for now</h3>
+                <p className="mt-1 text-sm leading-6 text-emerald-100/80">
+                  HR has your decision. This Pass will show a new action if your input is needed again.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {/* SCREENING TAB */}
-        {activeTab === "screening" && (
-          <div>
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-2xl font-semibold text-neutral-900">Candidates</h1>
-                <p className="text-sm text-neutral-500 mt-1">Manage your candidate pool across all recruitment passes</p>
+        <section className="grid gap-5 lg:grid-cols-2">
+          <Card className="border-slate-800 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <FileText className="h-5 w-5 text-blue-300" />
+                Decision evidence
+              </CardTitle>
+              <CardDescription className="text-slate-400">Only the evidence needed for this decision is shown.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-slate-300">
+              <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Role</p>
+                <p className="mt-1 font-medium text-white">{pass.positionTitle}</p>
+                <p>{pass.department || "Department not specified"} · {pass.location || "Location not specified"}</p>
               </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" className="gap-2 border-neutral-200" data-testid="btn-import">
-                  <Upload className="w-4 h-4" /> Import
-                </Button>
-                <Button className="bg-neutral-900 hover:bg-neutral-800 gap-2" data-testid="btn-add-candidate">
-                  <Plus className="w-4 h-4" /> Add Candidate
-                </Button>
-              </div>
-            </div>
-
-            {/* Position Filter Pills */}
-            <div className="flex items-center gap-2 mb-4">
-              <button
-                onClick={() => setPositionFilter("all")}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  positionFilter === "all" 
-                    ? "bg-neutral-900 text-white" 
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                }`}
-                data-testid="filter-all"
-              >
-                All Candidates
-              </button>
-              {positions.map((pos: any, idx: number) => (
-                <button
-                  key={idx}
-                  onClick={() => setPositionFilter(pos.title || pass.positionTitle)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                    positionFilter === (pos.title || pass.positionTitle)
-                      ? "bg-neutral-900 text-white" 
-                      : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                  }`}
-                  data-testid={`filter-position-${idx}`}
-                >
-                  {pos.title || pass.positionTitle}
-                </button>
-              ))}
-            </div>
-
-            {/* Bulk Actions Bar - appears when candidates selected */}
-            {selectedCandidates.length > 0 && (
-              <div className="bg-[#1F3B58] text-white rounded-xl p-4 mb-6 flex items-center justify-between" data-testid="bulk-actions-bar">
-                <div className="flex items-center gap-3">
-                  <span className="font-medium">{selectedCandidates.length} candidate{selectedCandidates.length > 1 ? 's' : ''} selected</span>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-white/70 hover:text-white hover:bg-white/10"
-                    onClick={() => setSelectedCandidates([])}
-                    data-testid="btn-clear-selection"
-                  >
-                    Clear
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-white/30 text-white hover:bg-white/10 gap-2"
-                    onClick={() => {
-                      selectedCandidates.forEach(id => shortlistMutation.mutate(id));
-                      setSelectedCandidates([]);
-                    }}
-                    disabled={shortlistMutation.isPending}
-                    data-testid="btn-bulk-shortlist"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    Shortlist
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-white/30 text-white hover:bg-white/10 gap-2"
-                    onClick={() => setShowInterviewSetup(true)}
-                    data-testid="btn-bulk-interview"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    Schedule Interview
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="border-red-400/50 text-red-300 hover:bg-red-500/20 gap-2"
-                    onClick={() => {
-                      selectedCandidates.forEach(id => rejectMutation.mutate(id));
-                      setSelectedCandidates([]);
-                    }}
-                    disabled={rejectMutation.isPending}
-                    data-testid="btn-bulk-reject"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Search and Filters */}
-            <div className="flex items-center gap-3 mb-6">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-                <Input 
-                  placeholder="Search by name or email..."
-                  className="pl-10 border-neutral-200"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  data-testid="input-search"
-                />
-              </div>
-              <Button variant="outline" className="gap-2 border-neutral-200" data-testid="btn-status-filter">
-                All Status
-              </Button>
-              <Button variant="outline" className="gap-2 border-neutral-200" data-testid="btn-source-filter">
-                All Sources
-              </Button>
-              <Button variant="outline" className="gap-2 border-neutral-200" data-testid="btn-columns">
-                Columns
-              </Button>
-            </div>
-
-            {/* Candidates Table */}
-            <div className="border border-neutral-200 rounded-xl overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-neutral-50 border-b border-neutral-200">
-                  <tr>
-                    <th className="w-12 px-4 py-3">
-                      <Checkbox data-testid="checkbox-select-all" />
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Rank</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Current Position</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Ranking</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Skills Match</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Education</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Experience</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-neutral-500 uppercase">Profile</th>
-                    <th className="w-12 px-4 py-3"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {filteredCandidates.map((pc, idx) => (
-                    <tr key={pc.id} className="hover:bg-neutral-50 transition-colors" data-testid={`row-candidate-${pc.candidate.id}`}>
-                      <td className="px-4 py-4">
-                        <Checkbox 
-                          checked={selectedCandidates.includes(pc.id)}
-                          onCheckedChange={(checked) => handleSelectCandidate(pc.id, !!checked)}
-                          data-testid={`checkbox-${pc.candidate.id}`}
-                        />
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="text-sm font-medium text-neutral-500">#{idx + 1}</span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div>
-                          <p className="font-medium text-neutral-900">{pc.candidate.name}</p>
-                          <Badge className={`${getStatusBadge(pc.status || 'new')} border-0 text-xs mt-1`}>
-                            {(pc.status || 'new').charAt(0).toUpperCase() + (pc.status || 'new').slice(1)}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="text-sm text-neutral-600">{pc.candidate.currentTitle || "Not specified"}</span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                          <span className="font-medium text-neutral-900">{pc.aiScore || 0}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-2 min-w-24">
-                          <Progress value={pc.aiScore || 0} className="h-1.5 flex-1" />
-                          <span className="text-xs text-neutral-500">{pc.aiScore || 0}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="text-sm text-neutral-600">
-                          Bachelor's Degree
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="text-sm text-neutral-600">
-                          {pc.candidate.experienceYears ? `${pc.candidate.experienceYears}+ years` : "3+ years"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <Button variant="ghost" size="sm" className="text-neutral-500 text-xs h-7" data-testid={`btn-linkedin-${pc.candidate.id}`}>
-                          LinkedIn
-                        </Button>
-                      </td>
-                      <td className="px-4 py-4">
-                        <Button variant="ghost" size="icon" className="text-neutral-400" data-testid={`btn-more-${pc.candidate.id}`}>
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* INTERVIEWS TAB */}
-        {activeTab === "interviews" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Calendar */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-neutral-900">
-                  {format(new Date(), "MMMM yyyy")}
-                </h2>
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-neutral-200" data-testid="btn-prev-month">
-                    <ChevronRight className="w-4 h-4 rotate-180" />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8 border-neutral-200" data-testid="btn-next-month">
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-              <Calendar
-                mode="single"
-                className="w-full"
-                classNames={{
-                  months: "w-full",
-                  month: "w-full",
-                  table: "w-full",
-                  head_row: "flex w-full",
-                  head_cell: "text-neutral-500 rounded-md w-full font-normal text-xs",
-                  row: "flex w-full mt-1",
-                  cell: "text-center text-sm p-0 relative w-full",
-                  day: "h-10 w-full p-0 font-normal text-neutral-700 hover:bg-neutral-100 rounded-lg",
-                  day_selected: "bg-neutral-900 text-white hover:bg-neutral-800",
-                  day_today: "bg-neutral-100",
-                }}
-              />
-            </div>
-
-            {/* Scheduled Interviews */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center">
-                  <CalendarIcon className="w-5 h-5 text-neutral-600" strokeWidth={1.5} />
-                </div>
-                <h2 className="text-lg font-semibold text-neutral-900">Scheduled Interviews</h2>
-              </div>
-
-              {interviews.length === 0 ? (
-                <div className="text-center py-12">
-                  <CalendarIcon className="w-12 h-12 text-neutral-200 mx-auto mb-3" strokeWidth={1} />
-                  <p className="text-neutral-500">No interviews scheduled</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {interviews.map((interview, idx) => (
-                    <div key={interview.id} className="p-4 rounded-xl border border-neutral-200 hover:border-neutral-300 transition-colors" data-testid={`interview-${interview.id}`}>
-                      <p className="text-lg font-semibold text-neutral-900 mb-2">
-                        {format(new Date(interview.interviewDate), "hh:mm a")}
-                      </p>
-                      <p className="font-medium text-neutral-800">Candidate Interview</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge className="bg-neutral-100 text-neutral-600 border-0 text-xs">ROUND 1</Badge>
-                        <span className="text-xs text-neutral-500">Video Call • 60 min</span>
-                      </div>
-                    </div>
-                  ))}
+              {targetCandidate && "candidate" in targetCandidate && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Candidate</p>
+                  <p className="mt-1 font-medium text-white">{targetCandidate.candidate.name}</p>
+                  <p>{targetCandidate.candidate.currentTitle || "Profile under review"}</p>
+                  <p>{targetCandidate.candidate.experienceYears ? `${targetCandidate.candidate.experienceYears} years experience` : "Experience not specified"}</p>
+                  <p className="mt-2 text-slate-400">{targetCandidate.candidate.cvSummary || "No candidate summary is available yet."}</p>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* DECISION TAB */}
-        {activeTab === "decision" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Decision Summary */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center">
-                  <BarChart3 className="w-5 h-5 text-neutral-600" strokeWidth={1.5} />
+              {managerPassState.evidence.topCandidate && !("candidate" in (targetCandidate || {})) && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Candidate</p>
+                  <p className="mt-1 font-medium text-white">{managerPassState.evidence.topCandidate.name}</p>
+                  <p>{managerPassState.evidence.topCandidate.title}</p>
+                  <p className="mt-2 text-slate-400">{managerPassState.evidence.topCandidate.summary}</p>
                 </div>
-                <h2 className="text-lg font-semibold text-neutral-900">Decision Summary</h2>
-              </div>
+              )}
+            </CardContent>
+          </Card>
 
-              {/* Top Candidate */}
-              <div className="mb-6">
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Top Candidate</p>
-                {topCandidate ? (
-                  <div className="p-4 rounded-xl border border-neutral-200 flex items-center gap-4">
-                    <Avatar className="w-12 h-12">
-                      <AvatarFallback className="bg-emerald-100 text-emerald-700 font-semibold">
-                        {topCandidate.candidate.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="font-medium text-neutral-900">{topCandidate.candidate.name}</p>
-                      <p className="text-sm text-neutral-500">Overall Score: {(topCandidate.aiScore || 0) / 10}/10</p>
+          <Card className="border-slate-800 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Users className="h-5 w-5 text-sky-300" />
+                Request candidates
+              </CardTitle>
+              <CardDescription className="text-slate-400">Candidate details are scoped to this hiring request.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {candidates.length === 0 ? (
+                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No candidates have been added to this request yet.</p>
+              ) : (
+                candidates.slice(0, 4).map((passCandidate) => (
+                  <div key={passCandidate.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-white">{passCandidate.candidate.name}</p>
+                      <p className="truncate text-xs text-slate-500">{passCandidate.candidate.currentTitle || "Profile under review"}</p>
                     </div>
-                    <Badge className="bg-emerald-500 text-white border-0">RECOMMENDED</Badge>
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl border border-neutral-200 text-center">
-                    <p className="text-neutral-500">No candidates evaluated yet</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Scores */}
-              <div className="space-y-4">
-                {[
-                  { label: "Technical Score", value: topCandidate ? `${((topCandidate.aiScore || 0) / 10).toFixed(1)} / 10` : "- / 10" },
-                  { label: "Cultural Fit", value: "9.0 / 10" },
-                  { label: "Communication", value: "9.0 / 10" },
-                  { label: "Leadership", value: "9.3 / 10" },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center py-2 border-b border-neutral-100 last:border-0">
-                    <span className="text-sm text-neutral-600">{item.label}</span>
-                    <span className="text-sm font-semibold text-neutral-900">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Offer Details */}
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-neutral-600" strokeWidth={1.5} />
-                </div>
-                <h2 className="text-lg font-semibold text-neutral-900">Offer Details</h2>
-              </div>
-
-              <div className="space-y-4 mb-6">
-                {[
-                  { label: "Position", value: currentPosition.title || pass.positionTitle },
-                  { label: "Salary Offered", value: pass.salaryRangeMax ? `AED ${pass.salaryRangeMax?.toLocaleString()}` : "AED 18,000" },
-                  { label: "Start Date", value: "Feb 1, 2025" },
-                  { label: "Contract Type", value: "Permanent" },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center py-2 border-b border-neutral-100 last:border-0">
-                    <span className="text-sm text-neutral-500">{item.label}</span>
-                    <span className="text-sm font-medium text-neutral-900">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Benefits */}
-              <div className="mb-6">
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Benefits</p>
-                <div className="flex flex-wrap gap-2">
-                  {["Health Insurance", "Annual Leave", "Visa Sponsorship", "Training Budget"].map((benefit, idx) => (
-                    <Badge key={idx} className="bg-neutral-100 text-neutral-600 border-0 text-xs font-normal">
-                      {benefit}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {/* Offer Status */}
-              <div className="mb-6">
-                <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Offer Status</p>
-                <div className="space-y-2">
-                  {[
-                    { label: "Draft", completed: true },
-                    { label: "Pending Approval", completed: true },
-                    { label: "Approved", completed: false, current: true },
-                    { label: "Sent to Candidate", completed: false },
-                  ].map((step, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                        step.completed ? "bg-emerald-500 text-white" : 
-                        step.current ? "bg-neutral-300 text-white" : "bg-neutral-100"
-                      }`}>
-                        {step.completed && <Check className="w-3 h-3" />}
-                        {step.current && <div className="w-2 h-2 bg-white rounded-full" />}
-                      </div>
-                      <span className={`text-sm ${step.completed ? "text-neutral-900" : "text-neutral-400"}`}>
-                        {step.label}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      {Boolean(passCandidate.aiScore) && (
+                        <span className="inline-flex items-center gap-1 text-xs text-amber-200">
+                          <Star className="h-3 w-3" />
+                          {passCandidate.aiScore}
+                        </span>
+                      )}
+                      <Badge variant="outline" className="border-slate-600 text-slate-300">{statusLabel(passCandidate.status)}</Badge>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-              <Button className="w-full bg-neutral-900 hover:bg-neutral-800 gap-2" data-testid="btn-send-offer">
-                <Send className="w-4 h-4" /> Send Offer Letter
-              </Button>
-            </div>
-          </div>
-        )}
+          <Card className="border-slate-800 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Calendar className="h-5 w-5 text-blue-300" />
+                Interview context
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {interviews.length === 0 ? (
+                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No interviews are scheduled for this request yet.</p>
+              ) : (
+                interviews.slice(0, 3).map((interview) => (
+                  <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                    <p className="font-medium text-white">{interview.interviewDate}</p>
+                    <p className="text-sm text-slate-400">{interview.startTime} - {interview.endTime} ({interview.format})</p>
+                    <p className="text-xs text-slate-500">Status: {statusLabel(interview.status)}</p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-        {/* ANALYTICS TAB */}
-        {activeTab === "analytics" && (
-          <div className="text-center py-16">
-            <BarChart3 className="w-16 h-16 text-neutral-200 mx-auto mb-4" strokeWidth={1} />
-            <h2 className="text-xl font-semibold text-neutral-900 mb-2">Analytics Dashboard</h2>
-            <p className="text-neutral-500">Coming soon - Track recruitment metrics and performance</p>
-          </div>
-        )}
-      </div>
+          <Card className="border-slate-800 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <MessageSquare className="h-5 w-5 text-slate-300" />
+                What happens next
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm leading-6 text-slate-300">
+              {managerPassState.actionState === "ACTION_REQUIRED"
+                ? "Submit the decision above. HR receives it and the Pass will update to the next waiting or completion state."
+                : "No action is needed now. HR will update this Pass when manager input is needed again."}
+            </CardContent>
+          </Card>
+        </section>
+      </main>
 
-      {/* Interview Setup Modal */}
-      <Dialog open={showInterviewSetup} onOpenChange={setShowInterviewSetup}>
-        <DialogContent className="max-w-md">
+      <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+        <DialogContent className="border-slate-700 bg-slate-900 text-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-neutral-100 flex items-center justify-center">
-                <CalendarIcon className="w-4 h-4 text-neutral-600" />
-              </div>
-              Interview Setup
-            </DialogTitle>
+            <DialogTitle>Review hiring request</DialogTitle>
+            <DialogDescription className="text-slate-400">Approve the request or ask HR for specific changes.</DialogDescription>
           </DialogHeader>
+          <Textarea
+            value={decisionNotes}
+            onChange={(event) => setDecisionNotes(event.target.value)}
+            placeholder="Optional notes for HR..."
+            className="border-slate-700 bg-slate-950 text-white"
+          />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => requestChangesMutation.mutate()}>
+              Request changes
+            </Button>
+            <Button onClick={() => approveRequestMutation.mutate()}>Approve request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <div className="space-y-6 py-4">
-            {/* Technical Assessment */}
-            <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Technical Assessment Required?</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setInterviewSetup(prev => ({ ...prev, technicalAssessment: true }))}
-                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    interviewSetup.technicalAssessment 
-                      ? "bg-neutral-900 text-white" 
-                      : "bg-neutral-100 text-neutral-600"
-                  }`}
-                  data-testid="btn-tech-yes"
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setInterviewSetup(prev => ({ ...prev, technicalAssessment: false }))}
-                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    !interviewSetup.technicalAssessment 
-                      ? "bg-neutral-900 text-white" 
-                      : "bg-neutral-100 text-neutral-600"
-                  }`}
-                  data-testid="btn-tech-no"
-                >
-                  No
-                </button>
-              </div>
-            </div>
+      <Dialog open={showInterviewDialog} onOpenChange={setShowInterviewDialog}>
+        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Set interview availability</DialogTitle>
+            <DialogDescription className="text-slate-400">This bounded slice records a simple interview setup using the existing endpoint.</DialogDescription>
+          </DialogHeader>
+          <p className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
+            Format: online · Round: 1 · Duration: 45 minutes
+          </p>
+          <DialogFooter>
+            <Button onClick={() => interviewSetupMutation.mutate()} disabled={interviewSetupMutation.isPending}>
+              Submit availability
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-            {/* Interview Format */}
+      <Dialog open={showEvaluationDialog} onOpenChange={setShowEvaluationDialog}>
+        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Submit structured evaluation</DialogTitle>
+            <DialogDescription className="text-slate-400">Keep the scorecard concise and decision-focused.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
             <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Interview Format</p>
-              <div className="flex gap-2">
-                {["Online", "In-Person", "Hybrid"].map((format) => (
-                  <button
-                    key={format}
-                    onClick={() => setInterviewSetup(prev => ({ ...prev, format: format.toLowerCase() }))}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      interviewSetup.format === format.toLowerCase()
-                        ? "bg-neutral-900 text-white" 
-                        : "bg-neutral-100 text-neutral-600"
-                    }`}
-                    data-testid={`btn-format-${format.toLowerCase()}`}
-                  >
-                    {format}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Interview Rounds */}
-            <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Interview Rounds</p>
-              <Select value={interviewSetup.rounds} onValueChange={(v) => setInterviewSetup(prev => ({ ...prev, rounds: v }))}>
-                <SelectTrigger className="w-full" data-testid="select-rounds">
+              <Label className="text-slate-300">Recommendation</Label>
+              <Select value={evaluationRecommendation} onValueChange={setEvaluationRecommendation}>
+                <SelectTrigger className="mt-2 border-slate-700 bg-slate-950">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 Round</SelectItem>
-                  <SelectItem value="2">2 Rounds</SelectItem>
-                  <SelectItem value="3">3 Rounds</SelectItem>
+                  <SelectItem value="proceed">Proceed</SelectItem>
+                  <SelectItem value="reserve">Reserve</SelectItem>
+                  <SelectItem value="reject">Reject</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Date Picker */}
-            <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Add Interview Date & Time Slots</p>
-              <div className="flex gap-2">
-                <Input type="date" className="flex-1" data-testid="input-interview-date" />
-                <Button className="bg-neutral-900 hover:bg-neutral-800" data-testid="btn-add-date">Add Date</Button>
-              </div>
-              <p className="text-xs text-neutral-400 mt-2">No dates added yet. Select a date above and click "Add Date".</p>
-            </div>
-
-            {/* Additional Interviewer */}
-            <div>
-              <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-3">Additional Interviewer (Optional)</p>
-              <Input 
-                placeholder="Type interviewer name..." 
-                value={interviewSetup.additionalInterviewer}
-                onChange={(e) => setInterviewSetup(prev => ({ ...prev, additionalInterviewer: e.target.value }))}
-                data-testid="input-interviewer"
-              />
-            </div>
+            <Textarea
+              value={decisionNotes}
+              onChange={(event) => setDecisionNotes(event.target.value)}
+              placeholder="Evidence-based notes for HR..."
+              className="border-slate-700 bg-slate-950 text-white"
+            />
           </div>
+          <DialogFooter>
+            <Button onClick={() => targetInterview?.id && evaluationMutation.mutate(targetInterview.id)} disabled={!targetInterview?.id || evaluationMutation.isPending}>
+              Submit evaluation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" onClick={() => setShowInterviewSetup(false)} data-testid="btn-cancel-setup">
-              Cancel
+      <Dialog open={showFinalDecisionDialog} onOpenChange={setShowFinalDecisionDialog}>
+        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+          <DialogHeader>
+            <DialogTitle>Make final decision</DialogTitle>
+            <DialogDescription className="text-slate-400">Submit one clear decision for HR to action.</DialogDescription>
+          </DialogHeader>
+          <RadioGroup value={finalDecision} onValueChange={setFinalDecision} className="grid gap-3">
+            {[
+              ["hire", "Hire"],
+              ["reserve", "Reserve"],
+              ["reject", "Reject"],
+            ].map(([value, label]) => (
+              <Label key={value} className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+                <RadioGroupItem value={value} />
+                {label}
+              </Label>
+            ))}
+          </RadioGroup>
+          <Textarea
+            value={decisionNotes}
+            onChange={(event) => setDecisionNotes(event.target.value)}
+            placeholder="Optional decision notes..."
+            className="border-slate-700 bg-slate-950 text-white"
+          />
+          <DialogFooter>
+            <Button
+              onClick={() => targetCandidate?.id && finalDecisionMutation.mutate({ candidateId: targetCandidate.id, decision: finalDecision })}
+              disabled={!targetCandidate?.id || finalDecisionMutation.isPending}
+            >
+              Submit final decision
             </Button>
-            <Button className="bg-neutral-900 hover:bg-neutral-800" onClick={() => setShowInterviewSetup(false)} data-testid="btn-save-setup">
-              Save Setup
-            </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

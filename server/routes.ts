@@ -18,6 +18,7 @@ import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { resolvePassAccess } from "./pass-access";
 import { resolveCandidatePassState } from "./candidate-pass-state";
+import { isPassScopedCandidate, isPassScopedInterview, resolveManagerPassState } from "./manager-pass-state";
 
 const anthropic = new Anthropic();
 
@@ -989,6 +990,12 @@ export async function registerRoutes(
       const interviews = await storage.getInterviewsByPass(activeShareLink.passId);
       const manager = activeShareLink.managerId ? await storage.getManager(activeShareLink.managerId) : null;
       const interviewSlots = await storage.getInterviewSlotsByPass(activeShareLink.passId);
+      const managerPassState = resolveManagerPassState({
+        link: activeShareLink,
+        pass,
+        candidates,
+        interviews,
+      });
       
       res.json({
         shareLink: activeShareLink,
@@ -996,7 +1003,8 @@ export async function registerRoutes(
         candidates,
         interviews,
         manager,
-        interviewSlots
+        interviewSlots,
+        managerPassState
       });
     } catch (error) {
       console.error("Error fetching manager pass:", error);
@@ -1008,14 +1016,19 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/approve-jd", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeShareLink = access.link;
       
-      const pass = await storage.updatePass(shareLink.passId, {
+      const pass = await storage.updatePass(activeShareLink.passId, {
         jdStatus: 'approved',
         jdApprovedAt: new Date(),
-        jdApprovedBy: shareLink.managerId
+        jdApprovedBy: activeShareLink.managerId
       });
       
       res.json({ message: "JD approved successfully", pass });
@@ -1029,20 +1042,25 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/request-jd-changes", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeShareLink = access.link;
       
       const { feedback } = req.body;
       
       await storage.createManagerFeedback({
-        passId: shareLink.passId,
-        managerId: shareLink.managerId!,
+        passId: activeShareLink.passId,
+        managerId: activeShareLink.managerId!,
         feedbackType: 'jd_changes',
         feedback
       });
       
-      const pass = await storage.updatePass(shareLink.passId, {
+      const pass = await storage.updatePass(activeShareLink.passId, {
         jdStatus: 'changes_requested'
       });
       
@@ -1057,13 +1075,18 @@ export async function registerRoutes(
   app.patch("/api/manager-pass/:token/salary-range", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeShareLink = access.link;
       
       const { salaryRangeMin, salaryRangeMax } = req.body;
       
-      const pass = await storage.updatePass(shareLink.passId, {
+      const pass = await storage.updatePass(activeShareLink.passId, {
         salaryRangeMin,
         salaryRangeMax
       });
@@ -1079,9 +1102,14 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/interview-setup", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeShareLink = access.link;
       
       const { 
         technicalAssessmentRequired,
@@ -1095,7 +1123,7 @@ export async function registerRoutes(
       } = req.body;
       
       // Update pass with interview setup
-      await storage.updatePass(shareLink.passId, {
+      await storage.updatePass(activeShareLink.passId, {
         technicalAssessmentRequired,
         interviewFormat,
         interviewRounds,
@@ -1109,12 +1137,12 @@ export async function registerRoutes(
         for (const date of availableDates) {
           for (const slot of timeSlots) {
             await storage.createInterviewSlot({
-              passId: shareLink.passId,
+              passId: activeShareLink.passId,
               slotDate: date,
               startTime: slot,
               endTime: slot, // End time will be calculated based on duration
               format: interviewFormat,
-              interviewerId: shareLink.managerId
+              interviewerId: activeShareLink.managerId
             });
           }
         }
@@ -1124,7 +1152,7 @@ export async function registerRoutes(
       if (additionalInterviewers && additionalInterviewers.length > 0) {
         for (const interviewerId of additionalInterviewers) {
           await storage.createPanelInterviewer({
-            passId: shareLink.passId,
+            passId: activeShareLink.passId,
             managerId: interviewerId
           });
         }
@@ -1141,16 +1169,25 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/candidates/:candidateId/shortlist", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
+      }
+      const activeShareLink = access.link;
+      const passCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
+      if (!isPassScopedCandidate(activeShareLink.passId, passCandidate)) {
+        return res.status(404).json({ error: "Candidate is not available for this Manager Pass" });
       }
       
-      const passCandidate = await storage.updatePassCandidate(parseInt(req.params.candidateId), {
+      const updatedPassCandidate = await storage.updatePassCandidate(passCandidate!.id, {
         status: 'shortlisted',
         shortlistedAt: new Date()
       });
       
-      res.json({ message: "Candidate shortlisted", passCandidate });
+      res.json({ message: "Candidate shortlisted", passCandidate: updatedPassCandidate });
     } catch (error) {
       console.error("Error shortlisting candidate:", error);
       res.status(500).json({ error: "Failed to shortlist candidate" });
@@ -1161,13 +1198,22 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/candidates/:candidateId/reject", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
+      }
+      const activeShareLink = access.link;
+      const existingPassCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
+      if (!isPassScopedCandidate(activeShareLink.passId, existingPassCandidate)) {
+        return res.status(404).json({ error: "Candidate is not available for this Manager Pass" });
       }
       
       const { reason, notes } = req.body;
       
-      const passCandidate = await storage.updatePassCandidate(parseInt(req.params.candidateId), {
+      const passCandidate = await storage.updatePassCandidate(existingPassCandidate!.id, {
         status: 'rejected',
         rejectionReason: reason,
         rejectionNotes: notes,
@@ -1185,13 +1231,22 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/evaluations", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
+      }
+      const activeShareLink = access.link;
+      const interview = await storage.getInterview(req.body.interviewId);
+      if (!isPassScopedInterview(activeShareLink.passId, interview)) {
+        return res.status(404).json({ error: "Interview is not available for this Manager Pass" });
       }
       
       const validated = insertInterviewEvaluationSchema.parse({
         ...req.body,
-        evaluatorId: shareLink.managerId
+        evaluatorId: activeShareLink.managerId
       });
       
       const evaluation = await storage.createInterviewEvaluation(validated);
@@ -1209,13 +1264,22 @@ export async function registerRoutes(
   app.post("/api/manager-pass/:token/final-decisions", async (req, res) => {
     try {
       const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink || !shareLink.isActive) {
-        return res.status(404).json({ error: "Invalid share link" });
+      const access = resolvePassAccess(shareLink, {
+        inactive: "Invalid share link",
+        expired: "Share link has expired",
+      });
+      if (!access.allowed) {
+        return res.status(access.status).json({ error: access.error });
       }
+      const activeShareLink = access.link;
       
       const { decisions } = req.body; // Array of { passCandidateId, decision: 'hire' | 'reserve' | 'reject', notes }
       
       for (const { passCandidateId, decision, notes } of decisions) {
+        const passCandidate = await storage.getPassCandidateById(passCandidateId);
+        if (!isPassScopedCandidate(activeShareLink.passId, passCandidate)) {
+          return res.status(404).json({ error: "Candidate is not available for this Manager Pass" });
+        }
         if (decision === 'hire') {
           await storage.updatePassCandidate(passCandidateId, {
             status: 'offer',
