@@ -1,0 +1,396 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clean Minimal Design - Navy Accent Theme */
+:root {
+  --button-outline: rgba(0,0,0, .08);
+  --badge-outline: rgba(0,0,0, .05);
+  --opaque-button-border-intensity: -8;
+  --elevate-1: rgba(0,0,0, .02);
+  --elevate-2: rgba(0,0,0, .05);
+  
+  /* Clean Light Gray-Blue Background */
+  --bg-main: #EDF1F7;
+  --bg-card: rgba(255, 255, 255, 1);
+  
+  /* Navy Color Palette */
+  --navy-900: 214 44% 20%;
+  --navy-800: 214 42% 26%;
+  --navy-700: 214 40% 32%;
+  --navy-600: 214 35% 40%;
+  --navy-500: 214 30% 50%;
+  --navy-400: 214 25% 60%;
+  --navy-300: 214 20% 75%;
+  --navy-200: 214 18% 88%;
+  --navy-100: 214 15% 94%;
+  
+  /* Core Colors - Light Theme with Navy */
+  --background: 220 40% 96%;
+  --foreground: 214 44% 12%;
+  --border: 214 20% 88%;
+  
+  /* Cards */
+  --card: 0 0% 100%;
+  --card-foreground: 214 44% 12%;
+  --card-border: 214 18% 88%;
+  
+  /* Primary - Navy Accent */
+  --primary: 214 44% 24%;
+  --primary-foreground: 0 0% 100%;
+  
+  /* Secondary */
+  --secondary: 214 15% 94%;
+  --secondary-foreground: 214 44% 20%;
+  
+  /* Muted */
+  --muted: 214 15% 94%;
+  --muted-foreground: 214 20% 46%;
+  
+  /* Accent */
+  --accent: 214 15% 94%;
+  --accent-foreground: 214 44% 20%;
+  
+  /* Destructive */
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  
+  /* Input */
+  --input: 214 18% 88%;
+  --ring: 214 44% 24%;
+  
+  /* Charts - Navy-based with neutral variety */
+  --chart-1: 214 44% 24%;
+  --chart-2: 200 70% 50%;
+  --chart-3: 214 20% 55%;
+  --chart-4: 35 80% 50%;
+  --chart-5: 190 60% 45%;
+  
+  /* Sidebar */
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 214 44% 12%;
+  --sidebar-border: 214 18% 90%;
+  --sidebar-primary: 214 44% 24%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 214 30% 94%;
+  --sidebar-accent-foreground: 214 44% 20%;
+  --sidebar-ring: 214 44% 24%;
+  
+  /* Popover */
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 11%;
+  --popover-border: 0 0% 92%;
+  
+  /* Typography - Apple System Font Stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, -system-ui, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  --radius: .75rem;
+  
+  /* Glass Effect Variables - 16px iOS-style frosted glass */
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  --glass-blur: 16px;
+  
+  /* Shadows - Subtle */
+  --shadow-2xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-2xl: 0 16px 48px rgba(0, 0, 0, 0.1);
+  
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Border fallbacks */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --primary-border: hsl(var(--primary));
+  --secondary-border: hsl(var(--secondary));
+  --muted-border: hsl(var(--muted));
+  --accent-border: hsl(var(--accent));
+  --destructive-border: hsl(var(--destructive));
+}
+
+.dark {
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .05);
+  --opaque-button-border-intensity: 9;
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .07);
+  --background: 0 0% 7%;
+  --foreground: 0 0% 96%;
+  --border: 0 0% 16%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 96%;
+  --card-border: 0 0% 14%;
+  --sidebar: 0 0% 9%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-border: 0 0% 14%;
+  --sidebar-primary: 145 80% 50%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 15%;
+  --sidebar-accent-foreground: 0 0% 96%;
+  --sidebar-ring: 145 80% 50%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 96%;
+  --popover-border: 0 0% 16%;
+  --primary: 145 80% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 0 0% 25%;
+  --ring: 145 80% 50%;
+  --chart-1: 145 80% 50%;
+  --chart-2: 200 70% 55%;
+  --chart-3: 0 0% 50%;
+  --chart-4: 35 80% 55%;
+  --chart-5: 165 60% 50%;
+  --glass-bg: rgba(30, 30, 30, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-blur: 16px;
+
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --primary-border: hsl(var(--primary));
+  --secondary-border: hsl(var(--secondary));
+  --muted-border: hsl(var(--muted));
+  --accent-border: hsl(var(--accent));
+  --destructive-border: hsl(var(--destructive));
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply font-sans antialiased text-foreground;
+    background: #EDF1F7;
+    min-height: 100vh;
+  }
+
+  .dark body {
+    background: hsl(var(--background));
+  }
+}
+
+@layer utilities {
+
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  .no-default-hover-elevate {}
+  .no-default-active-elevate {}
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after {
+    inset: -1px;
+  }
+
+  /* iOS Glass Effect Utilities */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+    border-radius: 20px;
+  }
+
+  .dark .glass-card {
+    background: rgba(30, 30, 30, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .glass-nav {
+    background: rgba(30, 30, 30, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-sidebar {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-right: 1px solid rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .glass-sidebar {
+    background: rgba(30, 30, 30, 0.8);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-input {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1.5px solid #E5E5EA;
+    border-radius: 12px;
+  }
+
+  .glass-input:focus {
+    border-color: #00C853;
+    box-shadow: 0 0 0 3px rgba(0, 200, 83, 0.15);
+  }
+
+  .dark .glass-input {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Status badge colors */
+  .status-applied {
+    @apply border-blue-400 bg-blue-50/50 text-blue-700;
+  }
+  .dark .status-applied {
+    @apply border-blue-500 bg-blue-900/30 text-blue-300;
+  }
+
+  .status-screening {
+    @apply border-amber-400 bg-amber-50/50 text-amber-700;
+  }
+  .dark .status-screening {
+    @apply border-amber-500 bg-amber-900/30 text-amber-300;
+  }
+
+  .status-interview {
+    @apply border-purple-400 bg-purple-50/50 text-purple-700;
+  }
+  .dark .status-interview {
+    @apply border-purple-500 bg-purple-900/30 text-purple-300;
+  }
+
+  .status-offer {
+    @apply border-primary bg-primary/10 text-primary;
+  }
+
+  .status-hired {
+    @apply border-primary bg-primary text-primary-foreground;
+  }
+
+  .status-rejected {
+    @apply border-red-400 bg-red-50/50 text-red-700;
+  }
+  .dark .status-rejected {
+    @apply border-red-500 bg-red-900/30 text-red-300;
+  }
+
+  .status-withdrawn {
+    @apply border-gray-400 bg-gray-50/50 text-gray-600;
+  }
+  .dark .status-withdrawn {
+    @apply border-gray-500 bg-gray-800/30 text-gray-400;
+  }
+
+  /* Priority badges */
+  .priority-low {
+    @apply border-gray-300 text-gray-600;
+  }
+  .priority-medium {
+    @apply border-blue-300 text-blue-600;
+  }
+  .priority-high {
+    @apply border-amber-400 text-amber-600;
+  }
+  .priority-urgent {
+    @apply border-red-400 text-red-600;
+  }
+
+  /* Smooth transitions */
+  .glass-transition {
+    transition: all 0.2s ease-out;
+  }
+
+  .glass-transition:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+  }
+}
