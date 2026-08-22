@@ -17,6 +17,7 @@ import {
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { resolvePassAccess } from "./pass-access";
+import { resolveCandidatePassState } from "./candidate-pass-state";
 
 const anthropic = new Anthropic();
 
@@ -1270,6 +1271,16 @@ export async function registerRoutes(
       const interviews = await storage.getInterviewsByPassCandidate(activeCandidateLink.passCandidateId);
       const offer = await storage.getOfferByPassCandidate(activeCandidateLink.passCandidateId);
       const interviewSlots = pass ? await storage.getAvailableInterviewSlots(pass.id) : [];
+      const passState = resolveCandidatePassState({
+        link: activeCandidateLink,
+        passCandidate,
+        pass,
+        messages,
+        documents,
+        interviews,
+        offer,
+        interviewSlots,
+      });
       
       res.json({
         candidateLink: activeCandidateLink,
@@ -1281,7 +1292,8 @@ export async function registerRoutes(
         timeline,
         interviews,
         offer,
-        interviewSlots
+        interviewSlots,
+        passState
       });
     } catch (error) {
       console.error("Error fetching candidate pass:", error);
@@ -3810,4 +3822,3 @@ Return the letter in JSON format:
 
   return httpServer;
 }
-
