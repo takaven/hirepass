@@ -71,7 +71,10 @@ function passUrl(type: "candidate" | "manager", token: string) {
 export default function HrPassControl() {
   const { toast } = useToast();
   const [extendDate, setExtendDate] = useState(() => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  const { data, isLoading } = useQuery<{ items: PassControlItem[] }>({ queryKey: ["/api/hr-pass-control"] });
+  const { data, isLoading } = useQuery<{ items: PassControlItem[] }>({
+    queryKey: ["/api/hr-pass-control"],
+    refetchInterval: 30000,
+  });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/hr-pass-control"] });
   const actionMutation = useMutation({
@@ -256,4 +259,3 @@ export default function HrPassControl() {
     </div>
   );
 }
-

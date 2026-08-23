@@ -131,6 +131,7 @@ afterEach(() => {
 async function withServer(overrides: StorageOverrides, callback: (baseUrl: string) => Promise<void>) {
   let mutableManagerLink = { ...managerLink };
   let mutableCandidateLink = { ...candidateLink };
+  let mutableCandidateDocuments: any[] = [];
   const activities: any[] = [];
 
   overrideStorage({
@@ -166,7 +167,18 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getInterviewSlotsByPass: async () => [interviewSlot],
     getAvailableInterviewSlots: async () => [interviewSlot],
     getCandidateMessages: async () => [],
-    getCandidateDocuments: async () => [],
+    getCandidateDocuments: async () => mutableCandidateDocuments,
+    createCandidateDocument: async (data: any) => {
+      const document = { id: mutableCandidateDocuments.length + 701, createdAt: now, updatedAt: now, ...data };
+      mutableCandidateDocuments = [document, ...mutableCandidateDocuments];
+      return document;
+    },
+    updateCandidateDocument: async (id: number, data: any) => {
+      const document = mutableCandidateDocuments.find((item) => item.id === id);
+      if (!document) return undefined;
+      Object.assign(document, data, { updatedAt: now });
+      return document;
+    },
     getCandidateTimelineEvents: async () => [],
     getOfferByPassCandidate: async () => undefined,
     getActivitiesByPass: async () => activities,
@@ -495,6 +507,196 @@ describe("HR Pass Control lifecycle routes", () => {
 
       assert.equal(response.status, 404);
       assert.equal(created, false);
+    });
+  });
+
+  it("removes a completed candidate assessment from HR outstanding actions", async () => {
+    let mutablePassCandidate: any = { ...passCandidate, status: "shortlisted", softSkillsCompletedAt: null };
+    const passWithAssessment = { ...pass, softSkillsAssessmentUrl: "https://assessment.example/soft" };
+    await withServer({
+      getPass: async () => passWithAssessment,
+      getPassWithDetails: async () => passWithAssessment,
+      getPassCandidateById: async () => mutablePassCandidate,
+      getPassCandidatesWithDetails: async () => [mutablePassCandidate],
+      getInterviewSlotsByPass: async () => [],
+      getAvailableInterviewSlots: async () => [],
+      updatePassCandidate: async (_id: number, data: any) => {
+        mutablePassCandidate = { ...mutablePassCandidate, ...data };
+        return mutablePassCandidate;
+      },
+    }, async (baseUrl) => {
+      const before = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(before.items[0].candidateActions, 1);
+
+      const complete = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/assessment-complete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assessmentType: "softSkills" }),
+      });
+      assert.equal(complete.status, 200);
+
+      const after = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(after.items[0].candidateActions, 0);
+      assert.notEqual(after.items[0].waitingOn, "candidate");
+      assert.equal(after.items[0].recentActivity[0].action, "candidate_assessment_completed");
+    });
+  });
+
+  it("moves manager final decision into HR-owned offer follow-up with activity evidence", async () => {
+    let mutablePassCandidate: any = { ...passCandidate, status: "interview", interviewRecommendation: "proceed" };
+    await withServer({
+      getPassCandidateById: async () => mutablePassCandidate,
+      getPassCandidatesWithDetails: async () => [mutablePassCandidate],
+      updatePassCandidate: async (_id: number, data: any) => {
+        mutablePassCandidate = { ...mutablePassCandidate, ...data };
+        return mutablePassCandidate;
+      },
+    }, async (baseUrl) => {
+      const beforeManager = await json(await fetch(`${baseUrl}/api/manager-pass/manager-token`));
+      assert.equal(beforeManager.managerPassState.actionState, "ACTION_REQUIRED");
+      assert.equal(beforeManager.managerPassState.nextDecision.kind, "MAKE_FINAL_DECISION");
+
+      const decision = await fetch(`${baseUrl}/api/manager-pass/manager-token/final-decisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decisions: [{ passCandidateId: 101, decision: "hire", notes: "Proceed" }] }),
+      });
+      assert.equal(decision.status, 200);
+
+      const afterManager = await json(await fetch(`${baseUrl}/api/manager-pass/manager-token`));
+      assert.equal(afterManager.managerPassState.actionState, "COMPLETED");
+
+      const hr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(hr.items[0].waitingOn, "hr");
+      assert.equal(hr.items[0].managerActions, 0);
+      assert.equal(hr.items[0].recentActivity[0].action, "manager_final_decision_submitted");
+    });
+  });
+
+  it("lets a scoped Candidate Pass satisfy a pending document request", async () => {
+    let mutableDocuments: any[] = [{
+      id: 701,
+      passCandidateId: 101,
+      docType: "passport",
+      label: "Passport copy",
+      isRequired: true,
+      status: "pending",
+      createdAt: oldDate,
+      updatedAt: oldDate,
+    }];
+    await withServer({
+      getInterviewSlotsByPass: async () => [],
+      getAvailableInterviewSlots: async () => [],
+      getCandidateDocuments: async (passCandidateId: number) => passCandidateId === 101 ? mutableDocuments : [],
+      updateCandidateDocument: async (id: number, data: any) => {
+        const document = mutableDocuments.find((item) => item.id === id);
+        if (!document) return undefined;
+        Object.assign(document, data);
+        return document;
+      },
+    }, async (baseUrl) => {
+      const before = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(before.items[0].candidateActions, 1);
+      assert.equal(before.items[0].candidates[0].nextAction, "Upload document");
+
+      const upload = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          documentId: 701,
+          fileName: "passport.pdf",
+          mimeType: "application/pdf",
+          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document").toString("base64"),
+        }),
+      });
+      assert.equal(upload.status, 201);
+      assert.equal(mutableDocuments[0].status, "uploaded");
+
+      const afterCandidate = await json(await fetch(`${baseUrl}/api/candidate-pass/candidate-token`));
+      assert.equal(afterCandidate.passState.nextAction.kind, "NONE");
+      const afterHr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(afterHr.items[0].candidateActions, 0);
+      assert.equal(afterHr.items[0].recentActivity[0].action, "candidate_document_submitted");
+    });
+  });
+
+  it("rejects cross-pass document completion attempts", async () => {
+    await withServer({
+      getCandidateDocuments: async () => [{
+        id: 702,
+        passCandidateId: 999,
+        docType: "passport",
+        label: "Other candidate passport",
+        status: "pending",
+      }],
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          documentId: 999,
+          fileName: "passport.pdf",
+          mimeType: "application/pdf",
+          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document").toString("base64"),
+        }),
+      });
+      assert.equal(response.status, 404);
+    });
+  });
+
+  it("closes accepted offers into handoff without creating a new hiring action", async () => {
+    let mutablePassCandidate: any = { ...passCandidate, status: "offer" };
+    let mutableOffer: any = {
+      id: 801,
+      passId: 10,
+      passCandidateId: 101,
+      salary: 12000,
+      salaryCurrency: "AED",
+      status: "pending",
+      createdAt: oldDate,
+      updatedAt: oldDate,
+    };
+    await withServer({
+      getPassCandidateById: async () => mutablePassCandidate,
+      getPassCandidatesWithDetails: async () => [mutablePassCandidate],
+      getOfferByPassCandidate: async () => mutableOffer,
+      updatePassCandidate: async (_id: number, data: any) => {
+        mutablePassCandidate = { ...mutablePassCandidate, ...data };
+        return mutablePassCandidate;
+      },
+      updateOffer: async (_id: number, data: any) => {
+        mutableOffer = { ...mutableOffer, ...data };
+        return mutableOffer;
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/offer-response`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ response: "accept" }),
+      });
+      assert.equal(response.status, 200);
+
+      const candidatePayload = await json(await fetch(`${baseUrl}/api/candidate-pass/candidate-token`));
+      assert.equal(candidatePayload.passState.actionState, "COMPLETED");
+      assert.equal(candidatePayload.passState.hiringStage, "Handoff");
+
+      const hr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
+      assert.equal(hr.items[0].waitingOn, "completed");
+      assert.equal(hr.items[0].recentActivity[0].action, "candidate_offer_accepted_handoff");
+    });
+  });
+
+  it("blocks stale nudges after a candidate action is already completed", async () => {
+    await withServer({
+      getInterviewSlotsByPass: async () => [],
+      getAvailableInterviewSlots: async () => [],
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/nudge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ targetType: "candidate", targetId: 101, reason: "Already done" }),
+      });
+      assert.equal(response.status, 409);
     });
   });
 });
