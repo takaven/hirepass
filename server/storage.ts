@@ -180,6 +180,7 @@ export interface IStorage {
   markMessageAsRead(messageId: number): Promise<void>;
   getCandidateDocuments(passCandidateId: number): Promise<CandidateDocument[]>;
   createCandidateDocument(data: InsertCandidateDocument): Promise<CandidateDocument>;
+  updateCandidateDocument(id: number, data: Partial<InsertCandidateDocument>): Promise<CandidateDocument | undefined>;
   getCandidateTimelineEvents(passCandidateId: number): Promise<CandidateTimelineEvent[]>;
   getAvailableInterviewSlots(passId: number): Promise<InterviewSlot[]>;
   bookInterviewSlot(slotId: number, passCandidateId: number, passId: number): Promise<InterviewSlot | undefined>;
@@ -1006,6 +1007,14 @@ export class DatabaseStorage implements IStorage {
 
   async createCandidateDocument(data: InsertCandidateDocument): Promise<CandidateDocument> {
     const [doc] = await db.insert(candidateDocuments).values(data).returning();
+    return doc;
+  }
+
+  async updateCandidateDocument(id: number, data: Partial<InsertCandidateDocument>): Promise<CandidateDocument | undefined> {
+    const [doc] = await db.update(candidateDocuments)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(candidateDocuments.id, id))
+      .returning();
     return doc;
   }
 

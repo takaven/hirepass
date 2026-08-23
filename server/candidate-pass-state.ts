@@ -197,6 +197,20 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
     };
   }
 
+  if (["rejected", "withdrawn"].includes(status)) {
+    return {
+      actionState: "COMPLETED",
+      hiringStage,
+      stateLabel: "PROCESS CLOSED",
+      headline: "This hiring process is closed.",
+      summary: "There is no further action required on this Candidate Pass.",
+      waitingOn: "Process closed",
+      nextAction: { kind: "NONE", label: "No action required", description: "This Candidate Pass is closed.", target: "none" },
+      latestUpdate: latestUpdate(input.messages, input.interviews),
+      journey: buildJourney(hiringStage),
+    };
+  }
+
   if (input.offer?.status === "pending") {
     return {
       actionState: "ACTION_REQUIRED",

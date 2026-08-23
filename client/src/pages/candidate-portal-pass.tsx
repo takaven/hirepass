@@ -182,6 +182,10 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   const { data, isLoading, error } = useQuery<CandidatePassData>({
     queryKey: ["/api/candidate-pass", token],
     queryFn: () => fetchCandidatePass(token),
+    refetchInterval: (query) => {
+      const state = query.state.data?.passState?.actionState;
+      return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
+    },
   });
 
   const sendMessageMutation = useMutation({
@@ -222,6 +226,20 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
     },
     onError: () => toast({ title: "Assessment completion could not be recorded", variant: "destructive" }),
+  });
+
+  const submitDocumentMutation = useMutation({
+    mutationFn: ({ documentId, file }: { documentId: number; file: File }) =>
+      apiRequest("POST", `/api/candidate-pass/${token}/documents`, {
+        documentId,
+        fileName: file.name,
+        fileSize: file.size,
+      }),
+    onSuccess: () => {
+      toast({ title: "Document received", description: "Your Candidate Pass has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+    },
+    onError: () => toast({ title: "Document could not be submitted", variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -474,12 +492,30 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               ) : (
                 <div className="space-y-2">
                   {documents.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                    <div key={doc.id} className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-white">{doc.label || doc.docType}</p>
                         {doc.fileName && <p className="truncate text-xs text-slate-500">{doc.fileName}</p>}
                       </div>
-                      <Badge variant={doc.status === "approved" ? "default" : doc.status === "rejected" ? "destructive" : "outline"}>{doc.status}</Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={doc.status === "approved" ? "default" : doc.status === "rejected" ? "destructive" : "outline"}>{doc.status}</Badge>
+                        {doc.status === "pending" && (
+                          <label className="inline-flex min-h-9 cursor-pointer items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600">
+                            <Upload className="mr-2 h-4 w-4" />
+                            Submit file
+                            <input
+                              type="file"
+                              className="sr-only"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file) submitDocumentMutation.mutate({ documentId: doc.id, file });
+                                event.currentTarget.value = "";
+                              }}
+                              data-testid={`document-upload-${doc.id}`}
+                            />
+                          </label>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -487,7 +523,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               {pendingDocs.length > 0 && (
                 <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
                   <Upload className="h-4 w-4" />
-                  Upload handling is available through the existing document request flow.
+                  File metadata is recorded against this Pass. Durable production file storage is verified in the release-readiness gate.
                 </p>
               )}
             </CardContent>

@@ -148,6 +148,10 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const { data, isLoading, error } = useQuery<ManagerPassData>({
     queryKey: ["/api/manager-pass", token],
     queryFn: () => fetchManagerPass(token),
+    refetchInterval: (query) => {
+      const state = query.state.data?.managerPassState?.actionState;
+      return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
+    },
   });
 
   const approveRequestMutation = useMutation({

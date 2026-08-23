@@ -87,6 +87,10 @@ export async function registerRoutes(
     const id = Number(value);
     return Number.isInteger(id) && id > 0 ? id : null;
   }
+
+  function isPendingDocument(document: { status?: string | null }) {
+    return (document.status || "pending").toLowerCase() === "pending";
+  }
   
   // ============ ANALYTICS ROUTES ============
   app.get("/api/analytics/stats", async (req, res) => {
@@ -353,17 +357,29 @@ export async function registerRoutes(
       const pass = await storage.getPass(passId);
       if (!pass) return res.status(404).json({ error: "Pass not found" });
       const body = nudgeSchema.parse(req.body);
+      const control = await buildPassControl(passId);
+      if (!control) return res.status(404).json({ error: "Pass not found" });
       if (body.targetType === "candidate") {
         if (!body.targetId) return res.status(400).json({ error: "Candidate application target is required" });
         const passCandidate = await storage.getPassCandidateById(body.targetId);
         if (!passCandidate || passCandidate.passId !== passId) {
           return res.status(404).json({ error: "Candidate is not available for this Pass" });
         }
+        const candidateState = control.candidates.find((candidate) => candidate.id === body.targetId);
+        if (candidateState?.waitingOn !== "candidate") {
+          return res.status(409).json({ error: "Candidate has no outstanding Pass action to nudge" });
+        }
       }
       if (body.targetType === "manager" && body.targetId) {
         if (body.targetId !== pass.hiringManagerId) {
           return res.status(404).json({ error: "Manager is not assigned to this Pass" });
         }
+      }
+      if (body.targetType === "manager" && control.waitingOn !== "manager") {
+        return res.status(409).json({ error: "Manager has no outstanding Pass decision to nudge" });
+      }
+      if (body.targetType === "hr" && control.waitingOn !== "hr") {
+        return res.status(409).json({ error: "HR is not the current owner of this Pass action" });
       }
       const activity = await storage.logActivity({
         passId,
@@ -1354,6 +1370,15 @@ export async function registerRoutes(
         jdApprovedAt: new Date(),
         jdApprovedBy: activeShareLink.managerId
       });
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_request_approved",
+        targetType: "share_link",
+        targetId: activeShareLink.id,
+        details: { managerId: activeShareLink.managerId },
+      });
       
       res.json({ message: "JD approved successfully", pass: toManagerPassPassDto(pass) });
     } catch (error) {
@@ -1386,6 +1411,15 @@ export async function registerRoutes(
       
       const pass = await storage.updatePass(activeShareLink.passId, {
         jdStatus: 'changes_requested'
+      });
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_request_changes_requested",
+        targetType: "share_link",
+        targetId: activeShareLink.id,
+        details: { managerId: activeShareLink.managerId },
       });
       
       res.json({ message: "Feedback submitted successfully", pass: toManagerPassPassDto(pass) });
@@ -1481,6 +1515,15 @@ export async function registerRoutes(
           });
         }
       }
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_interview_setup_completed",
+        targetType: "share_link",
+        targetId: activeShareLink.id,
+        details: { managerId: activeShareLink.managerId, interviewFormat, interviewRounds },
+      });
       
       res.json({ message: "Interview setup completed" });
     } catch (error) {
@@ -1509,6 +1552,15 @@ export async function registerRoutes(
       const updatedPassCandidate = await storage.updatePassCandidate(passCandidate!.id, {
         status: 'shortlisted',
         shortlistedAt: new Date()
+      });
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_candidate_shortlisted",
+        targetType: "pass_candidate",
+        targetId: passCandidate!.id,
+        details: { managerId: activeShareLink.managerId },
       });
       
       res.json({ message: "Candidate shortlisted", passCandidate: updatedPassCandidate });
@@ -1543,6 +1595,15 @@ export async function registerRoutes(
         rejectionNotes: notes,
         rejectedAt: new Date()
       });
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_candidate_rejected",
+        targetType: "pass_candidate",
+        targetId: existingPassCandidate!.id,
+        details: { managerId: activeShareLink.managerId, reason: reason || null },
+      });
       
       res.json({ message: "Candidate rejected", passCandidate });
     } catch (error) {
@@ -1574,6 +1635,15 @@ export async function registerRoutes(
       });
       
       const evaluation = await storage.createInterviewEvaluation(validated);
+      await storage.logActivity({
+        passId: activeShareLink.passId,
+        actorType: "manager",
+        actorName: "Hiring Manager",
+        action: "manager_evaluation_submitted",
+        targetType: "interview",
+        targetId: interview!.id,
+        details: { managerId: activeShareLink.managerId, recommendation: req.body.recommendation || null },
+      });
       res.status(201).json(evaluation);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1622,6 +1692,15 @@ export async function registerRoutes(
             selectionNotes: `RESERVE: ${notes || ''}`
           });
         }
+        await storage.logActivity({
+          passId: activeShareLink.passId,
+          actorType: "manager",
+          actorName: "Hiring Manager",
+          action: "manager_final_decision_submitted",
+          targetType: "pass_candidate",
+          targetId: passCandidateId,
+          details: { managerId: activeShareLink.managerId, decision },
+        });
       }
       
       res.json({ message: "Final decisions submitted" });
@@ -1732,6 +1811,15 @@ export async function registerRoutes(
         await storage.updatePassCandidate(candidateLink.passCandidateId, {
           status: 'interview'
         });
+        await storage.logActivity({
+          passId: passCandidate.passId,
+          actorType: "candidate",
+          actorName: "Candidate",
+          action: "candidate_interview_slot_booked",
+          targetType: "pass_candidate",
+          targetId: candidateLink.passCandidateId,
+          details: { slotId: slot.id },
+        });
       }
       
       res.json({ message: "Interview slot booked", slot });
@@ -1747,17 +1835,57 @@ export async function registerRoutes(
       const candidateLink = await getValidCandidateLink(req.params.token, res);
       if (!candidateLink) return;
       
-      const { docType, label, fileName, filePath, fileSize } = req.body;
-      
-      const document = await storage.createCandidateDocument({
-        passCandidateId: candidateLink.passCandidateId,
-        docType,
-        label,
+      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
+      if (!passCandidate) {
+        return res.status(404).json({ error: "Candidate application not found" });
+      }
+
+      const { documentId, docType, label, fileName, filePath, fileSize } = req.body;
+      if (!fileName || typeof fileName !== "string") {
+        return res.status(400).json({ error: "A document file name is required" });
+      }
+
+      const documents = await storage.getCandidateDocuments(candidateLink.passCandidateId);
+      const requestedDocument = documentId
+        ? documents.find((document) => document.id === Number(documentId))
+        : documents.find((document) => isPendingDocument(document) && document.docType === docType);
+      if (documentId && !requestedDocument) {
+        return res.status(404).json({ error: "Document request is not available for this Candidate Pass" });
+      }
+      if (requestedDocument && !isPendingDocument(requestedDocument)) {
+        return res.status(409).json({ error: "Document request has already been completed" });
+      }
+
+      const documentData = {
+        docType: requestedDocument?.docType || docType,
+        label: requestedDocument?.label || label,
         fileName,
         filePath,
         fileSize,
         status: 'uploaded',
         uploadedAt: new Date()
+      };
+      if (!documentData.docType || !documentData.label) {
+        return res.status(400).json({ error: "Document type and label are required" });
+      }
+
+      const document = requestedDocument
+        ? await storage.updateCandidateDocument(requestedDocument.id, documentData)
+        : await storage.createCandidateDocument({
+            passCandidateId: candidateLink.passCandidateId,
+            ...documentData,
+          });
+      if (!document) {
+        return res.status(500).json({ error: "Failed to record candidate document" });
+      }
+      await storage.logActivity({
+        passId: passCandidate.passId,
+        actorType: "candidate",
+        actorName: "Candidate",
+        action: "candidate_document_submitted",
+        targetType: "candidate_document",
+        targetId: document.id,
+        details: { passCandidateId: candidateLink.passCandidateId, docType: document.docType },
       });
       
       res.status(201).json(document);
@@ -1785,6 +1913,17 @@ export async function registerRoutes(
         message,
         attachments
       });
+      if (passCandidate) {
+        await storage.logActivity({
+          passId: passCandidate.passId,
+          actorType: "candidate",
+          actorName: candidate?.name || "Candidate",
+          action: "candidate_message_sent",
+          targetType: "candidate_message",
+          targetId: msg.id,
+          details: { passCandidateId: candidateLink.passCandidateId },
+        });
+      }
       
       res.status(201).json(msg);
     } catch (error) {
@@ -1833,6 +1972,12 @@ export async function registerRoutes(
         await storage.updatePassCandidate(candidateLink.passCandidateId, { status: 'hired' });
       } else if (response === 'decline') {
         newStatus = 'declined';
+        await storage.updatePassCandidate(candidateLink.passCandidateId, {
+          status: 'rejected',
+          rejectionReason: 'Offer declined',
+          rejectionNotes: reason || responseMessage,
+          rejectedAt: new Date()
+        });
         await storage.updateOffer(offer.id, { 
           status: 'declined',
           declineReason: reason,
@@ -1851,6 +1996,18 @@ export async function registerRoutes(
         await storage.updateOffer(offer.id, { 
           status: 'accepted',
           respondedAt: new Date()
+        });
+      }
+      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
+      if (passCandidate) {
+        await storage.logActivity({
+          passId: passCandidate.passId,
+          actorType: "candidate",
+          actorName: "Candidate",
+          action: response === "accept" ? "candidate_offer_accepted_handoff" : "candidate_offer_response_submitted",
+          targetType: "offer",
+          targetId: offer.id,
+          details: { passCandidateId: candidateLink.passCandidateId, response },
         });
       }
       
@@ -1876,6 +2033,18 @@ export async function registerRoutes(
       } else if (assessmentType === 'technical') {
         await storage.updatePassCandidate(candidateLink.passCandidateId, {
           technicalCompletedAt: new Date()
+        });
+      }
+      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
+      if (passCandidate) {
+        await storage.logActivity({
+          passId: passCandidate.passId,
+          actorType: "candidate",
+          actorName: "Candidate",
+          action: "candidate_assessment_completed",
+          targetType: "pass_candidate",
+          targetId: candidateLink.passCandidateId,
+          details: { assessmentType },
         });
       }
       

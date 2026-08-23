@@ -282,6 +282,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getInterviewsByPass: async () => [interview],
     getManager: async () => manager,
     getInterviewSlotsByPass: async () => [interviewSlot],
+    logActivity: async (activity: any) => ({ id: 1, createdAt: new Date(), ...activity }),
     ...overrides,
   });
 
