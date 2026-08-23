@@ -15,23 +15,25 @@ const candidateMessages = {
 };
 
 const now = new Date("2026-08-22T12:00:00.000Z");
+const futureExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+const pastExpiry = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
 
 describe("Candidate Pass token access", () => {
   it("resolves an active token", () => {
-    const result = resolvePassAccess({ isActive: true, expiresAt: "2026-08-23T12:00:00.000Z" }, candidateMessages, now);
+    const result = resolvePassAccess({ isActive: true, expiresAt: futureExpiry }, candidateMessages, now);
     assert.equal(result.allowed, true);
   });
 
   it("rejects an inactive token", () => {
     assert.deepEqual(
-      resolvePassAccess({ isActive: false, expiresAt: "2026-08-23T12:00:00.000Z" }, candidateMessages, now),
+      resolvePassAccess({ isActive: false, expiresAt: futureExpiry }, candidateMessages, now),
       { allowed: false, status: 404, error: "Invalid or inactive link" },
     );
   });
 
   it("rejects an expired token", () => {
     assert.deepEqual(
-      resolvePassAccess({ isActive: true, expiresAt: "2026-08-21T12:00:00.000Z" }, candidateMessages, now),
+      resolvePassAccess({ isActive: true, expiresAt: pastExpiry }, candidateMessages, now),
       { allowed: false, status: 410, error: "Link has expired" },
     );
   });
@@ -39,27 +41,27 @@ describe("Candidate Pass token access", () => {
 
 describe("Manager Pass token access", () => {
   it("resolves an active token", () => {
-    const result = resolvePassAccess({ isActive: true, expiresAt: "2026-08-23T12:00:00.000Z" }, managerMessages, now);
+    const result = resolvePassAccess({ isActive: true, expiresAt: futureExpiry }, managerMessages, now);
     assert.equal(result.allowed, true);
   });
 
   it("rejects an inactive token", () => {
     assert.deepEqual(
-      resolvePassAccess({ isActive: false, expiresAt: "2026-08-23T12:00:00.000Z" }, managerMessages, now),
+      resolvePassAccess({ isActive: false, expiresAt: futureExpiry }, managerMessages, now),
       { allowed: false, status: 404, error: "Invalid or inactive share link" },
     );
   });
 
   it("rejects an expired token", () => {
     assert.deepEqual(
-      resolvePassAccess({ isActive: true, expiresAt: "2026-08-21T12:00:00.000Z" }, managerMessages, now),
+      resolvePassAccess({ isActive: true, expiresAt: pastExpiry }, managerMessages, now),
       { allowed: false, status: 410, error: "Share link has expired" },
     );
   });
 });
 
 describe("Candidate Pass action state", () => {
-  const activeLink = { isActive: true, expiresAt: "2026-08-23T12:00:00.000Z" };
+  const activeLink = { isActive: true, expiresAt: futureExpiry };
 
   it("marks an actionable candidate as ACTION_REQUIRED", () => {
     const state = resolveCandidatePassState({
@@ -143,7 +145,7 @@ describe("Candidate Pass action state", () => {
 });
 
 describe("Manager Pass action state", () => {
-  const activeLink = { isActive: true, expiresAt: "2026-08-23T12:00:00.000Z" };
+  const activeLink = { isActive: true, expiresAt: futureExpiry };
 
   it("marks a pending manager decision as ACTION_REQUIRED", () => {
     const state = resolveManagerPassState({

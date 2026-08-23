@@ -3,8 +3,10 @@ import type {
   CandidateDocument,
   CandidateLink,
   CandidateMessage,
+  CandidateTimelineEvent,
   Interview,
   InterviewSlot,
+  Manager,
   Offer,
   Pass,
   PassCandidate,
@@ -30,6 +32,28 @@ export type ManagerPassCandidateDto = {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
 };
 
+export type CandidatePassMessageDto = Pick<CandidateMessage, "id" | "senderType" | "senderName" | "message" | "isRead" | "readAt" | "createdAt">;
+
+export type CandidatePassTimelineEventDto = Pick<CandidateTimelineEvent, "id" | "stage" | "status" | "title" | "description" | "completedAt" | "createdAt">;
+
+export type CandidatePassInterviewDto = Pick<
+  Interview,
+  "id" | "interviewDate" | "startTime" | "endTime" | "duration" | "format" | "location" | "meetingLink" | "roundNumber" | "roundName" | "status"
+>;
+
+export type ManagerPassInterviewDto = Pick<
+  Interview,
+  "id" | "passCandidateId" | "interviewDate" | "startTime" | "endTime" | "duration" | "format" | "location" | "roundNumber" | "roundName" | "status"
+>;
+
+export type CandidatePassOfferDto = Pick<Offer, "id" | "salary" | "salaryCurrency" | "startDate" | "contractType" | "probationPeriod" | "benefits" | "status">;
+
+export type CandidatePassInterviewSlotDto = Pick<InterviewSlot, "id" | "slotDate" | "startTime" | "endTime" | "format" | "location" | "meetingLink">;
+
+export type ManagerPassInterviewSlotDto = Pick<InterviewSlot, "id" | "slotDate" | "startTime" | "endTime" | "format" | "location" | "isBooked">;
+
+export type ManagerPassManagerDto = Pick<Manager, "name">;
+
 export type CandidatePassPassDto = Pick<
   Pass,
   "id" | "passId" | "positionTitle" | "department" | "location" | "employmentType" | "status" | "currentStep" | "softSkillsAssessmentUrl" | "technicalAssessmentUrl"
@@ -46,9 +70,6 @@ export type ManagerPassPassDto = Pick<
   | "employmentType"
   | "experienceMin"
   | "experienceMax"
-  | "salaryRangeMin"
-  | "salaryRangeMax"
-  | "salaryCurrency"
   | "status"
   | "currentStep"
   | "jobDescriptionDraft"
@@ -99,9 +120,6 @@ export function toManagerPassPassDto(pass: Pass | undefined): ManagerPassPassDto
     employmentType: pass.employmentType,
     experienceMin: pass.experienceMin,
     experienceMax: pass.experienceMax,
-    salaryRangeMin: pass.salaryRangeMin,
-    salaryRangeMax: pass.salaryRangeMax,
-    salaryCurrency: pass.salaryCurrency,
     status: pass.status,
     currentStep: pass.currentStep,
     jobDescriptionDraft: pass.jobDescriptionDraft,
@@ -116,6 +134,106 @@ export function toManagerPassPassDto(pass: Pass | undefined): ManagerPassPassDto
     interviewSetupCompleted: pass.interviewSetupCompleted,
     targetHireDate: pass.targetHireDate,
   };
+}
+
+export function toCandidatePassMessageDto(message: CandidateMessage): CandidatePassMessageDto {
+  return {
+    id: message.id,
+    senderType: message.senderType,
+    senderName: message.senderName,
+    message: message.message,
+    isRead: message.isRead,
+    readAt: message.readAt,
+    createdAt: message.createdAt,
+  };
+}
+
+export function toCandidatePassTimelineEventDto(event: CandidateTimelineEvent): CandidatePassTimelineEventDto {
+  return {
+    id: event.id,
+    stage: event.stage,
+    status: event.status,
+    title: event.title,
+    description: event.description,
+    completedAt: event.completedAt,
+    createdAt: event.createdAt,
+  };
+}
+
+export function toCandidatePassInterviewDto(interview: Interview): CandidatePassInterviewDto {
+  return {
+    id: interview.id,
+    interviewDate: interview.interviewDate,
+    startTime: interview.startTime,
+    endTime: interview.endTime,
+    duration: interview.duration,
+    format: interview.format,
+    location: interview.location,
+    meetingLink: interview.meetingLink,
+    roundNumber: interview.roundNumber,
+    roundName: interview.roundName,
+    status: interview.status,
+  };
+}
+
+export function toManagerPassInterviewDto(interview: Interview): ManagerPassInterviewDto {
+  return {
+    id: interview.id,
+    passCandidateId: interview.passCandidateId,
+    interviewDate: interview.interviewDate,
+    startTime: interview.startTime,
+    endTime: interview.endTime,
+    duration: interview.duration,
+    format: interview.format,
+    location: interview.location,
+    roundNumber: interview.roundNumber,
+    roundName: interview.roundName,
+    status: interview.status,
+  };
+}
+
+export function toCandidatePassOfferDto(offer: Offer | undefined): CandidatePassOfferDto | null {
+  if (!offer) return null;
+
+  return {
+    id: offer.id,
+    salary: offer.salary,
+    salaryCurrency: offer.salaryCurrency,
+    startDate: offer.startDate,
+    contractType: offer.contractType,
+    probationPeriod: offer.probationPeriod,
+    benefits: offer.benefits,
+    status: offer.status,
+  };
+}
+
+export function toCandidatePassInterviewSlotDto(slot: InterviewSlot): CandidatePassInterviewSlotDto {
+  return {
+    id: slot.id,
+    slotDate: slot.slotDate,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    format: slot.format,
+    location: slot.location,
+    meetingLink: slot.meetingLink,
+  };
+}
+
+export function toManagerPassInterviewSlotDto(slot: InterviewSlot): ManagerPassInterviewSlotDto {
+  return {
+    id: slot.id,
+    slotDate: slot.slotDate,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    format: slot.format,
+    location: slot.location,
+    isBooked: slot.isBooked,
+  };
+}
+
+export function toManagerPassManagerDto(manager: Manager | null | undefined): ManagerPassManagerDto | null {
+  if (!manager) return null;
+  return { name: manager.name };
 }
 
 export function toCandidatePassDocumentDto(document: CandidateDocument): CandidatePassDocumentDto {
@@ -218,7 +336,7 @@ export function buildCandidatePassPayload(input: {
   pass: Pass | undefined;
   messages: CandidateMessage[];
   documents: CandidateDocument[];
-  timeline: unknown[];
+  timeline: CandidateTimelineEvent[];
   interviews: Interview[];
   offer: Offer | undefined;
   interviewSlots: InterviewSlot[];
@@ -229,12 +347,12 @@ export function buildCandidatePassPayload(input: {
     candidate: toCandidatePassCandidateProfileDto(input.candidate),
     passCandidate: toCandidatePassCandidateDto(input.passCandidate),
     pass: toCandidatePassPassDto(input.pass),
-    messages: input.messages,
+    messages: input.messages.map(toCandidatePassMessageDto),
     documents: input.documents.map(toCandidatePassDocumentDto),
-    timeline: input.timeline,
-    interviews: input.interviews,
-    offer: input.offer,
-    interviewSlots: input.interviewSlots,
+    timeline: input.timeline.map(toCandidatePassTimelineEventDto),
+    interviews: input.interviews.map(toCandidatePassInterviewDto),
+    offer: toCandidatePassOfferDto(input.offer),
+    interviewSlots: input.interviewSlots.map(toCandidatePassInterviewSlotDto),
     passState: input.passState,
   };
 }
@@ -244,7 +362,7 @@ export function buildManagerPassPayload(input: {
   pass: Pass | undefined;
   candidates: Array<PassCandidate & { candidate?: Candidate | null }>;
   interviews: Interview[];
-  manager: unknown;
+  manager: Manager | null | undefined;
   interviewSlots: InterviewSlot[];
   managerPassState: unknown;
 }) {
@@ -252,9 +370,9 @@ export function buildManagerPassPayload(input: {
     shareLink: toManagerShareLinkDto(input.shareLink),
     pass: toManagerPassPassDto(input.pass),
     candidates: input.candidates.map(toManagerPassCandidateDto),
-    interviews: input.interviews,
-    manager: input.manager,
-    interviewSlots: input.interviewSlots,
+    interviews: input.interviews.map(toManagerPassInterviewDto),
+    manager: toManagerPassManagerDto(input.manager),
+    interviewSlots: input.interviewSlots.map(toManagerPassInterviewSlotDto),
     managerPassState: input.managerPassState,
   };
 }
