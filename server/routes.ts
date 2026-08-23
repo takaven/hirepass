@@ -1,5 +1,6 @@
 import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
+import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { 
   insertManagerSchema, 
@@ -35,6 +36,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   const defaultExpiry = () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const createCandidatePassToken = () => `cand_${randomBytes(32).toString("base64url")}`;
 
   async function getValidCandidateLink(token: string, res: Response) {
     const candidateLink = await storage.getCandidateLinkByToken(token);
@@ -192,7 +194,7 @@ export async function registerRoutes(
       if (!passCandidate || passCandidate.passId !== passId) {
         return res.status(404).json({ error: "Candidate is not available for this Pass" });
       }
-      const token = `cand_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+      const token = createCandidatePassToken();
       const link = await storage.createCandidateLink({
         token,
         passCandidateId,
@@ -283,7 +285,10 @@ export async function registerRoutes(
       const { expiresAt } = extendLinkSchema.parse(req.body);
       const link = (await storage.getShareLinksByPass(passId)).find((item) => item.id === linkId);
       if (!link) return res.status(404).json({ error: "Manager Pass link is not available for this Pass" });
-      const updated = await storage.updateShareLink(link.id, { expiresAt, isActive: true });
+      if (link.isActive === false) {
+        return res.status(409).json({ error: "Revoked Manager Pass links must be reissued, not extended" });
+      }
+      const updated = await storage.updateShareLink(link.id, { expiresAt });
       await storage.logActivity({
         passId,
         actorType: "hr",
@@ -314,7 +319,10 @@ export async function registerRoutes(
         foundLink = links.find((item) => item.id === linkId && item.passCandidateId === candidate.id) || foundLink;
       }
       if (!foundLink) return res.status(404).json({ error: "Candidate Pass link is not available for this Pass" });
-      const updated = await storage.updateCandidateLink(foundLink.id, { expiresAt, isActive: true });
+      if (foundLink.isActive === false) {
+        return res.status(409).json({ error: "Revoked Candidate Pass links must be reissued, not extended" });
+      }
+      const updated = await storage.updateCandidateLink(foundLink.id, { expiresAt });
       await storage.logActivity({
         passId,
         actorType: "hr",
@@ -1264,7 +1272,7 @@ export async function registerRoutes(
       }
       
       // Generate a unique token
-      const token = `cand_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      const token = createCandidatePassToken();
       
       const candidateLink = await storage.createCandidateLink({
         token,
@@ -1952,7 +1960,7 @@ export async function registerRoutes(
       const { expiresAt } = req.body;
       
       // Generate a unique token
-      const token = `cand_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+      const token = createCandidatePassToken();
       
       const link = await storage.createCandidateLink({
         token,

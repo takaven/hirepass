@@ -15,10 +15,14 @@ before(async () => {
   ({ storage } = await import("./storage"));
 });
 
-const now = new Date("2026-08-22T12:00:00.000Z");
-const future = new Date("2026-08-29T12:00:00.000Z");
-const past = new Date("2026-08-15T12:00:00.000Z");
-const oldDate = new Date("2026-08-10T12:00:00.000Z");
+const now = new Date();
+function daysFromNow(days: number) {
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+const future = daysFromNow(7);
+const past = daysFromNow(-7);
+const oldDate = daysFromNow(-12);
+const futureDateOnly = future.toISOString().slice(0, 10);
 
 const pass = {
   id: 10,
@@ -97,7 +101,7 @@ const candidateLink = {
 const interviewSlot = {
   id: 501,
   passId: 10,
-  slotDate: "2026-08-25",
+  slotDate: futureDateOnly,
   startTime: "10:00",
   endTime: "10:45",
   format: "online",
@@ -258,6 +262,27 @@ describe("HR Pass Control state", () => {
     assert.equal(item.isStalled, true);
     assert.equal(item.candidates[0].isStalled, true);
   });
+
+  it("marks old unresolved manager actions as stalled", () => {
+    const item = buildPassControlItem({
+      pass: pass as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "screening" } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [],
+      now,
+    });
+
+    assert.equal(item.waitingOn, "manager");
+    assert.equal(item.managerActions, 1);
+    assert.equal(item.isStalled, true);
+  });
 });
 
 describe("HR Pass Control lifecycle routes", () => {
@@ -268,6 +293,23 @@ describe("HR Pass Control lifecycle routes", () => {
 
       const external = await fetch(`${baseUrl}/api/manager-pass/manager-token`);
       assert.equal(external.status, 404);
+    });
+  });
+
+  it("revokes a Candidate Pass and denies external access and mutations afterward", async () => {
+    await withServer({}, async (baseUrl) => {
+      const revoke = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidate-links/21/revoke`, { method: "POST" });
+      assert.equal(revoke.status, 200);
+
+      const external = await fetch(`${baseUrl}/api/candidate-pass/candidate-token`);
+      assert.equal(external.status, 404);
+
+      const mutation = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Hello" }),
+      });
+      assert.equal(mutation.status, 404);
     });
   });
 
@@ -292,6 +334,62 @@ describe("HR Pass Control lifecycle routes", () => {
     });
   });
 
+  it("extends an active Candidate Pass expiry without changing active state", async () => {
+    let updatePayload: any = null;
+    await withServer({
+      updateCandidateLink: async (_id: number, data: any) => {
+        updatePayload = data;
+        return { ...candidateLink, ...data };
+      },
+    }, async (baseUrl) => {
+      const extended = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidate-links/21/extend`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expiresAt: future.toISOString() }),
+      });
+      assert.equal(extended.status, 200);
+      assert.deepEqual(Object.keys(updatePayload), ["expiresAt"]);
+    });
+  });
+
+  it("rejects extending revoked Candidate Pass links without reactivation", async () => {
+    let updateCalled = false;
+    await withServer({
+      getCandidateLinksByPassCandidate: async () => [{ ...candidateLink, isActive: false }],
+      updateCandidateLink: async () => {
+        updateCalled = true;
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidate-links/21/extend`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expiresAt: future.toISOString() }),
+      });
+
+      assert.equal(response.status, 409);
+      assert.equal(updateCalled, false);
+    });
+  });
+
+  it("rejects extending revoked Manager Pass links without reactivation", async () => {
+    let updateCalled = false;
+    await withServer({
+      getShareLinksByPass: async () => [{ ...managerLink, isActive: false }],
+      updateShareLink: async () => {
+        updateCalled = true;
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-links/11/extend`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expiresAt: future.toISOString() }),
+      });
+
+      assert.equal(response.status, 409);
+      assert.equal(updateCalled, false);
+    });
+  });
+
   it("prevents cross-pass candidate link mutation through supplied IDs", async () => {
     let updated = false;
     await withServer({
@@ -302,6 +400,25 @@ describe("HR Pass Control lifecycle routes", () => {
       },
     }, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/20/candidate-links/21/revoke`, { method: "POST" });
+      assert.equal(response.status, 404);
+      assert.equal(updated, false);
+    });
+  });
+
+  it("prevents cross-pass candidate link extension through supplied IDs", async () => {
+    let updated = false;
+    await withServer({
+      getPassCandidatesWithDetails: async () => [{ ...passCandidate, id: 101 }],
+      getCandidateLinksByPassCandidate: async () => [{ ...candidateLink, id: 21, passCandidateId: 999 }],
+      updateCandidateLink: async () => {
+        updated = true;
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/20/candidate-links/21/extend`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expiresAt: future.toISOString() }),
+      });
       assert.equal(response.status, 404);
       assert.equal(updated, false);
     });
@@ -340,6 +457,26 @@ describe("HR Pass Control lifecycle routes", () => {
       assert.equal(response.status, 201);
       assert.equal(createdWith.passCandidateId, 101);
       assert.equal(createdWith.isActive, true);
+    });
+  });
+
+  it("issues distinct cryptographic-looking Candidate Pass tokens", async () => {
+    const issuedTokens: string[] = [];
+    await withServer({
+      createCandidateLink: async (data: any) => {
+        issuedTokens.push(data.token);
+        return { id: issuedTokens.length + 30, ...data };
+      },
+    }, async (baseUrl) => {
+      const first = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidates/101/candidate-link`, { method: "POST" });
+      const second = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidates/101/candidate-link`, { method: "POST" });
+
+      assert.equal(first.status, 201);
+      assert.equal(second.status, 201);
+      assert.equal(issuedTokens.length, 2);
+      assert.notEqual(issuedTokens[0], issuedTokens[1]);
+      assert.match(issuedTokens[0], /^cand_[A-Za-z0-9_-]{40,}$/);
+      assert.equal(issuedTokens[0].includes(String(Date.now()).slice(0, 8)), false);
     });
   });
 
