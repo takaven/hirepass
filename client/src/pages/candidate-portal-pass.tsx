@@ -26,6 +26,19 @@ import {
 } from "lucide-react";
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
 
+async function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") return reject(new Error("Could not read file"));
+      resolve(result);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 type CandidatePassActionState =
   | "ACTION_REQUIRED"
   | "WAITING"
@@ -229,11 +242,12 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   });
 
   const submitDocumentMutation = useMutation({
-    mutationFn: ({ documentId, file }: { documentId: number; file: File }) =>
+    mutationFn: async ({ documentId, file }: { documentId: number; file: File }) =>
       apiRequest("POST", `/api/candidate-pass/${token}/documents`, {
         documentId,
         fileName: file.name,
-        fileSize: file.size,
+        mimeType: file.type,
+        fileDataBase64: await fileToBase64(file),
       }),
     onSuccess: () => {
       toast({ title: "Document received", description: "Your Candidate Pass has been updated." });
@@ -523,7 +537,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               {pendingDocs.length > 0 && (
                 <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
                   <Upload className="h-4 w-4" />
-                  File metadata is recorded against this Pass. Durable production file storage is verified in the release-readiness gate.
+                  Upload PDF, JPG or PNG files only. Your document is stored against this Candidate Pass.
                 </p>
               )}
             </CardContent>

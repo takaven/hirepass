@@ -28,6 +28,13 @@ import {
   toManagerPassPassDto,
 } from "./external-pass-security";
 import { buildPassControlItem } from "./hr-pass-control";
+import { disableOutOfScopeProductionRoutes, requireInternalAdmin } from "./auth";
+import {
+  readStoredCandidateDocument,
+  removeStoredCandidateDocument,
+  storeCandidateDocumentUpload,
+  validateUploadRoot,
+} from "./document-files";
 
 const anthropic = new Anthropic();
 
@@ -91,6 +98,26 @@ export async function registerRoutes(
   function isPendingDocument(document: { status?: string | null }) {
     return (document.status || "pending").toLowerCase() === "pending";
   }
+
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  app.get("/api/ready", async (_req, res) => {
+    try {
+      if (process.env.NODE_ENV === "production") {
+        if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing");
+        if (!process.env.HIREPASS_SESSION_SECRET) throw new Error("HIREPASS_SESSION_SECRET missing");
+      }
+      await validateUploadRoot();
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(503).json({ ok: false, error: "HirePass is not ready" });
+    }
+  });
+
+  app.use(disableOutOfScopeProductionRoutes);
+  app.use(requireInternalAdmin);
   
   // ============ ANALYTICS ROUTES ============
   app.get("/api/analytics/stats", async (req, res) => {
@@ -1840,10 +1867,15 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Candidate application not found" });
       }
 
-      const { documentId, docType, label, fileName, filePath, fileSize } = req.body;
-      if (!fileName || typeof fileName !== "string") {
-        return res.status(400).json({ error: "A document file name is required" });
-      }
+      const uploadSchema = z.object({
+        documentId: z.number().int().positive().optional(),
+        docType: z.string().min(1).max(50).optional(),
+        label: z.string().min(1).max(255).optional(),
+        fileName: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(100).optional(),
+        fileDataBase64: z.string().min(1),
+      });
+      const { documentId, docType, label, fileName, mimeType, fileDataBase64 } = uploadSchema.parse(req.body);
 
       const documents = await storage.getCandidateDocuments(candidateLink.passCandidateId);
       const requestedDocument = documentId
@@ -1856,18 +1888,35 @@ export async function registerRoutes(
         return res.status(409).json({ error: "Document request has already been completed" });
       }
 
+      let storedUpload: Awaited<ReturnType<typeof storeCandidateDocumentUpload>>;
+      try {
+        storedUpload = await storeCandidateDocumentUpload({
+          passCandidateId: candidateLink.passCandidateId,
+          documentId: requestedDocument?.id || 0,
+          fileName,
+          mimeType,
+          fileDataBase64,
+        });
+      } catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid document upload" });
+      }
+
+      const resolvedDocType = requestedDocument?.docType || docType;
+      const resolvedLabel = requestedDocument?.label || label;
+      if (!resolvedDocType || !resolvedLabel) {
+        await removeStoredCandidateDocument(storedUpload.storageKey);
+        return res.status(400).json({ error: "Document type and label are required" });
+      }
+
       const documentData = {
-        docType: requestedDocument?.docType || docType,
-        label: requestedDocument?.label || label,
-        fileName,
-        filePath,
-        fileSize,
+        docType: resolvedDocType,
+        label: resolvedLabel,
+        fileName: storedUpload.originalName,
+        filePath: storedUpload.storageKey,
+        fileSize: storedUpload.size,
         status: 'uploaded',
         uploadedAt: new Date()
       };
-      if (!documentData.docType || !documentData.label) {
-        return res.status(400).json({ error: "Document type and label are required" });
-      }
 
       const document = requestedDocument
         ? await storage.updateCandidateDocument(requestedDocument.id, documentData)
@@ -1876,7 +1925,11 @@ export async function registerRoutes(
             ...documentData,
           });
       if (!document) {
+        await removeStoredCandidateDocument(storedUpload.storageKey);
         return res.status(500).json({ error: "Failed to record candidate document" });
+      }
+      if (requestedDocument?.filePath && requestedDocument.filePath !== storedUpload.storageKey) {
+        await removeStoredCandidateDocument(requestedDocument.filePath);
       }
       await storage.logActivity({
         passId: passCandidate.passId,
@@ -1890,8 +1943,37 @@ export async function registerRoutes(
       
       res.status(201).json(document);
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       console.error("Error uploading document:", error);
       res.status(500).json({ error: "Failed to upload document" });
+    }
+  });
+
+  app.get("/api/pass-candidates/:id/documents/:documentId/download", async (req, res) => {
+    try {
+      const passCandidateId = parsePositiveId(req.params.id);
+      const documentId = parsePositiveId(req.params.documentId);
+      if (!passCandidateId || !documentId) {
+        return res.status(400).json({ error: "Valid candidate/document IDs are required" });
+      }
+      const documents = await storage.getCandidateDocuments(passCandidateId);
+      const document = documents.find((item) => item.id === documentId && item.passCandidateId === passCandidateId);
+      if (!document?.filePath || document.status !== "uploaded") {
+        return res.status(404).json({ error: "Document file not found" });
+      }
+      const file = await readStoredCandidateDocument(document.filePath);
+      const lowerName = (document.fileName || "").toLowerCase();
+      const contentType = lowerName.endsWith(".png")
+        ? "image/png"
+        : lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
+          ? "image/jpeg"
+          : "application/pdf";
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(document.fileName || "document")}"`);
+      res.type(contentType);
+      res.send(file);
+    } catch (error) {
+      console.error("Error retrieving candidate document:", error);
+      res.status(500).json({ error: "Failed to retrieve candidate document" });
     }
   });
   

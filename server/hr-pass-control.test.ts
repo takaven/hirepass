@@ -602,7 +602,12 @@ describe("HR Pass Control lifecycle routes", () => {
       const upload = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documentId: 701, fileName: "passport.pdf", fileSize: 12000 }),
+        body: JSON.stringify({
+          documentId: 701,
+          fileName: "passport.pdf",
+          mimeType: "application/pdf",
+          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document").toString("base64"),
+        }),
       });
       assert.equal(upload.status, 201);
       assert.equal(mutableDocuments[0].status, "uploaded");
@@ -628,7 +633,12 @@ describe("HR Pass Control lifecycle routes", () => {
       const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documentId: 999, fileName: "passport.pdf" }),
+        body: JSON.stringify({
+          documentId: 999,
+          fileName: "passport.pdf",
+          mimeType: "application/pdf",
+          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document").toString("base64"),
+        }),
       });
       assert.equal(response.status, 404);
     });

@@ -1,6 +1,7 @@
 import { Switch, Route, useLocation } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { apiRequest, queryClient } from "./lib/queryClient";
+import { QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -31,6 +32,81 @@ import OnboardingPass from "@/pages/onboarding-pass";
 import ManagerRecruitmentPass from "@/pages/manager-recruitment-pass";
 import CandidatePortalPass from "@/pages/candidate-portal-pass";
 import OnboardingPortalPass from "@/pages/onboarding-portal-pass";
+
+function InternalLogin() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const loginMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/auth/login", { username, password }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }),
+  });
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+      <form
+        className="w-full max-w-sm space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100"
+        onSubmit={(event) => {
+          event.preventDefault();
+          loginMutation.mutate();
+        }}
+      >
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">HirePass</p>
+          <h1 className="mt-1 text-xl font-semibold text-white">Internal sign in</h1>
+        </div>
+        <label className="block space-y-1 text-sm">
+          <span className="text-slate-300">Username</span>
+          <input
+            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-blue-400"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            data-testid="input-internal-username"
+          />
+        </label>
+        <label className="block space-y-1 text-sm">
+          <span className="text-slate-300">Password</span>
+          <input
+            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-blue-400"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            data-testid="input-internal-password"
+          />
+        </label>
+        {loginMutation.isError && <p className="text-sm text-red-300">Sign in failed. Check the configured owner/admin credentials.</p>}
+        <button
+          className="h-10 w-full rounded-md bg-blue-500 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-60"
+          type="submit"
+          disabled={loginMutation.isPending}
+          data-testid="button-internal-login"
+        >
+          {loginMutation.isPending ? "Signing in..." : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function InternalAuthGate() {
+  const { data, isLoading } = useQuery<{ user?: { username: string; role: string } } | null>({
+    queryKey: ["/api/auth/me"],
+    queryFn: async () => {
+      const response = await fetch("/api/auth/me", { credentials: "include" });
+      if (response.status === 401) return null;
+      if (!response.ok) throw new Error("Could not verify internal access");
+      return response.json();
+    },
+    retry: false,
+  });
+
+  if (isLoading) {
+    return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Checking access...</div>;
+  }
+  if (!data?.user) return <InternalLogin />;
+  return <MainLayout />;
+}
 
 function MainRouter() {
   return (
@@ -63,6 +139,10 @@ function MainRouter() {
 }
 
 function MainLayout() {
+  const logoutMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/auth/logout"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }),
+  });
   const sidebarStyle = {
     "--sidebar-width": "12rem",
     "--sidebar-width-icon": "3rem",
@@ -80,6 +160,14 @@ function MainLayout() {
             <div className="flex items-center gap-2">
               <NotificationsDropdown />
               <ThemeToggle />
+              <button
+                className="h-7 rounded-md border border-slate-300 px-2 text-xs text-slate-700 hover:bg-slate-100"
+                onClick={() => logoutMutation.mutate()}
+                disabled={logoutMutation.isPending}
+                data-testid="button-internal-logout"
+              >
+                Sign out
+              </button>
             </div>
           </header>
           <main className="flex-1 overflow-y-auto">
@@ -144,7 +232,7 @@ function App() {
               }}</Route>
             </Switch>
           ) : (
-            <MainLayout />
+            <InternalAuthGate />
           )}
           <Toaster />
         </TooltipProvider>
@@ -154,4 +242,3 @@ function App() {
 }
 
 export default App;
-
