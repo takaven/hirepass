@@ -22,6 +22,7 @@ import ManagerForm from "@/pages/manager-form";
 import Settings from "@/pages/settings";
 import Analytics from "@/pages/analytics";
 import AiAssistant from "@/pages/ai-assistant";
+import HrPassControl from "@/pages/hr-pass-control";
 import PublicApply from "@/pages/public-apply";
 import PassCandidates from "@/pages/pass-candidates";
 import RecruitmentPass from "@/pages/recruitment-pass";
@@ -36,6 +37,7 @@ function MainRouter() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/passes" component={Passes} />
+      <Route path="/pass-control" component={HrPassControl} />
       <Route path="/passes/new" component={PassForm} />
       <Route path="/passes/:id" component={PassDetail} />
       <Route path="/passes/:id/edit" component={PassForm} />

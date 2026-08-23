@@ -1,0 +1,208 @@
+import { resolveCandidatePassState } from "./candidate-pass-state";
+import { resolveManagerPassState } from "./manager-pass-state";
+import type {
+  ActivityLog,
+  Candidate,
+  CandidateDocument,
+  CandidateLink,
+  CandidateMessage,
+  Interview,
+  InterviewSlot,
+  Manager,
+  Offer,
+  Pass,
+  PassCandidate,
+  ShareLink,
+} from "@shared/schema";
+
+export type WaitingOn = "candidate" | "manager" | "hr" | "upcoming_event" | "no_action" | "completed" | "expired_revoked";
+export type PassControlPriority = "attention" | "monitor" | "complete";
+
+export type PassControlCandidate = {
+  id: number;
+  passId: number;
+  candidateName: string;
+  status: string;
+  waitingOn: WaitingOn;
+  stateLabel: string;
+  nextAction: string;
+  isStalled: boolean;
+  lastMeaningfulAt: string | null;
+  activeCandidateLink: CandidateLink | null;
+  latestCandidateLink: CandidateLink | null;
+};
+
+export type PassControlItem = {
+  passId: number;
+  readablePassId: string | null;
+  title: string;
+  department: string | null;
+  managerName: string | null;
+  waitingOn: WaitingOn;
+  priority: PassControlPriority;
+  isStalled: boolean;
+  status: string;
+  nextAction: string;
+  candidateActions: number;
+  managerActions: number;
+  upcomingEvents: number;
+  expiredOrRevokedLinks: number;
+  activeManagerLink: ShareLink | null;
+  latestManagerLink: ShareLink | null;
+  candidates: PassControlCandidate[];
+  recentActivity: ActivityLog[];
+};
+
+export type PassControlSource = {
+  pass: Pass;
+  manager?: Manager | null;
+  candidates: Array<PassCandidate & { candidate?: Candidate | null }>;
+  candidateLinksByPassCandidateId: Map<number, CandidateLink[]>;
+  managerLinks: ShareLink[];
+  interviews: Interview[];
+  interviewSlots: InterviewSlot[];
+  messagesByPassCandidateId: Map<number, CandidateMessage[]>;
+  documentsByPassCandidateId: Map<number, CandidateDocument[]>;
+  offersByPassCandidateId: Map<number, Offer | undefined>;
+  activity: ActivityLog[];
+  now?: Date;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const STALL_DAYS = 5;
+const terminalStatuses = new Set(["hired", "rejected", "withdrawn"]);
+type LinkWithDates = { expiresAt?: unknown; isActive?: boolean | null; createdAt?: unknown; lastAccessedAt?: unknown };
+
+function dateValue(value: unknown): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isExpired(value: LinkWithDates | null | undefined, now: Date): boolean {
+  if (!value) return false;
+  const expiresAt = dateValue(value.expiresAt);
+  return value.isActive === false || Boolean(expiresAt && expiresAt <= now);
+}
+
+function latestDate(...values: unknown[]): Date | null {
+  const dates = values.map(dateValue).filter((value): value is Date => Boolean(value));
+  if (!dates.length) return null;
+  return new Date(Math.max(...dates.map((date) => date.getTime())));
+}
+
+function latestByCreatedAt<T extends { createdAt?: unknown }>(items: T[]): T | null {
+  return [...items].sort((a, b) => (dateValue(b.createdAt)?.getTime() || 0) - (dateValue(a.createdAt)?.getTime() || 0))[0] || null;
+}
+
+function activeLatestLink<T extends LinkWithDates>(items: T[], now: Date): T | null {
+  return [...items]
+    .filter((item) => item.isActive !== false && !isExpired(item, now))
+    .sort((a, b) => (dateValue(b.createdAt)?.getTime() || 0) - (dateValue(a.createdAt)?.getTime() || 0))[0] || null;
+}
+
+function isStalled(waitingOn: WaitingOn, lastMeaningfulAt: Date | null, now: Date): boolean {
+  if (!["candidate", "manager", "hr"].includes(waitingOn)) return false;
+  if (!lastMeaningfulAt) return true;
+  return now.getTime() - lastMeaningfulAt.getTime() > STALL_DAYS * DAY_MS;
+}
+
+function candidateWaitingOn(actionState: string, waitingOn?: string): WaitingOn {
+  if (actionState === "COMPLETED") return "completed";
+  if (["EXPIRED", "REVOKED"].includes(actionState)) return "expired_revoked";
+  if (actionState === "UPCOMING") return "upcoming_event";
+  if (actionState === "ACTION_REQUIRED") return "candidate";
+  if ((waitingOn || "").toLowerCase().includes("hiring")) return "hr";
+  return "no_action";
+}
+
+function managerWaitingOn(actionState: string): WaitingOn {
+  if (actionState === "COMPLETED") return "completed";
+  if (["EXPIRED", "REVOKED"].includes(actionState)) return "expired_revoked";
+  if (actionState === "UPCOMING") return "upcoming_event";
+  if (actionState === "ACTION_REQUIRED") return "manager";
+  return "no_action";
+}
+
+function pickPassWaitingOn(candidates: PassControlCandidate[], managerState: WaitingOn, hasExpiredOrRevoked: boolean): WaitingOn {
+  if (candidates.some((candidate) => candidate.waitingOn === "candidate")) return "candidate";
+  if (managerState === "manager") return "manager";
+  if (candidates.some((candidate) => candidate.waitingOn === "hr")) return "hr";
+  if (managerState === "upcoming_event" || candidates.some((candidate) => candidate.waitingOn === "upcoming_event")) return "upcoming_event";
+  if (candidates.length && candidates.every((candidate) => candidate.waitingOn === "completed")) return "completed";
+  if (hasExpiredOrRevoked) return "expired_revoked";
+  return "no_action";
+}
+
+export function buildPassControlItem(source: PassControlSource): PassControlItem {
+  const now = source.now || new Date();
+  const activeManagerLink = activeLatestLink(source.managerLinks, now);
+  const latestManagerLink = latestByCreatedAt(source.managerLinks);
+  const managerState = resolveManagerPassState({
+    link: activeManagerLink || latestManagerLink || { isActive: false, expiresAt: null },
+    pass: source.pass,
+    candidates: source.candidates,
+    interviews: source.interviews,
+    now,
+  });
+  const managerWaiting = managerWaitingOn(managerState.actionState);
+
+  const candidates = source.candidates.map((passCandidate) => {
+    const links = source.candidateLinksByPassCandidateId.get(passCandidate.id) || [];
+    const activeCandidateLink = activeLatestLink(links, now);
+    const latestCandidateLink = latestByCreatedAt(links);
+    const passState = resolveCandidatePassState({
+      link: activeCandidateLink || latestCandidateLink || { isActive: false, expiresAt: null },
+      passCandidate,
+      pass: source.pass,
+      messages: source.messagesByPassCandidateId.get(passCandidate.id) || [],
+      documents: source.documentsByPassCandidateId.get(passCandidate.id) || [],
+      interviews: source.interviews.filter((interview) => interview.passCandidateId === passCandidate.id),
+      offer: source.offersByPassCandidateId.get(passCandidate.id),
+      interviewSlots: source.interviewSlots,
+      now,
+    });
+    const waitingOn = terminalStatuses.has(passCandidate.status || "") ? "completed" : candidateWaitingOn(passState.actionState, passState.waitingOn);
+    const lastMeaningfulAt = latestDate(passCandidate.updatedAt, passCandidate.addedAt, latestCandidateLink?.createdAt);
+    return {
+      id: passCandidate.id,
+      passId: passCandidate.passId,
+      candidateName: passCandidate.candidate?.name || "Candidate",
+      status: passCandidate.status || "new",
+      waitingOn,
+      stateLabel: passState.stateLabel,
+      nextAction: passState.nextAction.label,
+      isStalled: isStalled(waitingOn, lastMeaningfulAt, now),
+      lastMeaningfulAt: lastMeaningfulAt?.toISOString() || null,
+      activeCandidateLink,
+      latestCandidateLink,
+    };
+  });
+
+  const expiredOrRevokedLinks = source.managerLinks.filter((link) => isExpired(link, now)).length
+    + Array.from(source.candidateLinksByPassCandidateId.values()).flat().filter((link) => isExpired(link, now)).length;
+  const waitingOn = pickPassWaitingOn(candidates, managerWaiting, expiredOrRevokedLinks > 0);
+  const managerLastMeaningfulAt = latestDate(source.pass.updatedAt, activeManagerLink?.lastAccessedAt, latestManagerLink?.createdAt);
+  const stalled = candidates.some((candidate) => candidate.isStalled) || isStalled(managerWaiting, managerLastMeaningfulAt, now);
+
+  return {
+    passId: source.pass.id,
+    readablePassId: source.pass.passId || null,
+    title: source.pass.positionTitle,
+    department: source.pass.department || null,
+    managerName: source.manager?.name || null,
+    waitingOn,
+    priority: stalled || ["candidate", "manager", "hr", "expired_revoked"].includes(waitingOn) ? "attention" : waitingOn === "completed" ? "complete" : "monitor",
+    isStalled: stalled,
+    status: source.pass.status || "draft",
+    nextAction: managerWaiting === "manager" ? managerState.nextDecision.label : candidates.find((candidate) => ["candidate", "hr"].includes(candidate.waitingOn))?.nextAction || "Monitor Pass",
+    candidateActions: candidates.filter((candidate) => candidate.waitingOn === "candidate").length,
+    managerActions: managerWaiting === "manager" ? 1 : 0,
+    upcomingEvents: source.interviews.filter((interview) => interview.status === "scheduled").length,
+    expiredOrRevokedLinks,
+    activeManagerLink,
+    latestManagerLink,
+    candidates,
+    recentActivity: source.activity.slice(0, 5),
+  };
+}

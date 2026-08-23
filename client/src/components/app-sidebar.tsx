@@ -8,6 +8,7 @@ import {
   Building2,
   BarChart3,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,6 +33,11 @@ const navItems = [
     title: "Passes",
     url: "/passes",
     icon: FileText,
+  },
+  {
+    title: "Pass Control",
+    url: "/pass-control",
+    icon: ShieldCheck,
   },
   {
     title: "Candidates",
