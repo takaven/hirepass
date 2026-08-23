@@ -110,6 +110,7 @@ export interface IStorage {
 
   // Share Links
   getShareLinkByToken(token: string): Promise<ShareLink | undefined>;
+  getShareLinksByPass(passId: number): Promise<ShareLink[]>;
   createShareLink(shareLink: InsertShareLink): Promise<ShareLink>;
 
   // Activity Log
@@ -170,6 +171,8 @@ export interface IStorage {
 
   // Candidate Pass methods
   getCandidateLinkByToken(token: string): Promise<any | undefined>;
+  getCandidateLinksByPassCandidate(passCandidateId: number): Promise<any[]>;
+  updateCandidateLink(id: number, data: Partial<typeof candidateLinks.$inferSelect>): Promise<any | undefined>;
   createCandidateLink(data: any): Promise<any>;
   getPassCandidateById(id: number): Promise<PassCandidate | undefined>;
   getCandidateMessages(passCandidateId: number): Promise<CandidateMessage[]>;
@@ -667,6 +670,12 @@ export class DatabaseStorage implements IStorage {
     return link;
   }
 
+  async getShareLinksByPass(passId: number): Promise<ShareLink[]> {
+    return db.select().from(shareLinks)
+      .where(eq(shareLinks.passId, passId))
+      .orderBy(desc(shareLinks.createdAt));
+  }
+
   async createShareLink(shareLink: InsertShareLink): Promise<ShareLink> {
     const token = randomUUID();
     const [newLink] = await db.insert(shareLinks).values({ ...shareLink, token }).returning();
@@ -946,6 +955,20 @@ export class DatabaseStorage implements IStorage {
   async getCandidateLinkByToken(token: string): Promise<any | undefined> {
     const [link] = await db.select().from(candidateLinks).where(eq(candidateLinks.token, token));
     return link;
+  }
+
+  async getCandidateLinksByPassCandidate(passCandidateId: number): Promise<any[]> {
+    return db.select().from(candidateLinks)
+      .where(eq(candidateLinks.passCandidateId, passCandidateId))
+      .orderBy(desc(candidateLinks.createdAt));
+  }
+
+  async updateCandidateLink(id: number, data: Partial<typeof candidateLinks.$inferSelect>): Promise<any | undefined> {
+    const [updated] = await db.update(candidateLinks)
+      .set(data)
+      .where(eq(candidateLinks.id, id))
+      .returning();
+    return updated;
   }
 
   async createCandidateLink(data: any): Promise<any> {

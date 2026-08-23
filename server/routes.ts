@@ -1,5 +1,6 @@
 import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
+import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { 
   insertManagerSchema, 
@@ -26,6 +27,7 @@ import {
   isCandidateScopedMessage,
   toManagerPassPassDto,
 } from "./external-pass-security";
+import { buildPassControlItem } from "./hr-pass-control";
 
 const anthropic = new Anthropic();
 
@@ -33,6 +35,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const defaultExpiry = () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const createCandidatePassToken = () => `cand_${randomBytes(32).toString("base64url")}`;
+
   async function getValidCandidateLink(token: string, res: Response) {
     const candidateLink = await storage.getCandidateLinkByToken(token);
     const access = resolvePassAccess(candidateLink, {
@@ -45,6 +50,42 @@ export async function registerRoutes(
     }
 
     return access.link;
+  }
+
+  async function buildPassControl(passId: number) {
+    const pass = await storage.getPass(passId);
+    if (!pass) return null;
+    const manager = pass.hiringManagerId ? await storage.getManager(pass.hiringManagerId) : null;
+    const candidates = await storage.getPassCandidatesWithDetails(pass.id);
+    const candidateLinksByPassCandidateId = new Map<number, any[]>();
+    const messagesByPassCandidateId = new Map<number, any[]>();
+    const documentsByPassCandidateId = new Map<number, any[]>();
+    const offersByPassCandidateId = new Map<number, any | undefined>();
+    for (const candidate of candidates) {
+      candidateLinksByPassCandidateId.set(candidate.id, await storage.getCandidateLinksByPassCandidate(candidate.id));
+      messagesByPassCandidateId.set(candidate.id, await storage.getCandidateMessages(candidate.id));
+      documentsByPassCandidateId.set(candidate.id, await storage.getCandidateDocuments(candidate.id));
+      offersByPassCandidateId.set(candidate.id, await storage.getOfferByPassCandidate(candidate.id));
+    }
+
+    return buildPassControlItem({
+      pass,
+      manager,
+      candidates,
+      candidateLinksByPassCandidateId,
+      managerLinks: await storage.getShareLinksByPass(pass.id),
+      interviews: await storage.getInterviewsByPass(pass.id),
+      interviewSlots: await storage.getInterviewSlotsByPass(pass.id),
+      messagesByPassCandidateId,
+      documentsByPassCandidateId,
+      offersByPassCandidateId,
+      activity: await storage.getActivitiesByPass(pass.id),
+    });
+  }
+
+  function parsePositiveId(value: string) {
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
   }
   
   // ============ ANALYTICS ROUTES ============
@@ -75,6 +116,269 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching trends:", error);
       res.status(500).json({ error: "Failed to fetch trends" });
+    }
+  });
+
+  // ============ HR PASS CONTROL ROUTES ============
+  app.get("/api/hr-pass-control", async (req, res) => {
+    try {
+      const passes = await storage.getPasses();
+      const items = (await Promise.all(passes.map((pass) => buildPassControl(pass.id))))
+        .filter(Boolean)
+        .sort((a, b) => {
+          const priorityOrder = { attention: 0, monitor: 1, complete: 2 };
+          return priorityOrder[a!.priority] - priorityOrder[b!.priority];
+        });
+      res.json({ items });
+    } catch (error) {
+      console.error("Error fetching HR pass control:", error);
+      res.status(500).json({ error: "Failed to fetch HR pass control" });
+    }
+  });
+
+  app.get("/api/hr-pass-control/passes/:passId", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      if (!passId) return res.status(400).json({ error: "Valid passId is required" });
+      const item = await buildPassControl(passId);
+      if (!item) return res.status(404).json({ error: "Pass not found" });
+      res.json(item);
+    } catch (error) {
+      console.error("Error fetching HR pass control detail:", error);
+      res.status(500).json({ error: "Failed to fetch HR pass control detail" });
+    }
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/manager-link", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      if (!passId) return res.status(400).json({ error: "Valid passId is required" });
+      const pass = await storage.getPass(passId);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      const managerId = req.body.managerId ?? pass.hiringManagerId;
+      if (pass.hiringManagerId && managerId && Number(managerId) !== pass.hiringManagerId) {
+        return res.status(404).json({ error: "Manager is not assigned to this Pass" });
+      }
+      if (managerId) {
+        const manager = await storage.getManager(Number(managerId));
+        if (!manager) return res.status(404).json({ error: "Manager is not available for this Pass" });
+      }
+      const link = await storage.createShareLink({
+        passId,
+        managerId: managerId ? Number(managerId) : undefined,
+        linkType: "manager",
+        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : defaultExpiry(),
+      });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "manager_pass_issued",
+        targetType: "share_link",
+        targetId: link.id,
+        details: { managerId: managerId || null },
+      });
+      res.status(201).json(link);
+    } catch (error) {
+      console.error("Error issuing manager pass:", error);
+      res.status(500).json({ error: "Failed to issue Manager Pass" });
+    }
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/candidates/:passCandidateId/candidate-link", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      const passCandidateId = parsePositiveId(req.params.passCandidateId);
+      if (!passId || !passCandidateId) return res.status(400).json({ error: "Valid pass and candidate IDs are required" });
+      const passCandidate = await storage.getPassCandidateById(passCandidateId);
+      if (!passCandidate || passCandidate.passId !== passId) {
+        return res.status(404).json({ error: "Candidate is not available for this Pass" });
+      }
+      const token = createCandidatePassToken();
+      const link = await storage.createCandidateLink({
+        token,
+        passCandidateId,
+        canFillApplication: true,
+        canTakeAssessment: true,
+        expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : defaultExpiry(),
+        isActive: true,
+      });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "candidate_pass_issued",
+        targetType: "candidate_link",
+        targetId: link.id,
+        details: { passCandidateId },
+      });
+      res.status(201).json(link);
+    } catch (error) {
+      console.error("Error issuing candidate pass:", error);
+      res.status(500).json({ error: "Failed to issue Candidate Pass" });
+    }
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/manager-links/:linkId/revoke", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      const linkId = parsePositiveId(req.params.linkId);
+      if (!passId || !linkId) return res.status(400).json({ error: "Valid pass and link IDs are required" });
+      const links = await storage.getShareLinksByPass(passId);
+      const link = links.find((item) => item.id === linkId);
+      if (!link) return res.status(404).json({ error: "Manager Pass link is not available for this Pass" });
+      const updated = await storage.updateShareLink(link.id, { isActive: false });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "manager_pass_revoked",
+        targetType: "share_link",
+        targetId: link.id,
+        details: { reason: req.body.reason || null },
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error revoking manager pass:", error);
+      res.status(500).json({ error: "Failed to revoke Manager Pass" });
+    }
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/candidate-links/:linkId/revoke", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      const linkId = parsePositiveId(req.params.linkId);
+      if (!passId || !linkId) return res.status(400).json({ error: "Valid pass and link IDs are required" });
+      const candidates = await storage.getPassCandidatesWithDetails(passId);
+      let foundLink: any | null = null;
+      for (const candidate of candidates) {
+        const links = await storage.getCandidateLinksByPassCandidate(candidate.id);
+        foundLink = links.find((item) => item.id === linkId && item.passCandidateId === candidate.id) || foundLink;
+      }
+      if (!foundLink) return res.status(404).json({ error: "Candidate Pass link is not available for this Pass" });
+      const updated = await storage.updateCandidateLink(foundLink.id, { isActive: false });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "candidate_pass_revoked",
+        targetType: "candidate_link",
+        targetId: foundLink.id,
+        details: { reason: req.body.reason || null },
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error revoking candidate pass:", error);
+      res.status(500).json({ error: "Failed to revoke Candidate Pass" });
+    }
+  });
+
+  const extendLinkSchema = z.object({
+    expiresAt: z.coerce.date(),
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/manager-links/:linkId/extend", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      const linkId = parsePositiveId(req.params.linkId);
+      if (!passId || !linkId) return res.status(400).json({ error: "Valid pass and link IDs are required" });
+      const { expiresAt } = extendLinkSchema.parse(req.body);
+      const link = (await storage.getShareLinksByPass(passId)).find((item) => item.id === linkId);
+      if (!link) return res.status(404).json({ error: "Manager Pass link is not available for this Pass" });
+      if (link.isActive === false) {
+        return res.status(409).json({ error: "Revoked Manager Pass links must be reissued, not extended" });
+      }
+      const updated = await storage.updateShareLink(link.id, { expiresAt });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "manager_pass_extended",
+        targetType: "share_link",
+        targetId: link.id,
+        details: { expiresAt: expiresAt.toISOString() },
+      });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Error extending manager pass:", error);
+      res.status(500).json({ error: "Failed to extend Manager Pass" });
+    }
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/candidate-links/:linkId/extend", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      const linkId = parsePositiveId(req.params.linkId);
+      if (!passId || !linkId) return res.status(400).json({ error: "Valid pass and link IDs are required" });
+      const { expiresAt } = extendLinkSchema.parse(req.body);
+      const candidates = await storage.getPassCandidatesWithDetails(passId);
+      let foundLink: any | null = null;
+      for (const candidate of candidates) {
+        const links = await storage.getCandidateLinksByPassCandidate(candidate.id);
+        foundLink = links.find((item) => item.id === linkId && item.passCandidateId === candidate.id) || foundLink;
+      }
+      if (!foundLink) return res.status(404).json({ error: "Candidate Pass link is not available for this Pass" });
+      if (foundLink.isActive === false) {
+        return res.status(409).json({ error: "Revoked Candidate Pass links must be reissued, not extended" });
+      }
+      const updated = await storage.updateCandidateLink(foundLink.id, { expiresAt });
+      await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "candidate_pass_extended",
+        targetType: "candidate_link",
+        targetId: foundLink.id,
+        details: { expiresAt: expiresAt.toISOString() },
+      });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Error extending candidate pass:", error);
+      res.status(500).json({ error: "Failed to extend Candidate Pass" });
+    }
+  });
+
+  const nudgeSchema = z.object({
+    targetType: z.enum(["candidate", "manager", "hr"]),
+    targetId: z.number().int().positive().optional(),
+    reason: z.string().max(255).optional(),
+  });
+
+  app.post("/api/hr-pass-control/passes/:passId/nudge", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      if (!passId) return res.status(400).json({ error: "Valid passId is required" });
+      const pass = await storage.getPass(passId);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      const body = nudgeSchema.parse(req.body);
+      if (body.targetType === "candidate") {
+        if (!body.targetId) return res.status(400).json({ error: "Candidate application target is required" });
+        const passCandidate = await storage.getPassCandidateById(body.targetId);
+        if (!passCandidate || passCandidate.passId !== passId) {
+          return res.status(404).json({ error: "Candidate is not available for this Pass" });
+        }
+      }
+      if (body.targetType === "manager" && body.targetId) {
+        if (body.targetId !== pass.hiringManagerId) {
+          return res.status(404).json({ error: "Manager is not assigned to this Pass" });
+        }
+      }
+      const activity = await storage.logActivity({
+        passId,
+        actorType: "hr",
+        actorName: "HR Team",
+        action: "pass_nudge_recorded",
+        targetType: body.targetType,
+        targetId: body.targetId,
+        details: { reason: body.reason || null },
+      });
+      res.status(201).json(activity);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      console.error("Error recording pass nudge:", error);
+      res.status(500).json({ error: "Failed to record pass nudge" });
     }
   });
 
@@ -968,7 +1272,7 @@ export async function registerRoutes(
       }
       
       // Generate a unique token
-      const token = `cand_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      const token = createCandidatePassToken();
       
       const candidateLink = await storage.createCandidateLink({
         token,
@@ -1656,7 +1960,7 @@ export async function registerRoutes(
       const { expiresAt } = req.body;
       
       // Generate a unique token
-      const token = `cand_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+      const token = createCandidatePassToken();
       
       const link = await storage.createCandidateLink({
         token,
