@@ -28,6 +28,9 @@ export type PassControlCandidate = {
   nextAction: string;
   isStalled: boolean;
   lastMeaningfulAt: string | null;
+  waitingAgeDays: number | null;
+  expectedMovement: string;
+  passHandoff: string | null;
   activeCandidateLink: CandidateLink | null;
   latestCandidateLink: CandidateLink | null;
 };
@@ -43,6 +46,10 @@ export type PassControlItem = {
   isStalled: boolean;
   status: string;
   nextAction: string;
+  waitingSince: string | null;
+  waitingAgeDays: number | null;
+  expectedMovement: string;
+  passHandoff: string | null;
   candidateActions: number;
   managerActions: number;
   upcomingEvents: number;
@@ -93,6 +100,97 @@ function latestDate(...values: unknown[]): Date | null {
 
 function latestByCreatedAt<T extends { createdAt?: unknown }>(items: T[]): T | null {
   return [...items].sort((a, b) => (dateValue(b.createdAt)?.getTime() || 0) - (dateValue(a.createdAt)?.getTime() || 0))[0] || null;
+}
+
+function activityDetails(activity: ActivityLog): Record<string, unknown> {
+  return activity.details && typeof activity.details === "object" && !Array.isArray(activity.details)
+    ? activity.details as Record<string, unknown>
+    : {};
+}
+
+function meaningfulActivityLabel(activity: ActivityLog): string | null {
+  switch (activity.action) {
+    case "candidate_interview_slot_booked":
+      return "Candidate booked interview slot";
+    case "candidate_document_submitted":
+      return "Candidate submitted document";
+    case "candidate_assessment_completed":
+      return "Candidate completed assessment";
+    case "candidate_offer_accepted_handoff":
+      return "Candidate accepted offer";
+    case "candidate_offer_response_submitted":
+      return "Candidate submitted offer response";
+    case "manager_candidate_shortlisted":
+      return "Manager shortlisted candidate";
+    case "manager_candidate_rejected":
+      return "Manager rejected candidate";
+    case "manager_evaluation_submitted":
+      return "Manager submitted evaluation";
+    case "manager_final_decision_submitted":
+      return "Manager submitted final decision";
+    case "manager_interview_setup_completed":
+      return "Manager set interview availability";
+    case "manager_request_approved":
+      return "Manager approved hiring request";
+    case "candidate_pass_issued":
+      return "Candidate Pass issued";
+    case "manager_pass_issued":
+      return "Manager Pass issued";
+    case "pass_nudge_recorded":
+      return "HR recorded follow-up";
+    default:
+      return null;
+  }
+}
+
+function isCandidateActivity(passCandidateId: number, activity: ActivityLog): boolean {
+  const details = activityDetails(activity);
+  return details.passCandidateId === passCandidateId || activity.targetId === passCandidateId;
+}
+
+function latestMeaningfulActivity(activities: ActivityLog[], passCandidateId?: number): ActivityLog | null {
+  return activities
+    .filter((activity) => meaningfulActivityLabel(activity))
+    .filter((activity) => passCandidateId ? isCandidateActivity(passCandidateId, activity) : true)
+    .sort((a, b) => (dateValue(b.createdAt)?.getTime() || 0) - (dateValue(a.createdAt)?.getTime() || 0))[0] || null;
+}
+
+function waitingAgeDays(lastMeaningfulAt: Date | null, now: Date): number | null {
+  if (!lastMeaningfulAt) return null;
+  return Math.max(0, Math.floor((now.getTime() - lastMeaningfulAt.getTime()) / DAY_MS));
+}
+
+function candidateExpectedMovement(passState: ReturnType<typeof resolveCandidatePassState>): string {
+  return passState.expectedMovement;
+}
+
+function passExpectedMovement(pass: Pass, candidateStates: PassControlCandidate[], managerState: ReturnType<typeof resolveManagerPassState>, waitingOn: WaitingOn): string {
+  if (waitingOn === "candidate") return candidateStates.find((candidate) => candidate.waitingOn === "candidate")?.expectedMovement || "Expected movement: waiting for candidate action.";
+  if (waitingOn === "manager") return managerState.expectedMovement;
+  const targetHireDate = dateValue(pass.targetHireDate);
+  if (targetHireDate) return `Expected movement: HR is working toward ${targetHireDate.toISOString().slice(0, 10)}.`;
+  if (waitingOn === "completed") return "Expected movement: hiring workflow complete.";
+  if (waitingOn === "upcoming_event") return "Expected movement: next scheduled event.";
+  return "Expected movement: no checkpoint is set yet.";
+}
+
+function passHandoffFromActivity(activity: ActivityLog | null, waitingOn: WaitingOn): string | null {
+  if (!activity) return null;
+  const ownerLabel = waitingOn === "hr"
+    ? "HR"
+    : waitingOn === "manager"
+      ? "Manager"
+      : waitingOn === "candidate"
+        ? "Candidate"
+        : waitingOn === "upcoming_event"
+          ? "Scheduled event"
+          : waitingOn === "completed"
+            ? "Completed"
+            : "No current owner";
+  if ((activity.action || "").startsWith("manager_")) return `Pass Handoff: Manager -> ${ownerLabel}`;
+  if ((activity.action || "").startsWith("candidate_")) return `Pass Handoff: Candidate -> ${ownerLabel}`;
+  if ((activity.action || "").startsWith("pass_") || (activity.action || "").includes("_pass_")) return `Pass Handoff: HR -> ${ownerLabel}`;
+  return null;
 }
 
 function activeLatestLink<T extends LinkWithDates>(items: T[], now: Date): T | null {
@@ -163,7 +261,8 @@ export function buildPassControlItem(source: PassControlSource): PassControlItem
       now,
     });
     const waitingOn = terminalStatuses.has(passCandidate.status || "") ? "completed" : candidateWaitingOn(passState.actionState, passState.waitingOn);
-    const lastMeaningfulAt = latestDate(passCandidate.updatedAt, passCandidate.addedAt, latestCandidateLink?.createdAt);
+    const latestActivity = latestMeaningfulActivity(source.activity, passCandidate.id);
+    const lastMeaningfulAt = latestDate(latestActivity?.createdAt, passCandidate.updatedAt, passCandidate.addedAt, latestCandidateLink?.createdAt);
     return {
       id: passCandidate.id,
       passId: passCandidate.passId,
@@ -174,6 +273,9 @@ export function buildPassControlItem(source: PassControlSource): PassControlItem
       nextAction: passState.nextAction.label,
       isStalled: isStalled(waitingOn, lastMeaningfulAt, now),
       lastMeaningfulAt: lastMeaningfulAt?.toISOString() || null,
+      waitingAgeDays: waitingAgeDays(lastMeaningfulAt, now),
+      expectedMovement: candidateExpectedMovement(passState),
+      passHandoff: passHandoffFromActivity(latestActivity, waitingOn),
       activeCandidateLink,
       latestCandidateLink,
     };
@@ -182,7 +284,8 @@ export function buildPassControlItem(source: PassControlSource): PassControlItem
   const expiredOrRevokedLinks = source.managerLinks.filter((link) => isExpired(link, now)).length
     + Array.from(source.candidateLinksByPassCandidateId.values()).flat().filter((link) => isExpired(link, now)).length;
   const waitingOn = pickPassWaitingOn(candidates, managerWaiting, expiredOrRevokedLinks > 0);
-  const managerLastMeaningfulAt = latestDate(source.pass.updatedAt, activeManagerLink?.lastAccessedAt, latestManagerLink?.createdAt);
+  const latestPassActivity = latestMeaningfulActivity(source.activity);
+  const managerLastMeaningfulAt = latestDate(latestPassActivity?.createdAt, source.pass.updatedAt, activeManagerLink?.lastAccessedAt, latestManagerLink?.createdAt);
   const stalled = candidates.some((candidate) => candidate.isStalled) || isStalled(managerWaiting, managerLastMeaningfulAt, now);
 
   return {
@@ -196,6 +299,10 @@ export function buildPassControlItem(source: PassControlSource): PassControlItem
     isStalled: stalled,
     status: source.pass.status || "draft",
     nextAction: managerWaiting === "manager" ? managerState.nextDecision.label : candidates.find((candidate) => ["candidate", "hr"].includes(candidate.waitingOn))?.nextAction || "Monitor Pass",
+    waitingSince: managerLastMeaningfulAt?.toISOString() || null,
+    waitingAgeDays: waitingAgeDays(managerLastMeaningfulAt, now),
+    expectedMovement: passExpectedMovement(source.pass, candidates, managerState, waitingOn),
+    passHandoff: passHandoffFromActivity(latestPassActivity, waitingOn),
     candidateActions: candidates.filter((candidate) => candidate.waitingOn === "candidate").length,
     managerActions: managerWaiting === "manager" ? 1 : 0,
     upcomingEvents: source.interviews.filter((interview) => interview.status === "scheduled").length,

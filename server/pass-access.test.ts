@@ -92,6 +92,8 @@ describe("Candidate Pass action state", () => {
     assert.equal(state.actionState, "WAITING");
     assert.equal(state.nextAction.kind, "NONE");
     assert.equal(state.waitingOn, "Hiring team");
+    assert.equal(state.yourAction, "No action required");
+    assert.match(state.expectedMovement, /no update date is set yet/i);
   });
 
   it("marks a candidate with a future interview as UPCOMING", () => {
@@ -142,6 +144,45 @@ describe("Candidate Pass action state", () => {
     assert.equal(after.actionState, "UPCOMING");
     assert.notEqual(after.nextAction.kind, "CHOOSE_INTERVIEW_SLOT");
   });
+
+  it("derives a candidate-safe meaningful latest update from workflow activity", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "offer" },
+      pass: {},
+      activity: [{
+        action: "manager_final_decision_submitted",
+        actorType: "manager",
+        actorName: "Private Manager Name",
+        targetType: "pass_candidate",
+        targetId: 101,
+        details: { passCandidateId: 101, decision: "hire", internalScore: 94 },
+        createdAt: "2026-08-22T10:32:00.000Z",
+      }],
+      now,
+    });
+
+    assert.equal(state.latestUpdate, "Hiring Manager submitted a decision · today, 10:32");
+    assert.equal(state.latestUpdateAt, "2026-08-22T10:32:00.000Z");
+    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> HR");
+    assert.equal(state.latestUpdate.includes("Private Manager Name"), false);
+    assert.equal(state.latestUpdate.includes("internalScore"), false);
+  });
+
+  it("uses an explicit checkpoint when an expected movement date exists", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "screening" },
+      pass: { targetHireDate: "2026-08-29T00:00:00.000Z" },
+      messages: [],
+      documents: [],
+      interviews: [],
+      interviewSlots: [],
+      now,
+    });
+
+    assert.match(state.expectedMovement, /2026-08-29/);
+  });
 });
 
 describe("Manager Pass action state", () => {
@@ -171,6 +212,8 @@ describe("Manager Pass action state", () => {
 
     assert.equal(state.actionState, "WAITING");
     assert.equal(state.nextDecision.kind, "NONE");
+    assert.equal(state.waitingOn, "HR");
+    assert.match(state.expectedMovement, /no date is set yet/i);
   });
 
   it("marks an upcoming interview event as UPCOMING", () => {
@@ -214,6 +257,19 @@ describe("Manager Pass action state", () => {
 
     assert.equal(before.nextDecision.kind, "REVIEW_CANDIDATE");
     assert.equal(after.nextDecision.kind, "SET_INTERVIEW_AVAILABILITY");
+  });
+
+  it("shows manager Pass handoff after manager work is complete", () => {
+    const state = resolveManagerPassState({
+      link: activeLink,
+      pass: { id: 10, jdStatus: "approved", interviewSetupCompleted: true, positionTitle: "Operations Lead" },
+      candidates: [{ id: 101, passId: 10, status: "offer", candidate: { name: "Fictional Candidate" } }],
+      now,
+    });
+
+    assert.equal(state.actionState, "COMPLETED");
+    assert.equal(state.passHandoff, "Pass Handoff: Manager -> HR");
+    assert.equal(state.waitingOn, "HR");
   });
 
   it("keeps manager candidate actions scoped to the pass", () => {

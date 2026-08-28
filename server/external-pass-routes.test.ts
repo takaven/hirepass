@@ -257,6 +257,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getInterviewsByPassCandidate: async () => [interview],
     getOfferByPassCandidate: async () => offer,
     getAvailableInterviewSlots: async () => [interviewSlot],
+    getActivitiesByPass: async () => [],
     bookInterviewSlot: async () => undefined,
     createInterview: async () => undefined,
     updatePassCandidate: async () => undefined,

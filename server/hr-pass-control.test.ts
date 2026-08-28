@@ -295,6 +295,72 @@ describe("HR Pass Control state", () => {
     assert.equal(item.managerActions, 1);
     assert.equal(item.isStalled, true);
   });
+
+  it("uses meaningful workflow activity for HR waiting age", () => {
+    const threeDaysAgo = daysFromNow(-3);
+    const item = buildPassControlItem({
+      pass: { ...pass, updatedAt: oldDate, targetHireDate: future } as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "offer", updatedAt: oldDate } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [{
+        id: 99,
+        passId: 10,
+        actorType: "manager",
+        actorName: "Fictional Manager",
+        action: "manager_final_decision_submitted",
+        targetType: "pass_candidate",
+        targetId: 101,
+        details: { passCandidateId: 101, decision: "hire" },
+        createdAt: threeDaysAgo,
+      }] as any,
+      now,
+    });
+
+    assert.equal(item.waitingOn, "hr");
+    assert.equal(item.waitingAgeDays, 3);
+    assert.equal(item.passHandoff, "Pass Handoff: Manager -> HR");
+    assert.match(item.expectedMovement, new RegExp(future.toISOString().slice(0, 10)));
+    assert.equal(item.isStalled, false);
+  });
+
+  it("shows candidate Pass handoff and clears stale candidate ownership after action", () => {
+    const actionTime = daysFromNow(-1);
+    const item = buildPassControlItem({
+      pass: { ...pass, updatedAt: oldDate } as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "interview", updatedAt: oldDate } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [{ id: 55, passId: 10, passCandidateId: 101, status: "scheduled", interviewDate: futureDateOnly, startTime: "10:00", endTime: "10:45", duration: 45, format: "online" } as any],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [{
+        id: 100,
+        passId: 10,
+        actorType: "candidate",
+        actorName: "Candidate",
+        action: "candidate_interview_slot_booked",
+        targetType: "pass_candidate",
+        targetId: 101,
+        details: { passCandidateId: 101 },
+        createdAt: actionTime,
+      }] as any,
+      now,
+    });
+
+    assert.notEqual(item.waitingOn, "candidate");
+    assert.equal(item.candidates[0].passHandoff, "Pass Handoff: Candidate -> Scheduled event");
+    assert.equal(item.candidates[0].waitingAgeDays, 1);
+  });
 });
 
 describe("HR Pass Control lifecycle routes", () => {

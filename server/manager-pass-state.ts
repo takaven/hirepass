@@ -57,6 +57,7 @@ export type ManagerPassStateInput = {
     interviewSetupCompleted?: boolean | null;
     positionTitle?: string | null;
     status?: string | null;
+    targetHireDate?: Date | string | null;
   } | null;
   candidates?: ManagerPassCandidateInput[];
   interviews?: Array<{ id?: number; status?: string | null; interviewDate?: Date | string | null; passCandidateId?: number | null }>;
@@ -82,6 +83,11 @@ export type ManagerPassViewState = {
   headline: string;
   summary: string;
   urgency: "normal" | "attention";
+  waitingOn: string;
+  next: string;
+  expectedMovement: string;
+  latestUpdate: string;
+  passHandoff: string | null;
   nextDecision: ManagerNextDecision;
   evidence: ManagerEvidenceSummary;
 };
@@ -124,6 +130,47 @@ function hasUpcomingInterview(interviews: ManagerPassStateInput["interviews"], n
   );
 }
 
+function formatDate(value: Date | string | null | undefined): string | null {
+  const date = toDate(value);
+  return date ? date.toISOString().slice(0, 10) : null;
+}
+
+function expectedMovement(input: ManagerPassStateInput, waitingOn: string, next: string, now: Date): string {
+  const nextInterview = input.interviews
+    ?.map((interview) => toDate(interview.interviewDate))
+    .filter((date): date is Date => Boolean(date && date >= now))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  if (nextInterview) return `Expected movement: interview scheduled for ${nextInterview.toISOString().slice(0, 10)}.`;
+
+  const targetHire = formatDate(input.pass?.targetHireDate);
+  if (targetHire) return `Expected movement: HR is working toward ${targetHire}.`;
+
+  return `Expected movement: no date is set yet. The Pass will update when ${waitingOn.toLowerCase()} completes ${next.toLowerCase()}.`;
+}
+
+function withPassState(base: Omit<ManagerPassViewState, "waitingOn" | "next" | "expectedMovement" | "latestUpdate" | "passHandoff">, input: ManagerPassStateInput, now: Date): ManagerPassViewState {
+  const waitingOn = base.actionState === "ACTION_REQUIRED"
+    ? "Manager"
+    : base.actionState === "UPCOMING"
+      ? "Scheduled event"
+      : base.actionState === "COMPLETED"
+        ? "HR"
+        : base.actionState === "WAITING"
+          ? "HR"
+          : "HR";
+  const next = base.nextDecision.description;
+  return {
+    ...base,
+    waitingOn,
+    next,
+    expectedMovement: expectedMovement(input, waitingOn, next, now),
+    latestUpdate: base.actionState === "ACTION_REQUIRED"
+      ? `${base.nextDecision.label} is waiting for you.`
+      : "HR has your latest input.",
+    passHandoff: base.actionState === "COMPLETED" || base.actionState === "WAITING" ? "Pass Handoff: Manager -> HR" : null,
+  };
+}
+
 export function isPassScopedCandidate(passId: number, passCandidate: { passId?: number | null } | null | undefined): boolean {
   return Boolean(passCandidate && passCandidate.passId === passId);
 }
@@ -143,7 +190,7 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
   const finalDecisionCandidate = candidates.find((candidate) => (candidate.status || "").toLowerCase() === "interview" && candidate.interviewRecommendation);
 
   if (!input.link?.isActive) {
-    return {
+    return withPassState({
       actionState: "REVOKED",
       hiringStage: "Request",
       stateLabel: "PASS NOT ACTIVE",
@@ -152,11 +199,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       urgency: "attention",
       nextDecision: { kind: "NONE", label: "Contact HR", description: "This Pass cannot accept decisions.", target: "none" },
       evidence,
-    };
+    }, input, now);
   }
 
   if (expiresAt && expiresAt < now) {
-    return {
+    return withPassState({
       actionState: "EXPIRED",
       hiringStage: "Request",
       stateLabel: "PASS EXPIRED",
@@ -165,11 +212,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       urgency: "attention",
       nextDecision: { kind: "NONE", label: "Request fresh Pass", description: "This Pass cannot accept decisions.", target: "none" },
       evidence,
-    };
+    }, input, now);
   }
 
   if (pass?.jdStatus !== "approved") {
-    return {
+    return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Request",
       stateLabel: "ACTION REQUIRED",
@@ -183,11 +230,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         target: "request",
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (pendingCandidate) {
-    return {
+    return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Screening",
       stateLabel: "ACTION REQUIRED",
@@ -202,11 +249,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         candidateId: pendingCandidate.id,
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (!pass?.interviewSetupCompleted && candidates.some((candidate) => (candidate.status || "").toLowerCase() === "shortlisted")) {
-    return {
+    return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Interview",
       stateLabel: "ACTION REQUIRED",
@@ -220,11 +267,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         target: "interview",
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (interviewCandidate) {
-    return {
+    return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Interview",
       stateLabel: "ACTION REQUIRED",
@@ -239,11 +286,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         candidateId: interviewCandidate.id,
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (finalDecisionCandidate) {
-    return {
+    return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Decision",
       stateLabel: "ACTION REQUIRED",
@@ -258,11 +305,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         candidateId: finalDecisionCandidate.id,
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (hasUpcomingInterview(input.interviews, now)) {
-    return {
+    return withPassState({
       actionState: "UPCOMING",
       hiringStage: "Interview",
       stateLabel: "UPCOMING",
@@ -276,11 +323,11 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         target: "none",
       },
       evidence,
-    };
+    }, input, now);
   }
 
   if (candidates.length > 0 && candidates.every((candidate) => ["rejected", "hired", "offer"].includes((candidate.status || "").toLowerCase()))) {
-    return {
+    return withPassState({
       actionState: "COMPLETED",
       hiringStage: "Decision",
       stateLabel: "COMPLETED",
@@ -294,10 +341,10 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
         target: "none",
       },
       evidence,
-    };
+    }, input, now);
   }
 
-  return {
+  return withPassState({
     actionState: "WAITING",
     hiringStage: "Screening",
     stateLabel: "ALL CAUGHT UP",
@@ -311,5 +358,5 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       target: "none",
     },
     evidence,
-  };
+  }, input, now);
 }
