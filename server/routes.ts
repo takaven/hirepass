@@ -1768,6 +1768,12 @@ export async function registerRoutes(
       const offer = await storage.getOfferByPassCandidate(activeCandidateLink.passCandidateId);
       const interviewSlots = pass ? await storage.getAvailableInterviewSlots(pass.id) : [];
       const activity = pass ? await storage.getActivitiesByPass(pass.id) : [];
+      const managerState = pass ? resolveManagerPassState({
+        link: { isActive: true, expiresAt: null },
+        pass,
+        candidates: [{ ...passCandidate, candidate }],
+        interviews,
+      }) : null;
       const passState = resolveCandidatePassState({
         link: activeCandidateLink,
         passCandidate,
@@ -1778,6 +1784,7 @@ export async function registerRoutes(
         offer,
         interviewSlots,
         activity,
+        managerPassState: managerState,
       });
       
       res.json(buildCandidatePassPayload({

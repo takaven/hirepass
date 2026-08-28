@@ -67,6 +67,10 @@ export type CandidatePassStateInput = {
     details?: unknown;
     createdAt?: Date | string | null;
   }>;
+  managerPassState?: {
+    actionState?: string | null;
+    nextDecision?: { label?: string | null; description?: string | null } | null;
+  } | null;
   now?: Date;
 };
 
@@ -167,11 +171,8 @@ function activityDetails(activity: { details?: unknown }): Record<string, unknow
 function isCandidateRelevantActivity(passCandidateId: number | null | undefined, activity: NonNullable<CandidatePassStateInput["activity"]>[number]): boolean {
   if (!passCandidateId) return true;
   const details = activityDetails(activity);
-  return details.passCandidateId === passCandidateId
-    || activity.targetId === passCandidateId
-    || activity.targetType === "share_link"
-    || activity.targetType === "candidate_link"
-    || activity.targetType === "offer";
+  if (details.passCandidateId === passCandidateId) return true;
+  return activity.targetType === "pass_candidate" && activity.targetId === passCandidateId;
 }
 
 function meaningfulActivityLabel(activity: NonNullable<CandidatePassStateInput["activity"]>[number]): string | null {
@@ -235,6 +236,13 @@ function latestMeaningfulUpdate(input: CandidatePassStateInput, now: Date): { te
     .filter((item): item is { interview: NonNullable<CandidatePassStateInput["interviews"]>[number]; date: Date } => Boolean(item.date))
     .sort((a, b) => b.date.getTime() - a.date.getTime())[0];
   if (latestInterview) {
+    if (latestInterview.date < now && latestInterview.interview.status !== "cancelled") {
+      return {
+        text: `Interview completed · ${formatDateTime(latestInterview.date, now)}`,
+        at: latestInterview.date.toISOString(),
+        date: latestInterview.date,
+      };
+    }
     return {
       text: `Interview details available · ${formatDateTime(latestInterview.date, now)}`,
       at: latestInterview.date.toISOString(),
@@ -243,6 +251,10 @@ function latestMeaningfulUpdate(input: CandidatePassStateInput, now: Date): { te
   }
 
   return { text: "Your application Pass is active.", at: null, date: null };
+}
+
+function managerOwnsNextMove(input: CandidatePassStateInput): boolean {
+  return input.managerPassState?.actionState === "ACTION_REQUIRED";
 }
 
 function expectedMovement(input: CandidatePassStateInput, waitingOn: string, next: string, now: Date): string {
@@ -470,6 +482,26 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       },
       latestUpdate: "",
       journey: buildJourney("Interview"),
+    }, input, now);
+  }
+
+  if (managerOwnsNextMove(input)) {
+    const managerDecision = input.managerPassState?.nextDecision;
+    return withPassState({
+      actionState: "WAITING",
+      hiringStage,
+      stateLabel: "WAITING ON MANAGER",
+      headline: "You're all set. The hiring manager owns the next move.",
+      summary: "There is nothing you need to do right now.",
+      waitingOn: "Hiring Manager",
+      nextAction: {
+        kind: "NONE",
+        label: "No action required",
+        description: managerDecision?.label || "Hiring Manager completes the next decision.",
+        target: "none",
+      },
+      latestUpdate: "",
+      journey: buildJourney(hiringStage),
     }, input, now);
   }
 

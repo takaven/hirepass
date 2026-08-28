@@ -108,6 +108,7 @@ describe("Candidate Pass action state", () => {
 
     assert.equal(state.actionState, "UPCOMING");
     assert.equal(state.hiringStage, "Interview");
+    assert.match(state.latestUpdate, /Interview details available/);
   });
 
   it("marks a hired candidate journey as COMPLETED", () => {
@@ -182,6 +183,121 @@ describe("Candidate Pass action state", () => {
     });
 
     assert.match(state.expectedMovement, /2026-08-29/);
+  });
+
+  it("shows Hiring Manager ownership when manager action is outstanding", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "interview" },
+      pass: {},
+      interviews: [{ status: "completed", interviewDate: "2026-08-21T12:00:00.000Z" }],
+      interviewSlots: [],
+      managerPassState: {
+        actionState: "ACTION_REQUIRED",
+        nextDecision: { label: "Submit interview evaluation", description: "Record structured feedback." },
+      },
+      now,
+    });
+
+    assert.equal(state.actionState, "WAITING");
+    assert.equal(state.waitingOn, "Hiring Manager");
+    assert.equal(state.nextAction.kind, "NONE");
+    assert.equal(state.next, "Submit interview evaluation");
+  });
+
+  it("does not report Hiring Manager ownership when no manager action is outstanding", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "interview" },
+      pass: {},
+      interviews: [{ status: "completed", interviewDate: "2026-08-21T12:00:00.000Z" }],
+      interviewSlots: [],
+      managerPassState: {
+        actionState: "COMPLETED",
+        nextDecision: { label: "No decision required", description: "HR will handle the next step." },
+      },
+      now,
+    });
+
+    assert.notEqual(state.waitingOn, "Hiring Manager");
+  });
+
+  it("does not use another candidate's newer offer activity as the latest update", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "screening" },
+      pass: {},
+      activity: [
+        {
+          action: "candidate_offer_response_submitted",
+          targetType: "offer",
+          targetId: 888,
+          details: { passCandidateId: 202 },
+          createdAt: "2026-08-22T11:45:00.000Z",
+        },
+        {
+          action: "candidate_assessment_completed",
+          targetType: "pass_candidate",
+          targetId: 101,
+          details: { passCandidateId: 101 },
+          createdAt: "2026-08-22T09:00:00.000Z",
+        },
+      ],
+      now,
+    });
+
+    assert.match(state.latestUpdate, /Assessment completion recorded/);
+    assert.equal(state.latestUpdate.includes("Offer response"), false);
+  });
+
+  it("does not use another candidate's newer candidate-link activity as the latest update", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "screening" },
+      pass: {},
+      activity: [
+        {
+          action: "candidate_pass_issued",
+          targetType: "candidate_link",
+          targetId: 999,
+          details: { passCandidateId: 202 },
+          createdAt: "2026-08-22T11:45:00.000Z",
+        },
+        {
+          action: "candidate_document_submitted",
+          targetType: "candidate_document",
+          targetId: 777,
+          details: { passCandidateId: 101 },
+          createdAt: "2026-08-22T09:00:00.000Z",
+        },
+      ],
+      now,
+    });
+
+    assert.match(state.latestUpdate, /Document received/);
+    assert.equal(state.latestUpdate.includes("Candidate Pass issued"), false);
+  });
+
+  it("uses completed-interview wording only for past interviews", () => {
+    const completed = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "interview" },
+      pass: {},
+      interviews: [{ status: "completed", interviewDate: "2026-08-21T12:00:00.000Z" }],
+      interviewSlots: [],
+      now,
+    });
+    const future = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "interview" },
+      pass: {},
+      interviews: [{ status: "scheduled", interviewDate: "2026-08-24T12:00:00.000Z" }],
+      interviewSlots: [],
+      now,
+    });
+
+    assert.match(completed.latestUpdate, /Interview completed/);
+    assert.equal(future.latestUpdate.includes("Interview completed"), false);
   });
 });
 

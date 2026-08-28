@@ -210,6 +210,7 @@ function candidateWaitingOn(actionState: string, waitingOn?: string): WaitingOn 
   if (["EXPIRED", "REVOKED"].includes(actionState)) return "expired_revoked";
   if (actionState === "UPCOMING") return "upcoming_event";
   if (actionState === "ACTION_REQUIRED") return "candidate";
+  if ((waitingOn || "").toLowerCase().includes("manager")) return "manager";
   if ((waitingOn || "").toLowerCase().includes("hiring")) return "hr";
   return "no_action";
 }
@@ -258,6 +259,7 @@ export function buildPassControlItem(source: PassControlSource): PassControlItem
       interviews: source.interviews.filter((interview) => interview.passCandidateId === passCandidate.id),
       offer: source.offersByPassCandidateId.get(passCandidate.id),
       interviewSlots: source.interviewSlots,
+      managerPassState: managerState,
       now,
     });
     const waitingOn = terminalStatuses.has(passCandidate.status || "") ? "completed" : candidateWaitingOn(passState.actionState, passState.waitingOn);
