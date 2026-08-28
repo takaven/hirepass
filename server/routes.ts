@@ -29,6 +29,7 @@ import {
 } from "./external-pass-security";
 import { buildPassControlItem } from "./hr-pass-control";
 import { disableOutOfScopeProductionRoutes, requireInternalAdmin } from "./auth";
+import { verifyDatabaseReady } from "./db";
 import {
   readStoredCandidateDocument,
   removeStoredCandidateDocument,
@@ -108,11 +109,12 @@ export async function registerRoutes(
       if (process.env.NODE_ENV === "production") {
         if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing");
         if (!process.env.HIREPASS_SESSION_SECRET) throw new Error("HIREPASS_SESSION_SECRET missing");
+        await verifyDatabaseReady();
       }
       await validateUploadRoot();
-      res.json({ ok: true });
+      res.json({ ok: true, ready: true });
     } catch (error) {
-      res.status(503).json({ ok: false, error: "HirePass is not ready" });
+      res.status(503).json({ ok: false, ready: false });
     }
   });
 

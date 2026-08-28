@@ -13,16 +13,19 @@ process.env.DATABASE_URL ||= "postgres://hirepass_test:hirepass_test@127.0.0.1:1
 process.env.HIREPASS_ADMIN_USERNAME = "owner";
 process.env.HIREPASS_ADMIN_PASSWORD = "correct horse battery staple";
 process.env.HIREPASS_SESSION_SECRET = "test-session-secret-with-more-than-32-characters";
+const testAdminPasswordHash = "pbkdf2:210000:0123456789abcdef0123456789abcdef:58a4fc24182ba5cab9192c414a47d3a6d384a9624174f76721ee0bf9b986c5ba";
 
 let registerRoutes: typeof import("./routes").registerRoutes;
 let storage: typeof import("./storage").storage;
 let configureInternalAuth: typeof import("./auth").configureInternalAuth;
 let validateAuthConfig: typeof import("./auth").validateAuthConfig;
+let pool: typeof import("./db").pool;
 
 before(async () => {
   ({ configureInternalAuth, validateAuthConfig } = await import("./auth"));
   ({ registerRoutes } = await import("./routes"));
   ({ storage } = await import("./storage"));
+  ({ pool } = await import("./db"));
 });
 
 const now = new Date();
@@ -87,6 +90,7 @@ const candidateLink = {
 
 type StorageOverrides = Partial<Record<keyof typeof storage, (...args: any[]) => any>>;
 const originals = new Map<keyof typeof storage, unknown>();
+let originalPoolQuery: typeof pool.query | undefined;
 const tempDirs: string[] = [];
 
 function overrideStorage(overrides: StorageOverrides) {
@@ -99,8 +103,23 @@ function overrideStorage(overrides: StorageOverrides) {
 afterEach(async () => {
   for (const [key, value] of originals) (storage as any)[key] = value;
   originals.clear();
+  if (originalPoolQuery) {
+    pool.query = originalPoolQuery;
+    originalPoolQuery = undefined;
+  }
   for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
+
+function overrideDatabaseReadiness(result: "success" | "failure") {
+  originalPoolQuery ||= pool.query;
+  pool.query = (async (queryText: unknown, ...args: unknown[]) => {
+    if (queryText === "select 1") {
+      if (result === "failure") throw new Error("simulated database unavailable");
+      return { rows: [{ "?column?": 1 }], rowCount: 1 };
+    }
+    return (originalPoolQuery as any).call(pool, queryText, ...args);
+  }) as typeof pool.query;
+}
 
 async function withServer(overrides: StorageOverrides, callback: (baseUrl: string) => Promise<void>) {
   const uploadDir = await mkdtemp(path.join(tmpdir(), "hirepass-upload-test-"));
@@ -315,6 +334,42 @@ describe("HirePass production envelope", () => {
       if (previous.hash === undefined) delete process.env.HIREPASS_ADMIN_PASSWORD_HASH; else process.env.HIREPASS_ADMIN_PASSWORD_HASH = previous.hash;
       if (previous.secret === undefined) delete process.env.HIREPASS_SESSION_SECRET; else process.env.HIREPASS_SESSION_SECRET = previous.secret;
       if (previous.uploadDir === undefined) delete process.env.HIREPASS_UPLOAD_DIR; else process.env.HIREPASS_UPLOAD_DIR = previous.uploadDir;
+    }
+  });
+
+  it("reports readiness only when production database, config and upload storage are usable", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.HIREPASS_ADMIN_PASSWORD_HASH = testAdminPasswordHash;
+      overrideDatabaseReadiness("success");
+      await withServer({}, async (baseUrl) => {
+        const ready = await fetch(`${baseUrl}/api/ready`);
+        assert.equal(ready.status, 200);
+        assert.deepEqual(await ready.json(), { ok: true, ready: true });
+      });
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
+  it("fails readiness but not liveness when the production database is unreachable", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.HIREPASS_ADMIN_PASSWORD_HASH = testAdminPasswordHash;
+      overrideDatabaseReadiness("failure");
+      await withServer({}, async (baseUrl) => {
+        const health = await fetch(`${baseUrl}/api/health`);
+        assert.equal(health.status, 200);
+        assert.deepEqual(await health.json(), { ok: true });
+
+        const ready = await fetch(`${baseUrl}/api/ready`);
+        assert.equal(ready.status, 503);
+        assert.deepEqual(await ready.json(), { ok: false, ready: false });
+      });
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
     }
   });
 
