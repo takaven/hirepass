@@ -19,6 +19,10 @@ type PassControlCandidate = {
   stateLabel: string;
   nextAction: string;
   isStalled: boolean;
+  lastMeaningfulAt: string | null;
+  waitingAgeDays: number | null;
+  expectedMovement: string;
+  passHandoff: string | null;
   activeCandidateLink: { id: number; token: string; expiresAt?: string | null } | null;
   latestCandidateLink: { id: number; token: string; expiresAt?: string | null; isActive?: boolean } | null;
 };
@@ -34,6 +38,10 @@ type PassControlItem = {
   isStalled: boolean;
   status: string;
   nextAction: string;
+  waitingSince: string | null;
+  waitingAgeDays: number | null;
+  expectedMovement: string;
+  passHandoff: string | null;
   candidateActions: number;
   managerActions: number;
   upcomingEvents: number;
@@ -150,6 +158,11 @@ export default function HrPassControl() {
                       <div>
                         <p className="text-sm font-medium">Next Pass action</p>
                         <p className="text-sm text-muted-foreground">{item.nextAction}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${item.waitingAgeDays} day${item.waitingAgeDays === 1 ? "" : "s"}`}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">{item.expectedMovement}</p>
+                        {item.passHandoff && <p className="mt-2 text-xs font-medium text-blue-700">{item.passHandoff}</p>}
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button
@@ -213,6 +226,10 @@ export default function HrPassControl() {
                           {candidate.isStalled && <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Stalled</Badge>}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">{candidate.stateLabel} · {candidate.nextAction}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {candidate.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${candidate.waitingAgeDays} day${candidate.waitingAgeDays === 1 ? "" : "s"}`} · {candidate.expectedMovement}
+                        </p>
+                        {candidate.passHandoff && <p className="mt-1 text-xs font-medium text-blue-700">{candidate.passHandoff}</p>}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button

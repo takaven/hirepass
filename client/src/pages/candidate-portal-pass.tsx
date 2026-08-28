@@ -77,8 +77,14 @@ type CandidatePassViewState = {
   headline: string;
   summary: string;
   waitingOn: string;
+  now: string;
+  yourAction: string;
+  next: string;
+  expectedMovement: string;
   nextAction: CandidateNextAction;
   latestUpdate: string;
+  latestUpdateAt: string | null;
+  passHandoff: string | null;
   journey: Array<{ stage: CandidateHiringStage; status: "completed" | "current" | "upcoming" }>;
 };
 
@@ -342,6 +348,20 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                 </div>
               </div>
 
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  ["Now", passState.now],
+                  ["Your action", passState.yourAction],
+                  ["Waiting on", passState.waitingOn],
+                  ["Next", passState.next],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+                    <p className="mt-1 text-sm font-medium text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+
               <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-4">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Dominant next action</p>
                 <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -368,7 +388,13 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               <CardHeader className="pb-2">
                 <CardTitle className="text-base text-white">Latest update</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-slate-300">{passState.latestUpdate}</CardContent>
+              <CardContent className="space-y-3 text-sm text-slate-300">
+                <p>{passState.latestUpdate}</p>
+                {passState.passHandoff && (
+                  <p className="rounded-md border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-blue-100">{passState.passHandoff}</p>
+                )}
+                <p className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-slate-200">{passState.expectedMovement}</p>
+              </CardContent>
             </Card>
           </div>
         </section>

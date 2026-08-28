@@ -57,6 +57,11 @@ type ManagerPassViewState = {
   headline: string;
   summary: string;
   urgency: "normal" | "attention";
+  waitingOn: string;
+  next: string;
+  expectedMovement: string;
+  latestUpdate: string;
+  passHandoff: string | null;
   nextDecision: ManagerNextDecision;
   evidence: {
     candidateCount: number;
@@ -334,9 +339,23 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">{managerPassState.summary}</p>
                 </div>
                 <div className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm">
-                  <p className="text-slate-500">Stage</p>
-                  <p className="font-medium text-white">{managerPassState.hiringStage}</p>
+                  <p className="text-slate-500">Waiting on</p>
+                  <p className="font-medium text-white">{managerPassState.waitingOn}</p>
                 </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  ["Now", managerPassState.headline],
+                  ["Your action", managerPassState.nextDecision.label],
+                  ["Waiting on", managerPassState.waitingOn],
+                  ["Next", managerPassState.next],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+                    <p className="mt-1 text-sm font-medium text-white">{value}</p>
+                  </div>
+                ))}
               </div>
 
               <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-4">
@@ -355,11 +374,17 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
           <div className="space-y-5">
             <Card className="border-slate-800 bg-slate-900/80">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Urgency</CardTitle>
+                <CardTitle className="text-base text-white">Pass state</CardTitle>
               </CardHeader>
-              <CardContent className="flex items-start gap-3 text-sm text-slate-300">
-                {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-300" /> : <Clock className="h-5 w-5 text-sky-300" />}
-                <span>{managerPassState.urgency === "attention" ? "Your decision is needed to keep the process moving." : "No immediate decision is needed."}</span>
+              <CardContent className="space-y-3 text-sm text-slate-300">
+                <div className="flex items-start gap-3">
+                  {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-300" /> : <Clock className="h-5 w-5 text-sky-300" />}
+                  <span>{managerPassState.latestUpdate}</span>
+                </div>
+                {managerPassState.passHandoff && (
+                  <p className="rounded-md border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-blue-100">{managerPassState.passHandoff}</p>
+                )}
+                <p className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-slate-200">{managerPassState.expectedMovement}</p>
               </CardContent>
             </Card>
             <Card className="border-slate-800 bg-slate-900/80">
@@ -514,7 +539,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         <DialogContent className="border-slate-700 bg-slate-900 text-white">
           <DialogHeader>
             <DialogTitle>Set interview availability</DialogTitle>
-            <DialogDescription className="text-slate-400">This bounded slice records a simple interview setup using the existing endpoint.</DialogDescription>
+            <DialogDescription className="text-slate-400">Share interview availability so HR can invite shortlisted candidates.</DialogDescription>
           </DialogHeader>
           <p className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
             Format: online · Round: 1 · Duration: 45 minutes

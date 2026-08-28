@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { afterEach, before, describe, it } from "node:test";
 import express from "express";
+import { resolveCandidatePassState } from "./candidate-pass-state";
 import { buildPassControlItem } from "./hr-pass-control";
+import { resolveManagerPassState } from "./manager-pass-state";
 
 process.env.ANTHROPIC_API_KEY ||= "test-key";
 process.env.DATABASE_URL ||= "postgres://hirepass_test:hirepass_test@127.0.0.1:1/hirepass_test";
@@ -295,6 +297,72 @@ describe("HR Pass Control state", () => {
     assert.equal(item.managerActions, 1);
     assert.equal(item.isStalled, true);
   });
+
+  it("uses meaningful workflow activity for HR waiting age", () => {
+    const threeDaysAgo = daysFromNow(-3);
+    const item = buildPassControlItem({
+      pass: { ...pass, updatedAt: oldDate, targetHireDate: future } as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "offer", updatedAt: oldDate } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [{
+        id: 99,
+        passId: 10,
+        actorType: "manager",
+        actorName: "Fictional Manager",
+        action: "manager_final_decision_submitted",
+        targetType: "pass_candidate",
+        targetId: 101,
+        details: { passCandidateId: 101, decision: "hire" },
+        createdAt: threeDaysAgo,
+      }] as any,
+      now,
+    });
+
+    assert.equal(item.waitingOn, "hr");
+    assert.equal(item.waitingAgeDays, 3);
+    assert.equal(item.passHandoff, "Pass Handoff: Manager -> HR");
+    assert.match(item.expectedMovement, new RegExp(future.toISOString().slice(0, 10)));
+    assert.equal(item.isStalled, false);
+  });
+
+  it("shows candidate Pass handoff and clears stale candidate ownership after action", () => {
+    const actionTime = daysFromNow(-1);
+    const item = buildPassControlItem({
+      pass: { ...pass, updatedAt: oldDate } as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "interview", updatedAt: oldDate } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [{ id: 55, passId: 10, passCandidateId: 101, status: "scheduled", interviewDate: futureDateOnly, startTime: "10:00", endTime: "10:45", duration: 45, format: "online" } as any],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [{
+        id: 100,
+        passId: 10,
+        actorType: "candidate",
+        actorName: "Candidate",
+        action: "candidate_interview_slot_booked",
+        targetType: "pass_candidate",
+        targetId: 101,
+        details: { passCandidateId: 101 },
+        createdAt: actionTime,
+      }] as any,
+      now,
+    });
+
+    assert.notEqual(item.waitingOn, "candidate");
+    assert.equal(item.candidates[0].passHandoff, "Pass Handoff: Candidate -> Scheduled event");
+    assert.equal(item.candidates[0].waitingAgeDays, 1);
+  });
 });
 
 describe("HR Pass Control lifecycle routes", () => {
@@ -571,6 +639,60 @@ describe("HR Pass Control lifecycle routes", () => {
       assert.equal(hr.items[0].managerActions, 0);
       assert.equal(hr.items[0].recentActivity[0].action, "manager_final_decision_submitted");
     });
+  });
+
+  it("keeps post-interview Candidate, Manager, and HR Pass ownership aligned", () => {
+    const completedInterview = {
+      id: 601,
+      passId: 10,
+      passCandidateId: 101,
+      status: "completed",
+      interviewDate: oldDate.toISOString(),
+      startTime: "10:00",
+      endTime: "10:45",
+      format: "online",
+      createdAt: oldDate,
+      updatedAt: oldDate,
+    };
+    const waitingCandidate = { ...passCandidate, status: "interview", interviewRecommendation: null };
+    const managerState = resolveManagerPassState({
+      link: managerLink,
+      pass,
+      candidates: [waitingCandidate],
+      interviews: [completedInterview],
+      now,
+    });
+    const candidateState = resolveCandidatePassState({
+      link: candidateLink,
+      passCandidate: waitingCandidate,
+      pass,
+      interviews: [completedInterview],
+      interviewSlots: [],
+      managerPassState: managerState,
+      now,
+    });
+    const hrState = buildPassControlItem({
+      pass,
+      manager,
+      candidates: [waitingCandidate],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink]]]),
+      managerLinks: [managerLink],
+      interviews: [completedInterview],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [],
+      now,
+    });
+
+    assert.equal(managerState.actionState, "ACTION_REQUIRED");
+    assert.equal(managerState.nextDecision.kind, "SUBMIT_EVALUATION");
+    assert.equal(candidateState.actionState, "WAITING");
+    assert.equal(candidateState.waitingOn, "Hiring Manager");
+    assert.equal(candidateState.nextAction.kind, "NONE");
+    assert.equal(hrState.waitingOn, "manager");
+    assert.equal(hrState.managerActions, 1);
   });
 
   it("lets a scoped Candidate Pass satisfy a pending document request", async () => {
