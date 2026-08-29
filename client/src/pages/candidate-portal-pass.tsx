@@ -78,6 +78,19 @@ const stateStyles: Record<CandidatePassActionState, string> = {
   REVOKED: "border-red-400 bg-red-400/10 text-red-200",
 };
 
+function formatCandidateDate(value: string | Date | null | undefined) {
+  if (!value) return "Date to be confirmed";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date to be confirmed";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 async function fetchCandidatePass(token: string): Promise<CandidatePassData> {
   const response = await fetch(`/api/candidate-pass/${token}`);
   const payload = await response.json().catch(() => ({}));
@@ -383,7 +396,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                 )}
                 {interviews.map((interview) => (
                   <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">{interview.interviewDate}</p>
+                    <p className="font-medium text-white">{formatCandidateDate(interview.interviewDate)}</p>
                     <p className="text-sm text-slate-400">
                       {interview.startTime} - {interview.endTime} ({interview.format})
                     </p>
