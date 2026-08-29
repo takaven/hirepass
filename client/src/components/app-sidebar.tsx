@@ -7,7 +7,6 @@ import {
   Settings,
   Building2,
   BarChart3,
-  Sparkles,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -58,11 +57,6 @@ const navItems = [
     title: "Analytics",
     url: "/analytics",
     icon: BarChart3,
-  },
-  {
-    title: "Assistant",
-    url: "/ai-assistant",
-    icon: Sparkles,
   },
 ];
 
@@ -158,11 +152,10 @@ export function AppSidebar() {
         </SidebarMenu>
         <div className="mt-2 mx-1 px-2.5 py-1.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.05]">
           <p className="text-[10px] text-muted-foreground text-center">
-            Abu Dhabi, UAE
+            Controlled hiring passes
           </p>
         </div>
       </SidebarFooter>
     </Sidebar>
   );
 }
-

@@ -15,7 +15,6 @@ import {
   Check,
   X,
   Loader2,
-  Sparkles,
   GripVertical,
 } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
@@ -119,23 +118,6 @@ export default function PassDetail() {
     },
     onError: () => {
       toast({ title: "Failed to update status", variant: "destructive" });
-    },
-  });
-
-  const aiRankMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/ai/rank-candidates", { passId: parseInt(passId!) });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates"] });
-      toast({ 
-        title: "Ranking Complete", 
-        description: `Ranked ${data.rankings?.length || 0} candidates`
-      });
-    },
-    onError: () => {
-      toast({ title: "Failed to rank candidates", variant: "destructive" });
     },
   });
 
@@ -347,23 +329,6 @@ export default function PassDetail() {
             <Users className="w-5 h-5 text-primary" strokeWidth={1.5} />
             Candidates Pipeline
           </h2>
-          {passCandidates && passCandidates.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-xl gap-2"
-              onClick={() => aiRankMutation.mutate()}
-              disabled={aiRankMutation.isPending}
-              data-testid="button-ai-rank"
-            >
-              {aiRankMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" strokeWidth={1.5} />
-              )}
-              Rank Candidates
-            </Button>
-          )}
         </div>
 
         {candidatesLoading ? (
@@ -397,21 +362,6 @@ export default function PassDetail() {
                     </p>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {pc.aiRank && (
-                    <div className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                      #{pc.aiRank}
-                    </div>
-                  )}
-                  {pc.aiScore && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10" title={pc.aiBrief || ""}>
-                      <Sparkles className="w-4 h-4 text-primary" strokeWidth={1.5} />
-                      <span className="text-sm font-medium">{pc.aiScore}%</span>
-                    </div>
-                  )}
-                </div>
-
                 <Select
                   value={pc.status}
                   onValueChange={(status) => updateStatusMutation.mutate({ id: pc.id, status })}

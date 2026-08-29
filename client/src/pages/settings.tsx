@@ -12,7 +12,6 @@ import {
   Bell,
   Shield,
   Database,
-  Sparkles,
 } from "lucide-react";
 
 export default function Settings() {
@@ -43,7 +42,7 @@ export default function Settings() {
             <Label htmlFor="company-name">Company Name</Label>
             <Input 
               id="company-name"
-              defaultValue="HirePass Demo Company"
+              defaultValue="Your Organization"
               className="rounded-xl"
               data-testid="input-company-name"
             />
@@ -52,7 +51,7 @@ export default function Settings() {
             <Label htmlFor="company-location">Location</Label>
             <Input 
               id="company-location"
-              defaultValue="Abu Dhabi, UAE"
+              defaultValue="Remote / Hybrid"
               className="rounded-xl"
               data-testid="input-company-location"
             />
@@ -98,39 +97,6 @@ export default function Settings() {
               onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
               data-testid="switch-dark-mode"
             />
-          </div>
-        </div>
-      </GlassCard>
-
-      <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Sparkles className="w-5 h-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h2 className="font-semibold">Smart Features</h2>
-            <p className="text-sm text-muted-foreground">Configure automated capabilities</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Resume Analysis</Label>
-              <p className="text-sm text-muted-foreground">
-                Automatically extract information from uploaded resumes
-              </p>
-            </div>
-            <Switch defaultChecked data-testid="switch-resume-analysis" />
-          </div>
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Candidate Scoring</Label>
-              <p className="text-sm text-muted-foreground">
-                Automated candidate evaluation and ranking
-              </p>
-            </div>
-            <Switch defaultChecked data-testid="switch-candidate-scoring" />
           </div>
         </div>
       </GlassCard>
@@ -224,11 +190,11 @@ export default function Settings() {
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Company</span>
-            <span className="font-medium">HirePass Demo Company</span>
+            <span className="font-medium">Your Organization</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Location</span>
-            <span className="font-medium">Abu Dhabi, UAE</span>
+            <span className="font-medium">Configured per workspace</span>
           </div>
         </div>
       </GlassCard>

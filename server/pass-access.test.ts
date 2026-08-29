@@ -93,7 +93,7 @@ describe("Candidate Pass action state", () => {
     assert.equal(state.nextAction.kind, "NONE");
     assert.equal(state.waitingOn, "Hiring team");
     assert.equal(state.yourAction, "No action required");
-    assert.match(state.expectedMovement, /no update date is set yet/i);
+    assert.equal(state.expectedMovement, "Expected movement: the hiring team will update this Pass when the next step is ready.");
   });
 
   it("marks a candidate with a future interview as UPCOMING", () => {
@@ -329,7 +329,26 @@ describe("Manager Pass action state", () => {
     assert.equal(state.actionState, "WAITING");
     assert.equal(state.nextDecision.kind, "NONE");
     assert.equal(state.waitingOn, "HR");
-    assert.match(state.expectedMovement, /no date is set yet/i);
+    assert.equal(state.expectedMovement, "Expected movement: HR will update this Pass when the next step is ready.");
+  });
+
+  it("uses natural expected movement copy for manager-owned candidate states", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { id: 101, status: "interview" },
+      pass: {},
+      interviews: [{ status: "completed", interviewDate: "2026-08-21T12:00:00.000Z" }],
+      interviewSlots: [],
+      managerPassState: {
+        actionState: "ACTION_REQUIRED",
+        nextDecision: { label: "Submit interview evaluation", description: "Record structured feedback." },
+      },
+      now,
+    });
+
+    assert.equal(state.expectedMovement, "Expected movement: the hiring manager will submit interview evaluation.");
+    assert.equal(state.expectedMovement.includes("completes review candidate"), false);
+    assert.equal(state.expectedMovement.includes("hiring team completes hiring team"), false);
   });
 
   it("marks an upcoming interview event as UPCOMING", () => {
@@ -384,7 +403,7 @@ describe("Manager Pass action state", () => {
     });
 
     assert.equal(state.actionState, "COMPLETED");
-    assert.equal(state.passHandoff, "Pass Handoff: Manager -> HR");
+    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> HR");
     assert.equal(state.waitingOn, "HR");
   });
 

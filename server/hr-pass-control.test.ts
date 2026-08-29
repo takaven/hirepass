@@ -327,9 +327,40 @@ describe("HR Pass Control state", () => {
 
     assert.equal(item.waitingOn, "hr");
     assert.equal(item.waitingAgeDays, 3);
-    assert.equal(item.passHandoff, "Pass Handoff: Manager -> HR");
+    assert.equal(item.passHandoff, "Pass Handoff: Hiring Manager -> HR");
     assert.match(item.expectedMovement, new RegExp(future.toISOString().slice(0, 10)));
     assert.equal(item.isStalled, false);
+  });
+
+  it("classifies HR-issued Manager Pass handoff as HR to Hiring Manager", () => {
+    const item = buildPassControlItem({
+      pass: { ...pass, updatedAt: oldDate } as any,
+      manager: manager as any,
+      candidates: [{ ...passCandidate, status: "interview", interviewRecommendation: null, updatedAt: oldDate } as any],
+      candidateLinksByPassCandidateId: new Map([[101, [candidateLink as any]]]),
+      managerLinks: [managerLink as any],
+      interviews: [{ id: 55, passId: 10, passCandidateId: 101, status: "completed", interviewDate: oldDate, startTime: "10:00", endTime: "10:45", duration: 45, format: "online" } as any],
+      interviewSlots: [],
+      messagesByPassCandidateId: new Map(),
+      documentsByPassCandidateId: new Map(),
+      offersByPassCandidateId: new Map(),
+      activity: [{
+        id: 100,
+        passId: 10,
+        actorType: "hr",
+        actorName: "HR",
+        action: "manager_pass_issued",
+        targetType: "share_link",
+        targetId: 11,
+        details: {},
+        createdAt: daysFromNow(-1),
+      }] as any,
+      now,
+    });
+
+    assert.equal(item.waitingOn, "manager");
+    assert.equal(item.passHandoff, "Pass Handoff: HR -> Hiring Manager");
+    assert.notEqual(item.passHandoff, "Pass Handoff: Hiring Manager -> Hiring Manager");
   });
 
   it("shows candidate Pass handoff and clears stale candidate ownership after action", () => {

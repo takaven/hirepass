@@ -38,7 +38,7 @@ interface PassPosition {
 }
 
 interface CandidatePassProps {
-  passIdParam?: string; // Clean pass ID like BAYN-CP-2025-001 (for future use)
+  passIdParam?: string; // Clean pass ID like HP-CP-2025-001 (for future use)
   params?: { id?: string }; // From wouter route
 }
 
@@ -169,7 +169,7 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
               <div>
                 <div className="flex items-center gap-2 text-white/80 text-sm mb-2">
                   <Building2 className="w-4 h-4" strokeWidth={2} />
-                  HirePass Demo Company
+                  HirePass
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight">CANDIDATE PASS</h1>
                 <p className="text-white/90 mt-1">Interview Authorization Document</p>
@@ -419,11 +419,11 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
               <div className="bg-gray-50 rounded-xl p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <div className="font-semibold text-gray-900 mb-2">HirePass Demo Company</div>
+                    <div className="font-semibold text-gray-900 mb-2">Hiring Team</div>
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4" strokeWidth={2} />
-                        Abu Dhabi, United Arab Emirates
+                        Location shared by the hiring team
                       </div>
                       <div className="flex items-center gap-2">
                         <Mail className="w-4 h-4" strokeWidth={2} />
@@ -431,7 +431,7 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
                       </div>
                       <div className="flex items-center gap-2">
                         <Phone className="w-4 h-4" strokeWidth={2} />
-                        +971 2 XXX XXXX
+                        Contact number shared by the hiring team
                       </div>
                     </div>
                   </div>
@@ -466,7 +466,7 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
 
           {/* Footer */}
           <div className="bg-gray-50 px-8 py-4 rounded-b-2xl print:rounded-none border-t text-center text-xs text-muted-foreground">
-            <p>HirePass Demo Company - Abu Dhabi, UAE</p>
+            <p>HirePass candidate pass</p>
             <p className="mt-1">This is an official candidate pass. Generated on {format(new Date(), "MMMM dd, yyyy 'at' HH:mm")}</p>
           </div>
 

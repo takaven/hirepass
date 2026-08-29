@@ -258,8 +258,11 @@ export class DatabaseStorage implements IStorage {
       .where(sql`EXTRACT(YEAR FROM ${passes.createdAt}) = ${year}`);
     const count = Number(countResult[0].count);
     const passNumber = String(count + 1).padStart(3, '0');
-    // Format: BAYN-RP-2025-001 (Bayn Recruitment Pass)
-    const passId = `BAYN-RP-${year}-${passNumber}`;
+    const configuredPrefix = process.env.HIREPASS_PASS_ID_PREFIX || "HP";
+    const prefix = /^[A-Z0-9]{2,8}$/.test(configuredPrefix) && configuredPrefix !== "BAYN"
+      ? configuredPrefix
+      : "HP";
+    const passId = `${prefix}-RP-${year}-${passNumber}`;
 
     const [newPass] = await db.insert(passes).values({
       ...pass,

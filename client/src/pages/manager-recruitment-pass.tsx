@@ -25,56 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared/schema";
-
-type ManagerPassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
-
-type ManagerHiringStage = "Request" | "Screening" | "Interview" | "Decision" | "Offer" | "Handoff";
-
-type ManagerNextDecision = {
-  kind:
-    | "APPROVE_JD"
-    | "REVIEW_CANDIDATE"
-    | "SET_INTERVIEW_AVAILABILITY"
-    | "SUBMIT_EVALUATION"
-    | "MAKE_FINAL_DECISION"
-    | "NONE";
-  label: string;
-  description: string;
-  target: "request" | "candidate" | "interview" | "evaluation" | "decision" | "none";
-  candidateId?: number;
-};
-
-type ManagerPassViewState = {
-  actionState: ManagerPassActionState;
-  hiringStage: ManagerHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  urgency: "normal" | "attention";
-  waitingOn: string;
-  next: string;
-  expectedMovement: string;
-  latestUpdate: string;
-  passHandoff: string | null;
-  nextDecision: ManagerNextDecision;
-  evidence: {
-    candidateCount: number;
-    activeCandidateCount: number;
-    role: string;
-    topCandidate?: {
-      id: number;
-      name: string;
-      title: string;
-      summary: string;
-    };
-  };
-};
+import type { ManagerPassActionState, ManagerPassViewState } from "@shared/pass-state";
 
 type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
@@ -271,8 +222,9 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   }
 
   const { pass, candidates, interviews, manager, managerPassState } = data;
-  const targetCandidate = candidates.find((candidate) => candidate.id === managerPassState.nextDecision.candidateId) || managerPassState.evidence.topCandidate;
-  const targetInterview = interviews.find((interview) => interview.passCandidateId === managerPassState.nextDecision.candidateId) || interviews[0];
+  const nextDecisionCandidateId = "candidateId" in managerPassState.nextDecision ? managerPassState.nextDecision.candidateId : undefined;
+  const targetCandidate = candidates.find((candidate) => candidate.id === nextDecisionCandidateId) || managerPassState.evidence.topCandidate;
+  const targetInterview = interviews.find((interview) => interview.passCandidateId === nextDecisionCandidateId) || interviews[0];
 
   const actionButton = useMemo(() => {
     switch (managerPassState.nextDecision.kind) {

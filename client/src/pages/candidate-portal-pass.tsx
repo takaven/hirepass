@@ -25,6 +25,7 @@ import {
   User,
 } from "lucide-react";
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
+import type { CandidatePassActionState, CandidatePassViewState } from "@shared/pass-state";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -38,55 +39,6 @@ async function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-
-type CandidatePassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
-
-type CandidateHiringStage =
-  | "Application"
-  | "Screening"
-  | "Interview"
-  | "Assessment"
-  | "Decision"
-  | "Offer"
-  | "Handoff";
-
-type CandidateNextAction = {
-  kind:
-    | "CHOOSE_INTERVIEW_SLOT"
-    | "CONFIRM_INTERVIEW"
-    | "UPLOAD_DOCUMENT"
-    | "COMPLETE_ASSESSMENT"
-    | "RESPOND_TO_MESSAGE"
-    | "REVIEW_OFFER"
-    | "NONE";
-  label: string;
-  description: string;
-  target: "interview" | "documents" | "assessment" | "messages" | "offer" | "none";
-};
-
-type CandidatePassViewState = {
-  actionState: CandidatePassActionState;
-  hiringStage: CandidateHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  waitingOn: string;
-  now: string;
-  yourAction: string;
-  next: string;
-  expectedMovement: string;
-  nextAction: CandidateNextAction;
-  latestUpdate: string;
-  latestUpdateAt: string | null;
-  passHandoff: string | null;
-  journey: Array<{ stage: CandidateHiringStage; status: "completed" | "current" | "upcoming" }>;
-};
 
 type CandidatePassCandidateProfile = Pick<Candidate, "id" | "name" | "email" | "phone" | "currentTitle" | "currentCompany" | "currentLocation">;
 type CandidatePassApplication = Pick<

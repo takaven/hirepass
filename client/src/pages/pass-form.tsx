@@ -3,7 +3,7 @@ import { useRoute, useLocation } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Save, Sparkles, Loader2, Plus, Trash2, ChevronDown, ChevronUp, Briefcase } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, Trash2, ChevronDown, ChevronUp, Briefcase } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +65,6 @@ export default function PassForm() {
   const [, params] = useRoute("/passes/:id");
   const [, editParams] = useRoute("/passes/:id/edit");
   const { toast } = useToast();
-  const [isGeneratingJD, setIsGeneratingJD] = useState(false);
   const [expandedPositions, setExpandedPositions] = useState<Set<number>>(new Set([0]));
 
   const passId = params?.id || editParams?.id;
@@ -91,7 +90,7 @@ export default function PassForm() {
       positionTitle: "",
       headcount: 1,
       department: "",
-      location: "Abu Dhabi, UAE",
+      location: "Remote / Hybrid",
       employmentType: "Full-time",
       experienceMin: undefined,
       experienceMax: undefined,
@@ -292,27 +291,6 @@ export default function PassForm() {
     },
   });
 
-  const generateJD = async () => {
-    if (!passId || passId === "new") {
-      toast({ title: "Please save the pass first before generating JD", variant: "destructive" });
-      return;
-    }
-
-    setIsGeneratingJD(true);
-    try {
-      const res = await apiRequest("POST", "/api/ai/generate-jd", { passId: parseInt(passId) });
-      const data = await res.json();
-      if (data.jobDescription) {
-        form.setValue("jobDescriptionDraft", data.jobDescription);
-        toast({ title: "Job description generated successfully" });
-      }
-    } catch (error) {
-      toast({ title: "Failed to generate job description", variant: "destructive" });
-    } finally {
-      setIsGeneratingJD(false);
-    }
-  };
-
   const onSubmit = (data: FormData) => {
     if (isEditing) {
       updateMutation.mutate(data);
@@ -410,7 +388,7 @@ export default function PassForm() {
                     <FormLabel>Location</FormLabel>
                     <FormControl>
                       <Input 
-                        placeholder="e.g., Abu Dhabi, UAE" 
+                        placeholder="e.g., Remote / Hybrid"
                         className="rounded-xl" 
                         data-testid="input-location"
                         {...field} 
@@ -752,23 +730,6 @@ export default function PassForm() {
           <GlassCard className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold">Job Description</h2>
-              {isEditing && (
-                <Button 
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl gap-2"
-                  onClick={generateJD}
-                  disabled={isGeneratingJD}
-                  data-testid="button-generate-jd"
-                >
-                  {isGeneratingJD ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" strokeWidth={1.5} />
-                  )}
-                  Auto-Generate
-                </Button>
-              )}
             </div>
             
             <FormField
@@ -778,7 +739,7 @@ export default function PassForm() {
                 <FormItem>
                   <FormControl>
                     <Textarea 
-                      placeholder="Enter or generate the job description..."
+                      placeholder="Enter the job description..."
                       className="min-h-[300px] rounded-xl"
                       data-testid="textarea-job-description"
                       {...field}

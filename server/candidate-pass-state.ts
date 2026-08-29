@@ -1,39 +1,18 @@
-export type CandidatePassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
+import type {
+  CandidateHiringStage,
+  CandidateJourneyStep,
+  CandidateNextAction,
+  CandidatePassActionState,
+  CandidatePassViewState,
+} from "@shared/pass-state";
 
-export type CandidateHiringStage =
-  | "Application"
-  | "Screening"
-  | "Interview"
-  | "Assessment"
-  | "Decision"
-  | "Offer"
-  | "Handoff";
-
-export type CandidateNextAction =
-  | {
-      kind:
-        | "CHOOSE_INTERVIEW_SLOT"
-        | "CONFIRM_INTERVIEW"
-        | "UPLOAD_DOCUMENT"
-        | "COMPLETE_ASSESSMENT"
-        | "RESPOND_TO_MESSAGE"
-        | "REVIEW_OFFER";
-      label: string;
-      description: string;
-      target: "interview" | "documents" | "assessment" | "messages" | "offer";
-    }
-  | {
-      kind: "NONE";
-      label: string;
-      description: string;
-      target: "none";
-    };
+export type {
+  CandidateHiringStage,
+  CandidateJourneyStep,
+  CandidateNextAction,
+  CandidatePassActionState,
+  CandidatePassViewState,
+} from "@shared/pass-state";
 
 export type CandidatePassStateInput = {
   link?: { isActive?: boolean | null; expiresAt?: Date | string | null } | null;
@@ -72,29 +51,6 @@ export type CandidatePassStateInput = {
     nextDecision?: { label?: string | null; description?: string | null } | null;
   } | null;
   now?: Date;
-};
-
-export type CandidateJourneyStep = {
-  stage: CandidateHiringStage;
-  status: "completed" | "current" | "upcoming";
-};
-
-export type CandidatePassViewState = {
-  actionState: CandidatePassActionState;
-  hiringStage: CandidateHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  waitingOn: string;
-  now: string;
-  yourAction: string;
-  next: string;
-  expectedMovement: string;
-  nextAction: CandidateNextAction;
-  latestUpdate: string;
-  latestUpdateAt: string | null;
-  passHandoff: string | null;
-  journey: CandidateJourneyStep[];
 };
 
 const stageOrder: CandidateHiringStage[] = [
@@ -274,18 +230,43 @@ function expectedMovement(input: CandidatePassStateInput, waitingOn: string, nex
   const targetHire = toDate(input.pass?.targetHireDate);
   if (targetHire && targetHire >= now) return `Expected movement: hiring team is working toward ${targetHire.toISOString().slice(0, 10)}.`;
 
-  return `Expected movement: no update date is set yet. This Pass will update when ${waitingOn.toLowerCase()} completes ${next.toLowerCase()}.`;
+  if (waitingOn === "Hiring Manager") {
+    return `Expected movement: the hiring manager will ${actionPhrase(next)}.`;
+  }
+  if (waitingOn === "Hiring team") {
+    return "Expected movement: the hiring team will update this Pass when the next step is ready.";
+  }
+  if (waitingOn === "Candidate") {
+    return `Expected movement: the candidate will ${actionPhrase(next)}.`;
+  }
+  return "Expected movement: this Pass will update when the next step is recorded.";
 }
 
 function passHandoff(latest: { text: string; date: Date | null }, waitingOn: string): string | null {
   if (!latest.date) return null;
   const owner = waitingOn === "Hiring team" ? "HR" : waitingOn;
+  if (latest.text.startsWith("Manager Pass issued")) return "Pass Handoff: HR -> Hiring Manager";
+  if (latest.text.startsWith("Candidate Pass issued")) return "Pass Handoff: HR -> Candidate";
   if (latest.text.startsWith("Hiring Manager")) return `Pass Handoff: Hiring Manager -> ${owner}`;
   if (latest.text.startsWith("Interview slot") || latest.text.startsWith("Document") || latest.text.startsWith("Assessment") || latest.text.startsWith("Offer")) {
     return `Pass Handoff: Candidate -> ${owner}`;
   }
   if (latest.text.startsWith("Hiring team")) return `Pass Handoff: HR -> ${owner}`;
   return null;
+}
+
+function actionPhrase(next: string): string {
+  const phrase = next
+    .trim()
+    .replace(/\.$/, "")
+    .replace(/^Hiring Manager completes\s+/i, "")
+    .replace(/^HR completes\s+/i, "")
+    .replace(/^Candidate completes\s+/i, "")
+    .replace(/^Record\s+/i, "record ")
+    .replace(/^Submit\s+/i, "submit ")
+    .replace(/^Review\s+/i, "review ")
+    .replace(/^Complete\s+/i, "complete ");
+  return phrase || "complete the next step";
 }
 
 function withPassState(base: Omit<CandidatePassViewState, "now" | "yourAction" | "next" | "expectedMovement" | "latestUpdateAt" | "passHandoff">, input: CandidatePassStateInput, now: Date): CandidatePassViewState {
@@ -508,7 +489,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
   return withPassState({
     actionState: "WAITING",
     hiringStage,
-    stateLabel: "WAITING ON EMPLOYER",
+      stateLabel: "WAITING ON HR",
     headline: "You're all set. We're waiting on the hiring team.",
     summary: "There is nothing you need to do right now.",
     waitingOn: "Hiring team",

@@ -102,7 +102,7 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
   
   const getDisplayPassId = (dbPassId: string) => {
     if (passIdParam) return passIdParam;
-    return dbPassId.startsWith("BAYN-") ? dbPassId : `BAYN-${dbPassId}`;
+    return /^(HP|BAYN)-/.test(dbPassId) ? dbPassId.replace(/^BAYN-/, "HP-") : `HP-${dbPassId}`;
   };
 
   const { data: pass, isLoading: passLoading } = useQuery<Pass>({
@@ -165,7 +165,7 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
     return matchesSearch && matchesPosition;
   }) || [];
 
-  const topCandidate = passCandidates?.sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))[0];
+  const leadCandidate = passCandidates?.[0];
 
   const currentPosition = positions?.[selectedPosition] || {
     positionTitle: pass?.positionTitle || "",
@@ -237,7 +237,7 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
             <div>
               <div className="flex items-center gap-1.5 text-slate-500 text-xs mb-1">
                 <Building2 className="w-3.5 h-3.5" strokeWidth={2} />
-                HirePass Demo Company
+                HirePass
               </div>
               <h1 className="text-2xl font-light tracking-wide text-[#1F3B58]">RECRUITMENT PASS</h1>
               <p className="text-slate-500 text-sm font-light">Official Hiring Authorization Document</p>
@@ -308,7 +308,7 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
                     { label: "Job Title", value: currentPosition.positionTitle || pass.positionTitle },
                     { label: "Recruitment Reference", value: pass.passId || `REQ-${pass.id}` },
                     { label: "Department", value: pass.department || "Engineering / R&D" },
-                    { label: "Location", value: pass.location || "Abu Dhabi, UAE" },
+                    { label: "Location", value: pass.location || "Remote / Hybrid" },
                     { label: "Employment Type", value: pass.employmentType || "Full-time" },
                     { label: "Salary Range", value: pass.salaryRangeMax ? `AED ${pass.salaryRangeMin?.toLocaleString()} - ${pass.salaryRangeMax?.toLocaleString()}` : "Competitive" },
                     { label: "Experience Required", value: pass.experienceMin ? `${pass.experienceMin}-${pass.experienceMax} years` : "2-4 years" },
@@ -484,11 +484,11 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
                     <th className="w-10 px-3 py-2">
                       <Checkbox data-testid="checkbox-select-all" />
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Rank</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">#</th>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Name</th>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Position</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Score</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Match</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Status</th>
+                    <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Stage</th>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Exp</th>
                     <th className="px-3 py-2 text-left text-[10px] font-medium text-slate-500 uppercase tracking-wide">Profile</th>
                     <th className="w-10 px-3 py-2"></th>
@@ -519,16 +519,10 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
                         <span className="text-xs text-slate-600">{pc.candidate.currentTitle || "Not specified"}</span>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                          <span className="text-xs font-medium text-[#1F3B58]">{pc.aiScore || 0}%</span>
-                        </div>
+                        <span className="text-xs font-medium text-[#1F3B58] capitalize">{pc.status || "New"}</span>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5 min-w-20">
-                          <Progress value={pc.aiScore || 0} className="h-1 flex-1" />
-                          <span className="text-[10px] text-slate-500">{pc.aiScore || 0}%</span>
-                        </div>
+                        <span className="text-xs text-slate-600">Screening</span>
                       </td>
                       <td className="px-3 py-2">
                         <span className="text-xs text-slate-600">
@@ -674,15 +668,15 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
               {/* Top Candidate */}
               <div className="mb-4">
                 <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mb-2">Top Candidate</p>
-                {topCandidate ? (
+                {leadCandidate ? (
                   <div className="p-3 rounded-md bg-slate-50 border border-slate-200">
                     <div className="flex items-center gap-2">
                       <div className="w-10 h-10 rounded-full bg-[#1F3B58] flex items-center justify-center text-white text-sm font-medium">
-                        {topCandidate.candidate.name.split(' ').map(n => n[0]).join('')}
+                        {leadCandidate.candidate.name.split(' ').map(n => n[0]).join('')}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-[#1F3B58]">{topCandidate.candidate.name}</p>
-                        <p className="text-xs text-slate-600">{topCandidate.candidate.currentTitle || pass.positionTitle}</p>
+                        <p className="text-sm font-medium text-[#1F3B58]">{leadCandidate.candidate.name}</p>
+                        <p className="text-xs text-slate-600">{leadCandidate.candidate.currentTitle || pass.positionTitle}</p>
                       </div>
                     </div>
                   </div>
@@ -696,10 +690,10 @@ export default function RecruitmentPass({ passIdParam, params: propsParams }: Re
               {/* Scores */}
               <div className="space-y-0">
                 {[
-                  { label: "Technical Score", value: topCandidate ? `${((topCandidate.aiScore || 0) / 10).toFixed(1)} / 10` : "- / 10" },
-                  { label: "Cultural Fit", value: "9.0 / 10" },
-                  { label: "Communication", value: "9.0 / 10" },
-                  { label: "Leadership", value: "9.3 / 10" },
+                  { label: "Candidate Status", value: leadCandidate?.status || "Not selected" },
+                  { label: "Current Stage", value: leadCandidate ? "Screening" : "Not started" },
+                  { label: "Interview Status", value: passInterviews.length > 0 ? "Scheduled" : "Not scheduled" },
+                  { label: "Decision", value: "Pending" },
                 ].map((item, idx) => (
                   <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
                     <span className="text-xs text-slate-600">{item.label}</span>
