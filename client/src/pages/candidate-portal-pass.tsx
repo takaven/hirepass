@@ -25,6 +25,7 @@ import {
   User,
 } from "lucide-react";
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
+import type { CandidatePassActionState, CandidatePassViewState } from "@shared/pass-state";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -38,55 +39,6 @@ async function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-
-type CandidatePassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
-
-type CandidateHiringStage =
-  | "Application"
-  | "Screening"
-  | "Interview"
-  | "Assessment"
-  | "Decision"
-  | "Offer"
-  | "Handoff";
-
-type CandidateNextAction = {
-  kind:
-    | "CHOOSE_INTERVIEW_SLOT"
-    | "CONFIRM_INTERVIEW"
-    | "UPLOAD_DOCUMENT"
-    | "COMPLETE_ASSESSMENT"
-    | "RESPOND_TO_MESSAGE"
-    | "REVIEW_OFFER"
-    | "NONE";
-  label: string;
-  description: string;
-  target: "interview" | "documents" | "assessment" | "messages" | "offer" | "none";
-};
-
-type CandidatePassViewState = {
-  actionState: CandidatePassActionState;
-  hiringStage: CandidateHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  waitingOn: string;
-  now: string;
-  yourAction: string;
-  next: string;
-  expectedMovement: string;
-  nextAction: CandidateNextAction;
-  latestUpdate: string;
-  latestUpdateAt: string | null;
-  passHandoff: string | null;
-  journey: Array<{ stage: CandidateHiringStage; status: "completed" | "current" | "upcoming" }>;
-};
 
 type CandidatePassCandidateProfile = Pick<Candidate, "id" | "name" | "email" | "phone" | "currentTitle" | "currentCompany" | "currentLocation">;
 type CandidatePassApplication = Pick<
@@ -125,6 +77,19 @@ const stateStyles: Record<CandidatePassActionState, string> = {
   EXPIRED: "border-slate-500 bg-slate-500/10 text-slate-200",
   REVOKED: "border-red-400 bg-red-400/10 text-red-200",
 };
+
+function formatCandidateDate(value: string | Date | null | undefined) {
+  if (!value) return "Date to be confirmed";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date to be confirmed";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
 
 async function fetchCandidatePass(token: string): Promise<CandidatePassData> {
   const response = await fetch(`/api/candidate-pass/${token}`);
@@ -431,7 +396,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                 )}
                 {interviews.map((interview) => (
                   <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">{interview.interviewDate}</p>
+                    <p className="font-medium text-white">{formatCandidateDate(interview.interviewDate)}</p>
                     <p className="text-sm text-slate-400">
                       {interview.startTime} - {interview.endTime} ({interview.format})
                     </p>

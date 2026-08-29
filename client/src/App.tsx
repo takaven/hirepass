@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation } from "wouter";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { apiRequest, queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,29 +9,27 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsDropdown } from "@/components/notifications-dropdown";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import NotFound from "@/pages/not-found";
-import Dashboard from "@/pages/dashboard";
-import Candidates from "@/pages/candidates";
-import CandidateForm from "@/pages/candidate-form";
-import Passes from "@/pages/passes";
-import PassForm from "@/pages/pass-form";
-import PassDetail from "@/pages/pass-detail";
-import Interviews from "@/pages/interviews";
-import InterviewForm from "@/pages/interview-form";
-import Managers from "@/pages/managers";
-import ManagerForm from "@/pages/manager-form";
-import Settings from "@/pages/settings";
-import Analytics from "@/pages/analytics";
-import AiAssistant from "@/pages/ai-assistant";
-import HrPassControl from "@/pages/hr-pass-control";
-import PublicApply from "@/pages/public-apply";
-import PassCandidates from "@/pages/pass-candidates";
-import RecruitmentPass from "@/pages/recruitment-pass";
-import CandidatePass from "@/pages/candidate-pass";
-import OnboardingPass from "@/pages/onboarding-pass";
-import ManagerRecruitmentPass from "@/pages/manager-recruitment-pass";
-import CandidatePortalPass from "@/pages/candidate-portal-pass";
-import OnboardingPortalPass from "@/pages/onboarding-portal-pass";
+
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const Candidates = lazy(() => import("@/pages/candidates"));
+const CandidateForm = lazy(() => import("@/pages/candidate-form"));
+const Passes = lazy(() => import("@/pages/passes"));
+const PassForm = lazy(() => import("@/pages/pass-form"));
+const PassDetail = lazy(() => import("@/pages/pass-detail"));
+const Interviews = lazy(() => import("@/pages/interviews"));
+const InterviewForm = lazy(() => import("@/pages/interview-form"));
+const Managers = lazy(() => import("@/pages/managers"));
+const ManagerForm = lazy(() => import("@/pages/manager-form"));
+const Settings = lazy(() => import("@/pages/settings"));
+const Analytics = lazy(() => import("@/pages/analytics"));
+const HrPassControl = lazy(() => import("@/pages/hr-pass-control"));
+const PublicApply = lazy(() => import("@/pages/public-apply"));
+const PassCandidates = lazy(() => import("@/pages/pass-candidates"));
+const RecruitmentPass = lazy(() => import("@/pages/recruitment-pass"));
+const CandidatePass = lazy(() => import("@/pages/candidate-pass"));
+const ManagerRecruitmentPass = lazy(() => import("@/pages/manager-recruitment-pass"));
+const CandidatePortalPass = lazy(() => import("@/pages/candidate-portal-pass"));
 
 function InternalLogin() {
   const [username, setUsername] = useState("");
@@ -108,6 +106,10 @@ function InternalAuthGate() {
   return <MainLayout />;
 }
 
+function RouteFallback() {
+  return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Loading HirePass...</div>;
+}
+
 function MainRouter() {
   return (
     <Switch>
@@ -124,7 +126,6 @@ function MainRouter() {
       <Route path="/candidates/:id" component={CandidateForm} />
       <Route path="/candidates/:id/edit" component={CandidateForm} />
       <Route path="/candidates/:id/pass" component={CandidatePass} />
-      <Route path="/candidates/:id/onboarding-pass" component={OnboardingPass} />
       <Route path="/interviews" component={Interviews} />
       <Route path="/interviews/new" component={InterviewForm} />
       <Route path="/managers" component={Managers} />
@@ -132,7 +133,6 @@ function MainRouter() {
       <Route path="/managers/:id/edit" component={ManagerForm} />
       <Route path="/settings" component={Settings} />
       <Route path="/analytics" component={Analytics} />
-      <Route path="/ai-assistant" component={AiAssistant} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -185,26 +185,24 @@ function App() {
   const [location] = useLocation();
   
   const isApplyRoute = location === "/apply";
-  // Clean pass URLs: /pass/BAYN-RP-2025-001 (recruitment passes only for now)
-  const isRecruitmentPassRoute = location.startsWith("/pass/BAYN-RP-");
+  const isRecruitmentPassRoute = /^\/pass\/(?:(?:HP|BAYN)-)?RP-\d{4}-\d{3}$/.test(location);
   // Token-based manager pass: /manager-pass/mgr_xxxxx
   const isManagerPassRoute = location.startsWith("/manager-pass/");
   // Token-based candidate portal: /candidate-pass/cand_xxxxx
   const isCandidatePortalRoute = location.startsWith("/candidate-pass/");
-  // Token-based onboarding portal: /onboarding-portal/onb_xxxxx
-  const isOnboardingPortalRoute = location.startsWith("/onboarding-portal/");
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light" storageKey="hirepass-theme">
         <TooltipProvider>
+          <Suspense fallback={<RouteFallback />}>
           {isApplyRoute ? (
             <PublicApply />
           ) : isRecruitmentPassRoute ? (
             <Switch>
               <Route path="/pass/:passId">{(params) => {
                 const passId = params.passId || "";
-                if (passId.startsWith("BAYN-RP-")) {
+                if (/^(?:(?:HP|BAYN)-)?RP-\d{4}-\d{3}$/.test(passId)) {
                   return <RecruitmentPass passIdParam={passId} />;
                 }
                 return <NotFound />;
@@ -224,16 +222,10 @@ function App() {
                 return <CandidatePortalPass token={token} />;
               }}</Route>
             </Switch>
-          ) : isOnboardingPortalRoute ? (
-            <Switch>
-              <Route path="/onboarding-portal/:token">{(params) => {
-                const token = params.token || "";
-                return <OnboardingPortalPass token={token} />;
-              }}</Route>
-            </Switch>
           ) : (
             <InternalAuthGate />
           )}
+          </Suspense>
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

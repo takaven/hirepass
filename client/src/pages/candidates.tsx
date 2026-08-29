@@ -9,7 +9,6 @@ import {
   Mail,
   Phone,
   FileText,
-  Sparkles,
   Trash2,
   Edit,
   Eye,
@@ -293,9 +292,6 @@ export default function Candidates() {
                           data-testid={`badge-position-${pc.passId}`}
                         >
                           {pc.pass?.positionTitle || "Position"}
-                          {pc.aiScore && (
-                            <span className="text-primary font-semibold">{pc.aiScore}%</span>
-                          )}
                           <ExternalLink className="w-3 h-3" strokeWidth={1.5} />
                         </Badge>
                       </Link>
@@ -321,10 +317,9 @@ export default function Candidates() {
                   </Badge>
                 )}
                 {candidate.cvSummary && (
-                  <div className="flex items-center gap-1 text-xs text-primary">
-                    <Sparkles className="w-3 h-3" strokeWidth={1.5} />
-                    <span>Summary</span>
-                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    Profile Summary
+                  </Badge>
                 )}
               </div>
             </GlassCard>

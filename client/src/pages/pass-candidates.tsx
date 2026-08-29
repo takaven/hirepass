@@ -6,7 +6,6 @@ import {
   Users,
   Briefcase,
   Calendar,
-  Sparkles,
   Plus,
   Check,
   X,
@@ -28,7 +27,6 @@ import {
 } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
 import { StatusBadge } from "@/components/status-badge";
-import { AiScoreCard, AiScoreBadge } from "@/components/ai-score-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -234,53 +232,6 @@ export default function PassCandidates() {
     },
   });
 
-  const aiScoreMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", "/api/ai/rank-candidates", { passId: parseInt(passId!) });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates", "pipeline"] });
-      toast({ title: "Scoring complete" });
-    },
-    onError: () => {
-      toast({ title: "Failed to score candidates", variant: "destructive" });
-    },
-  });
-
-  const singleScoreMutation = useMutation({
-    mutationFn: async ({ passCandidateId }: { passCandidateId: number }) => {
-      const res = await apiRequest("POST", "/api/ai/score-candidate", { 
-        passId: parseInt(passId!), 
-        passCandidateId 
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates", "pipeline"] });
-      toast({ title: "Scoring complete", description: `Score: ${data.overallScore}%` });
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to score candidate", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const batchScoreMutation = useMutation({
-    mutationFn: async (passCandidateIds: number[]) => {
-      const res = await apiRequest("POST", "/api/ai/batch-score", { 
-        passId: parseInt(passId!), 
-        passCandidateIds 
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates", "pipeline"] });
-      toast({ title: "Batch scoring complete", description: `Scored ${data.scored} candidates` });
-    },
-    onError: () => {
-      toast({ title: "Failed to batch score candidates", variant: "destructive" });
-    },
-  });
-
   const createManagerLinkMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/share-links", { 
@@ -368,18 +319,6 @@ export default function PassCandidates() {
 
   const handleBulkReject = () => {
     handleBulkMove("rejected");
-  };
-
-  const handleScoreWithAI = () => {
-    if (selectedCandidates.length > 0) {
-      batchScoreMutation.mutate(selectedCandidates);
-    } else {
-      aiScoreMutation.mutate();
-    }
-  };
-
-  const handleScoreSingleCandidate = (passCandidateId: number) => {
-    singleScoreMutation.mutate({ passCandidateId });
   };
 
   const handleAddCandidate = () => {
@@ -563,20 +502,6 @@ export default function PassCandidates() {
                 </SelectContent>
               </Select>
               <Button
-                variant="outline"
-                className="rounded-xl gap-2"
-                onClick={handleScoreWithAI}
-                disabled={aiScoreMutation.isPending || batchScoreMutation.isPending}
-                data-testid="button-bulk-ai-score"
-              >
-                {(aiScoreMutation.isPending || batchScoreMutation.isPending) ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" strokeWidth={2} />
-                )}
-                Score with AI
-              </Button>
-              <Button
                 variant="destructive"
                 className="rounded-xl gap-2"
                 onClick={handleBulkReject}
@@ -685,28 +610,6 @@ export default function PassCandidates() {
                                     {pc.candidate.experienceYears}y exp
                                   </span>
                                 )}
-                                {pc.aiScore ? (
-                                  <AiScoreBadge score={pc.aiScore} />
-                                ) : (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-5 px-1.5 text-[10px] gap-1 rounded"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleScoreSingleCandidate(pc.id);
-                                    }}
-                                    disabled={singleScoreMutation.isPending}
-                                    data-testid={`button-score-${pc.id}`}
-                                  >
-                                    {singleScoreMutation.isPending ? (
-                                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                    ) : (
-                                      <Sparkles className="w-2.5 h-2.5" strokeWidth={2} />
-                                    )}
-                                    Score
-                                  </Button>
-                                )}
                               </div>
                               {pc.addedAt && (
                                 <p className="text-[10px] text-muted-foreground mt-2">
@@ -806,17 +709,6 @@ export default function PassCandidates() {
                     )}
                   </div>
                 </div>
-
-                <AiScoreCard
-                  passId={parseInt(passId!)}
-                  passCandidateId={detailCandidate.id}
-                  candidateName={detailCandidate.candidate?.name || "Unknown"}
-                  existingScore={detailCandidate.aiScore}
-                  existingDetails={detailCandidate.aiBrief}
-                  onScoreUpdate={() => {
-                    queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates", "pipeline"] });
-                  }}
-                />
 
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Update Status</h4>

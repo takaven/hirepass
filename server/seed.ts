@@ -41,9 +41,9 @@ async function seed() {
   }
 
   const settingsData = [
-    { key: 'company_name', value: 'HirePass Demo Company', description: 'Company name' },
+    { key: 'company_name', value: 'Your Organization', description: 'Company name' },
     { key: 'company_brand', value: 'HirePass', description: 'Brand name' },
-    { key: 'company_location', value: 'Dubai, UAE', description: 'Primary location' },
+    { key: 'company_location', value: 'Remote / Hybrid', description: 'Primary location' },
     { key: 'company_industry', value: 'Professional services', description: 'Industry' },
     { key: 'currency', value: 'AED', description: 'Default currency' },
     { key: 'probation_months', value: '6', description: 'Standard probation period' },

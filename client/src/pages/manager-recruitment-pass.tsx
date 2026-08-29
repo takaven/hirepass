@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
@@ -25,56 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared/schema";
-
-type ManagerPassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
-
-type ManagerHiringStage = "Request" | "Screening" | "Interview" | "Decision" | "Offer" | "Handoff";
-
-type ManagerNextDecision = {
-  kind:
-    | "APPROVE_JD"
-    | "REVIEW_CANDIDATE"
-    | "SET_INTERVIEW_AVAILABILITY"
-    | "SUBMIT_EVALUATION"
-    | "MAKE_FINAL_DECISION"
-    | "NONE";
-  label: string;
-  description: string;
-  target: "request" | "candidate" | "interview" | "evaluation" | "decision" | "none";
-  candidateId?: number;
-};
-
-type ManagerPassViewState = {
-  actionState: ManagerPassActionState;
-  hiringStage: ManagerHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  urgency: "normal" | "attention";
-  waitingOn: string;
-  next: string;
-  expectedMovement: string;
-  latestUpdate: string;
-  passHandoff: string | null;
-  nextDecision: ManagerNextDecision;
-  evidence: {
-    candidateCount: number;
-    activeCandidateCount: number;
-    role: string;
-    topCandidate?: {
-      id: number;
-      name: string;
-      title: string;
-      summary: string;
-    };
-  };
-};
+import type { ManagerPassActionState, ManagerPassViewState } from "@shared/pass-state";
 
 type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
@@ -102,6 +53,19 @@ const stateStyles: Record<ManagerPassActionState, string> = {
   EXPIRED: "border-slate-500 bg-slate-500/10 text-slate-200",
   REVOKED: "border-red-400 bg-red-400/10 text-red-200",
 };
+
+function formatManagerDate(value: string | Date | null | undefined) {
+  if (!value) return "Date to be confirmed";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date to be confirmed";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
 
 async function fetchManagerPass(token: string): Promise<ManagerPassData> {
   const response = await fetch(`/api/manager-pass/${token}`);
@@ -271,10 +235,11 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   }
 
   const { pass, candidates, interviews, manager, managerPassState } = data;
-  const targetCandidate = candidates.find((candidate) => candidate.id === managerPassState.nextDecision.candidateId) || managerPassState.evidence.topCandidate;
-  const targetInterview = interviews.find((interview) => interview.passCandidateId === managerPassState.nextDecision.candidateId) || interviews[0];
+  const nextDecisionCandidateId = "candidateId" in managerPassState.nextDecision ? managerPassState.nextDecision.candidateId : undefined;
+  const targetCandidate = candidates.find((candidate) => candidate.id === nextDecisionCandidateId) || managerPassState.evidence.topCandidate;
+  const targetInterview = interviews.find((interview) => interview.passCandidateId === nextDecisionCandidateId) || interviews[0];
 
-  const actionButton = useMemo(() => {
+  const actionButton = (() => {
     switch (managerPassState.nextDecision.kind) {
       case "APPROVE_JD":
         return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowRequestDialog(true)}>Review hiring request</Button>;
@@ -298,7 +263,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       default:
         return <Button className="min-h-11" disabled>No decision required</Button>;
     }
-  }, [managerPassState.nextDecision.kind, rejectMutation, shortlistMutation, targetCandidate?.id]);
+  })();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -489,7 +454,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
               ) : (
                 interviews.slice(0, 3).map((interview) => (
                   <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">{interview.interviewDate}</p>
+                    <p className="font-medium text-white">{formatManagerDate(interview.interviewDate)}</p>
                     <p className="text-sm text-slate-400">{interview.startTime} - {interview.endTime} ({interview.format})</p>
                     <p className="text-xs text-slate-500">Status: {statusLabel(interview.status)}</p>
                   </div>

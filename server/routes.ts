@@ -515,22 +515,23 @@ export async function registerRoutes(
     }
   });
 
-  // Lookup pass by readable passId (e.g., BAYN-RP-2025-001 or RP-2025-001 for legacy)
+  // Lookup pass by readable passId. HP is the neutral default; legacy prefixes remain readable.
   app.get("/api/passes/lookup/:passId", async (req, res) => {
     try {
       let { passId } = req.params;
-      // Validate passId format - accept both BAYN-RP-YYYY-NNN and legacy RP-YYYY-NNN
-      const newFormat = /^BAYN-(RP|CP|OP)-\d{4}-\d{3}$/;
+      const newFormat = /^(HP|BAYN)-(RP|CP|OP)-\d{4}-\d{3}$/;
       const legacyFormat = /^(RP|CP|OP)-\d{4}-\d{3}$/;
       
       if (!newFormat.test(passId) && !legacyFormat.test(passId)) {
-        return res.status(400).json({ error: "Invalid pass ID format. Expected: BAYN-RP-YYYY-NNN or RP-YYYY-NNN" });
+        return res.status(400).json({ error: "Invalid pass ID format. Expected: HP-RP-YYYY-NNN or RP-YYYY-NNN" });
       }
       
-      // For clean URLs with BAYN prefix, strip it for database lookup (existing data uses RP-YYYY-NNN)
-      const lookupId = passId.startsWith("BAYN-") ? passId.substring(5) : passId;
-      
-      const pass = await storage.getPassByPassId(lookupId);
+      const lookupIds = Array.from(new Set([passId, passId.replace(/^(HP|BAYN)-/, "")]));
+      let pass = undefined;
+      for (const lookupId of lookupIds) {
+        pass = await storage.getPassByPassId(lookupId);
+        if (pass) break;
+      }
       if (!pass) {
         return res.status(404).json({ error: "Pass not found" });
       }
@@ -2565,7 +2566,7 @@ export async function registerRoutes(
         properties: {
           positionTitle: { type: "string", description: "The job title for the position" },
           department: { type: "string", description: "Department name (e.g., Engineering, Sales, Marketing, Finance, Operations, HR, Executive)" },
-          location: { type: "string", description: "Work location, default is 'Abu Dhabi, UAE'" },
+          location: { type: "string", description: "Work location, default is the configured work location" },
           employmentType: { type: "string", enum: ["Full-time", "Part-time", "Contract", "Temporary"], description: "Type of employment" },
           headcount: { type: "number", description: "Number of positions to fill, default is 1" },
           experienceMin: { type: "number", description: "Minimum years of experience required" },
@@ -2788,7 +2789,7 @@ export async function registerRoutes(
     },
     {
       name: "uae_recruitment_advice",
-      description: "Get UAE-specific recruitment advice including salary benchmarks, visa requirements, labor law considerations, notice periods, and market insights for a specific role.",
+      description: "Get market-specific recruitment advice including salary benchmarks, employment considerations, notice periods, and market insights for a specific role.",
       input_schema: {
         type: "object",
         properties: {
@@ -2851,7 +2852,7 @@ export async function registerRoutes(
           const pass = await storage.createPass({
             positionTitle: toolInput.positionTitle,
             department: toolInput.department || "General",
-            location: toolInput.location || "Abu Dhabi, UAE",
+            location: toolInput.location || "Configured work location",
             employmentType: toolInput.employmentType || "Full-time",
             headcount: toolInput.headcount || 1,
             experienceMin: toolInput.experienceMin,
@@ -2940,7 +2941,7 @@ Employment Type: ${pass.employmentType}
 Experience: ${pass.experienceMin || 0}-${pass.experienceMax || 'open'} years
 Salary Range: AED ${pass.salaryRangeMin || 'Negotiable'} - ${pass.salaryRangeMax || 'Negotiable'}
 
-Company: HirePass Demo Company
+Company: Hiring organization
 Industry: Atmospheric Water Generation - sustainable water technology
 
 Create a compelling JD with:
@@ -2951,7 +2952,7 @@ Create a compelling JD with:
 5. Preferred qualifications  
 6. What we offer
 
-Make it professional and appealing to candidates in UAE market.`
+Make it professional and appealing to candidates in the target market.`
             }]
           });
           
@@ -3162,7 +3163,7 @@ Return JSON: {"score": 0-100, "skillsMatch": 0-100, "experienceMatch": 0-100, "o
             max_tokens: 2000,
             messages: [{
               role: "user",
-              content: `Compare these candidates for the ${pass.positionTitle} position at HirePass Demo Company.
+              content: `Compare these candidates for the ${pass.positionTitle} position at the hiring organization.
 
 Position Requirements:
 - Department: ${pass.department}
@@ -3219,8 +3220,8 @@ Experience Required: ${pass.experienceMin || 0}-${pass.experienceMax || 'open'} 
 Salary Range: AED ${pass.salaryRangeMin || 'Negotiable'} - ${pass.salaryRangeMax || 'Negotiable'}
 Job Description: ${pass.jobDescriptionDraft || 'Not provided yet'}
 
-Company: HirePass Demo Company
-Industry: Atmospheric Water Generation - sustainable water technology in Abu Dhabi, UAE
+Company: Hiring organization
+Industry: Configured business sector
 
 Provide a comprehensive ideal candidate profile including:
 
@@ -3228,7 +3229,7 @@ Provide a comprehensive ideal candidate profile including:
 2. NICE-TO-HAVE Skills (differentiators)
 3. Experience Background (ideal career path)
 4. Personality Traits & Soft Skills
-5. Cultural Fit Indicators (for UAE/GCC environment)
+5. Cultural Fit Indicators
 6. Red Flags to Watch For
 7. Interview Questions to Assess Fit
 8. Where to Source This Candidate (job boards, LinkedIn groups, etc.)`
@@ -3248,19 +3249,19 @@ Provide a comprehensive ideal candidate profile including:
             max_tokens: 2000,
             messages: [{
               role: "user",
-              content: `Provide UAE-specific recruitment advice for hiring a ${toolInput.positionTitle} (${toolInput.experienceLevel || 'mid-level'}) in ${toolInput.department || 'General'} department.
+              content: `Provide market-specific recruitment advice for hiring a ${toolInput.positionTitle} (${toolInput.experienceLevel || 'mid-level'}) in ${toolInput.department || 'General'} department.
 
 Topic Focus: ${toolInput.topic || 'all'}
 
 Please provide expert advice on:
 
 ${toolInput.topic === 'salary' || toolInput.topic === 'all' ? `
-SALARY BENCHMARKS (UAE Market 2024):
+SALARY BENCHMARKS:
 - Entry level range
 - Mid-level range  
 - Senior level range
 - Common benefits/allowances (housing, transport, education)
-- Bonus structures typical in UAE
+- Bonus structures typical for the target market
 ` : ''}
 
 ${toolInput.topic === 'visa' || toolInput.topic === 'all' ? `
@@ -3274,7 +3275,7 @@ VISA & WORK PERMITS:
 ` : ''}
 
 ${toolInput.topic === 'labor_law' || toolInput.topic === 'all' ? `
-UAE LABOR LAW CONSIDERATIONS:
+EMPLOYMENT LAW CONSIDERATIONS:
 - Probation period rules (max 6 months)
 - Notice period requirements
 - End of service gratuity calculation
@@ -3285,7 +3286,7 @@ UAE LABOR LAW CONSIDERATIONS:
 
 ${toolInput.topic === 'market' || toolInput.topic === 'all' ? `
 MARKET INSIGHTS:
-- Talent availability in UAE
+- Talent availability in the target market
 - Competition for this role
 - Best sourcing channels
 - Typical time-to-hire
@@ -3293,7 +3294,7 @@ MARKET INSIGHTS:
 - Nationalization considerations (Emiratization)
 ` : ''}
 
-Be specific to Abu Dhabi/UAE market. Include practical tips for a solo HR professional.`
+Be specific to the configured market. Include practical tips for a solo HR professional.`
             }]
           });
           
@@ -3301,7 +3302,7 @@ Be specific to Abu Dhabi/UAE market. Include practical tips for a solo HR profes
           if (adviceContent.type === "text") {
             return { success: true, result: { advice: adviceContent.text } };
           }
-          return { success: false, error: "Failed to generate UAE advice" };
+          return { success: false, error: "Failed to generate market advice" };
         }
 
         case "draft_candidate_email": {
@@ -3315,8 +3316,8 @@ Be specific to Abu Dhabi/UAE market. Include practical tips for a solo HR profes
 Candidate Name: ${toolInput.candidateName}
 Position: ${toolInput.positionTitle}
 Additional Details: ${toolInput.additionalDetails || 'None provided'}
-Company: HirePass Demo Company
-Location: Abu Dhabi, UAE
+Company: Hiring organization
+Location: Configured work location
 
 ${toolInput.emailType === 'rejection' ? 
 `Draft a respectful, professional rejection email that:
@@ -3357,7 +3358,7 @@ ${toolInput.emailType === 'onboarding' ?
 - Shares what to expect
 - Provides HR contact` : ''}
 
-Make it professional, warm, and appropriate for UAE business culture.`
+Make it professional, warm, and appropriate for the hiring organization's business culture.`
             }]
           });
           
@@ -3395,7 +3396,7 @@ ${toolInput.question ? `Specific Question: ${toolInput.question}` : ''}
 As a recruitment expert, provide:
 
 1. RECOMMENDED TIMELINE
-   - Realistic time-to-hire for this role in UAE
+   - Realistic time-to-hire for this role in the target market
    - Key milestones and deadlines
    - Buffer time for visa processing if needed
 
@@ -3416,7 +3417,7 @@ As a recruitment expert, provide:
    - When to involve hiring manager
    - Common bottlenecks and how to avoid them
 
-5. UAE-SPECIFIC CONSIDERATIONS
+5. MARKET-SPECIFIC CONSIDERATIONS
    - Notice period expectations
    - Visa timeline impact
    - Cultural interview considerations
@@ -3470,7 +3471,7 @@ ${toolInput.interviewType === 'behavioral' ?
 'Focus on: STAR method questions, past experiences, conflict resolution, teamwork' : ''}
 
 ${toolInput.interviewType === 'cultural' ? 
-'Focus on: Values alignment, work style, adaptability to UAE environment, team fit' : ''}
+'Focus on: Values alignment, work style, adaptability to the work environment, team fit' : ''}
 
 ${toolInput.interviewType === 'final' ? 
 'Focus on: Leadership potential, long-term goals, strategic thinking, final concerns' : ''}
@@ -3521,7 +3522,7 @@ Current System State:
       let response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 4096,
-        system: `You are an expert AI recruitment assistant for HirePass Demo Company (Abu Dhabi, UAE). You are a knowledgeable HR partner who can both PERFORM ACTIONS and provide expert UAE recruitment guidance.
+        system: `You are an expert AI recruitment assistant for the hiring organization. You are a knowledgeable HR partner who can both PERFORM ACTIONS and provide practical recruitment guidance.
 
 ${currentContext}
 
@@ -3539,15 +3540,15 @@ ACTIONS YOU CAN PERFORM:
 EXPERT ADVICE YOU CAN PROVIDE:
 8. COMPARE candidates side-by-side for a position
 9. ANALYZE ideal candidate profile based on job requirements
-10. UAE RECRUITMENT EXPERTISE: salary benchmarks, visa requirements, labor law, market insights
+10. RECRUITMENT EXPERTISE: salary benchmarks, employment requirements, labor law, market insights
 11. DRAFT professional emails: rejections, interview invites, offers, onboarding
 12. HIRING PROCESS recommendations and timelines
 13. GENERATE tailored interview questions for any stage
 
-YOU ARE A UAE RECRUITMENT EXPERT:
-- Know UAE labor law (probation periods, notice periods, gratuity, working hours)
+YOU ARE A RECRUITMENT EXPERT:
+- Know relevant labor law (probation periods, notice periods, benefits, working hours)
 - Understand visa/work permit processes and timelines
-- Have knowledge of UAE salary benchmarks across industries
+- Have knowledge of salary benchmarks across industries
 - Familiar with Emiratization requirements
 - Understand cultural considerations for hiring in the GCC region
 
@@ -3592,7 +3593,7 @@ Be concise but thorough. You're supporting a solo HR professional who needs effi
         response = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
           max_tokens: 4096,
-          system: `You are an AI recruitment assistant for HirePass Demo Company. You just performed some actions - summarize what you did clearly and helpfully.`,
+          system: `You are an AI recruitment assistant for the hiring organization. You just performed some actions - summarize what you did clearly and helpfully.`,
           messages,
           tools: aiAgentTools
         });
@@ -3700,7 +3701,7 @@ Employment Type: ${pass.employmentType}
 Experience: ${pass.experienceMin || 0}-${pass.experienceMax || 'open'} years
 Salary Range: ${pass.salaryCurrency || 'AED'} ${pass.salaryRangeMin || 'Negotiable'} - ${pass.salaryRangeMax || 'Negotiable'}
 
-Company: HirePass Demo Company
+Company: Hiring organization
 Industry: Atmospheric Water Generation - sustainable water technology
 
 Create a compelling JD with:
@@ -3711,7 +3712,7 @@ Create a compelling JD with:
 5. Preferred qualifications  
 6. What we offer
 
-Make it professional and appealing to candidates in UAE market.`
+Make it professional and appealing to candidates in the target market.`
           }
         ]
       });
@@ -3768,7 +3769,7 @@ Provide evaluation in JSON format:
   "summary": "2-3 sentence summary"
 }
 
-Be direct and practical. This is for UAE market.`
+Be direct and practical. This is for the target market.`
           }
         ]
       });
@@ -3834,7 +3835,7 @@ Return in JSON format:
   "totalPoints": number
 }
 
-Make questions practical and relevant to UAE/GCC market.`
+Make questions practical and relevant to the target market.`
           }
         ]
       });
@@ -3896,7 +3897,7 @@ Return in JSON format:
   ]
 }
 
-Questions should be relevant to UAE work culture.`
+Questions should be relevant to the hiring organization's work culture.`
           }
         ]
       });
@@ -4010,7 +4011,7 @@ Return in JSON format:
   ]
 }
 
-Rank based on skills match, experience level, and seniority alignment with UAE market expectations.`
+Rank based on skills match, experience level, and seniority alignment with market expectations.`
           }
         ]
       });
@@ -4169,7 +4170,7 @@ Expected Salary: ${candidate?.expectedSalary || 'Not specified'} ${candidate?.ex
 ${candidate?.cvSummary ? `Resume Summary: ${candidate.cvSummary}` : ''}
 ${candidate?.linkedinUrl ? `LinkedIn: ${candidate.linkedinUrl}` : ''}
 
-Analyze this candidate and provide a detailed scoring. Consider UAE/GCC market expectations and professional standards.
+Analyze this candidate and provide a detailed scoring. Consider market expectations and professional standards.
 
 Return ONLY valid JSON in this exact format:
 {
@@ -4366,10 +4367,10 @@ Return ONLY valid JSON:
         messages: [
           {
             role: "user",
-            content: `Generate a professional offer letter for a UAE-based company. Use formal business English.
+            content: `Generate a professional offer letter for the hiring organization. Use formal business English.
 
-COMPANY: HirePass Demo Company
-LOCATION: Abu Dhabi, UAE
+COMPANY: Hiring organization
+LOCATION: Configured work location
 
 CANDIDATE DETAILS:
 Name: ${candidate?.name}
@@ -4389,7 +4390,7 @@ Generate a complete, professional offer letter that includes:
 2. Position details and reporting structure
 3. Compensation and benefits summary
 4. Start date and onboarding information
-5. Employment terms and conditions standard for UAE
+5. Employment terms and conditions suitable for the configured market
 6. Acceptance instructions
 7. Professional closing
 

@@ -7,7 +7,6 @@ import { z } from "zod";
 import {
   ArrowLeft,
   Upload,
-  Sparkles,
   Loader2,
   User,
   Mail,
@@ -19,7 +18,6 @@ import {
   DollarSign,
   Save,
   FileText,
-  ClipboardList,
 } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
@@ -74,8 +72,6 @@ export default function CandidateForm() {
   const { toast } = useToast();
   const isEditing = Boolean(id) && id !== "new";
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [resumeText, setResumeText] = useState("");
 
   const { data: candidate, isLoading: candidateLoading } = useQuery<Candidate>({
     queryKey: ["/api/candidates", id],
@@ -163,52 +159,10 @@ export default function CandidateForm() {
 
   const handleResumeUpload = async (file: File) => {
     setResumeFile(file);
-    
-    if (file.type === "text/plain" || file.name.endsWith('.txt')) {
-      const text = await file.text();
-      setResumeText(text);
-      analyzeResume(text);
-    } else {
-      toast({
-        title: "File uploaded",
-        description: "For best results, please paste the resume text below.",
-      });
-    }
-  };
-
-  const analyzeResume = async (text: string) => {
-    if (!text || text.length < 50) {
-      toast({ title: "Please provide more resume text for analysis", variant: "destructive" });
-      return;
-    }
-
-    setIsAnalyzing(true);
-
-    try {
-      const response = await apiRequest("POST", "/api/ai/analyze-resume", { resumeText: text });
-      const analysis = await response.json();
-      
-      if (analysis.name) form.setValue("name", analysis.name);
-      if (analysis.email) form.setValue("email", analysis.email);
-      if (analysis.phone) form.setValue("phone", analysis.phone);
-      if (analysis.currentCompany) form.setValue("currentCompany", analysis.currentCompany);
-      if (analysis.currentTitle) form.setValue("currentTitle", analysis.currentTitle);
-      if (analysis.experienceYears) form.setValue("experienceYears", analysis.experienceYears);
-      if (analysis.skills) form.setValue("skills", analysis.skills.join(", "));
-
-      toast({
-        title: "Resume analyzed",
-        description: "Information has been extracted from the resume.",
-      });
-    } catch (error) {
-      toast({
-        title: "Analysis failed",
-        description: "Could not analyze resume. Please fill in details manually.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsAnalyzing(false);
-    }
+    toast({
+      title: "Resume selected",
+      description: "Candidate details can be completed manually.",
+    });
   };
 
   if (candidateLoading && isEditing) {
@@ -245,12 +199,6 @@ export default function CandidateForm() {
                 Candidate Pass
               </Button>
             </Link>
-            <Link href={`/candidates/${id}/onboarding-pass`}>
-              <Button variant="outline" className="rounded-xl gap-2" data-testid="button-view-onboarding-pass">
-                <ClipboardList className="w-4 h-4" strokeWidth={2} />
-                Onboarding Pass
-              </Button>
-            </Link>
           </div>
         )}
       </div>
@@ -273,18 +221,10 @@ export default function CandidateForm() {
               }}
               data-testid="input-resume-upload"
             />
-            {isAnalyzing ? (
+            {resumeFile ? (
               <div className="flex flex-col items-center gap-3">
                 <div className="p-3 rounded-2xl bg-primary/10">
-                  <Sparkles className="w-8 h-8 text-primary animate-pulse" strokeWidth={1.5} />
-                </div>
-                <p className="font-medium">Analyzing resume...</p>
-                <p className="text-sm text-muted-foreground">Extracting candidate information</p>
-              </div>
-            ) : resumeFile ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="p-3 rounded-2xl bg-primary/10">
-                  <Sparkles className="w-8 h-8 text-primary" strokeWidth={1.5} />
+                  <FileText className="w-8 h-8 text-primary" strokeWidth={1.5} />
                 </div>
                 <p className="font-medium">{resumeFile.name}</p>
                 <p className="text-sm text-muted-foreground">Click to upload a different file</p>
@@ -296,36 +236,10 @@ export default function CandidateForm() {
                 </div>
                 <p className="font-medium">Upload Resume</p>
                 <p className="text-sm text-muted-foreground">
-                  PDF, Word, or text file - AI will extract details
+                  PDF, Word, or text file for candidate records
                 </p>
               </div>
             )}
-          </div>
-          
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-2">Or paste resume text for AI analysis</label>
-            <Textarea
-              placeholder="Paste resume text here for AI analysis..."
-              className="min-h-[100px] rounded-xl"
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              data-testid="textarea-resume-text"
-            />
-            <Button 
-              type="button"
-              variant="outline"
-              className="mt-2 rounded-xl gap-2"
-              onClick={() => analyzeResume(resumeText)}
-              disabled={isAnalyzing || resumeText.length < 50}
-              data-testid="button-analyze-resume"
-            >
-              {isAnalyzing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" strokeWidth={1.5} />
-              )}
-              Analyze with AI
-            </Button>
           </div>
         </div>
 
@@ -450,7 +364,7 @@ export default function CandidateForm() {
                       Current Location
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} className="rounded-xl" placeholder="Dubai, UAE" data-testid="input-location" />
+                      <Input {...field} className="rounded-xl" placeholder="Remote / Hybrid" data-testid="input-location" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -179,15 +179,17 @@ function passHandoffFromActivity(activity: ActivityLog | null, waitingOn: Waitin
   const ownerLabel = waitingOn === "hr"
     ? "HR"
     : waitingOn === "manager"
-      ? "Manager"
+      ? "Hiring Manager"
       : waitingOn === "candidate"
         ? "Candidate"
         : waitingOn === "upcoming_event"
           ? "Scheduled event"
           : waitingOn === "completed"
             ? "Completed"
-            : "No current owner";
-  if ((activity.action || "").startsWith("manager_")) return `Pass Handoff: Manager -> ${ownerLabel}`;
+          : "No current owner";
+  if (activity.action === "manager_pass_issued") return `Pass Handoff: HR -> ${ownerLabel}`;
+  if (activity.action === "candidate_pass_issued") return `Pass Handoff: HR -> ${ownerLabel}`;
+  if ((activity.action || "").startsWith("manager_")) return `Pass Handoff: Hiring Manager -> ${ownerLabel}`;
   if ((activity.action || "").startsWith("candidate_")) return `Pass Handoff: Candidate -> ${ownerLabel}`;
   if ((activity.action || "").startsWith("pass_") || (activity.action || "").includes("_pass_")) return `Pass Handoff: HR -> ${ownerLabel}`;
   return null;

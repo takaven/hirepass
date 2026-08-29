@@ -1,38 +1,18 @@
-export type ManagerPassActionState =
-  | "ACTION_REQUIRED"
-  | "WAITING"
-  | "UPCOMING"
-  | "COMPLETED"
-  | "EXPIRED"
-  | "REVOKED";
+import type {
+  ManagerEvidenceSummary,
+  ManagerHiringStage,
+  ManagerNextDecision,
+  ManagerPassActionState,
+  ManagerPassViewState,
+} from "@shared/pass-state";
 
-export type ManagerHiringStage =
-  | "Request"
-  | "Screening"
-  | "Interview"
-  | "Decision"
-  | "Offer"
-  | "Handoff";
-
-export type ManagerNextDecision =
-  | {
-      kind:
-        | "APPROVE_JD"
-        | "REVIEW_CANDIDATE"
-        | "SET_INTERVIEW_AVAILABILITY"
-        | "SUBMIT_EVALUATION"
-        | "MAKE_FINAL_DECISION";
-      label: string;
-      description: string;
-      target: "request" | "candidate" | "interview" | "evaluation" | "decision";
-      candidateId?: number;
-    }
-  | {
-      kind: "NONE";
-      label: string;
-      description: string;
-      target: "none";
-    };
+export type {
+  ManagerEvidenceSummary,
+  ManagerHiringStage,
+  ManagerNextDecision,
+  ManagerPassActionState,
+  ManagerPassViewState,
+} from "@shared/pass-state";
 
 export type ManagerPassCandidateInput = {
   id: number;
@@ -62,34 +42,6 @@ export type ManagerPassStateInput = {
   candidates?: ManagerPassCandidateInput[];
   interviews?: Array<{ id?: number; status?: string | null; interviewDate?: Date | string | null; passCandidateId?: number | null }>;
   now?: Date;
-};
-
-export type ManagerEvidenceSummary = {
-  candidateCount: number;
-  activeCandidateCount: number;
-  topCandidate?: {
-    id: number;
-    name: string;
-    title: string;
-    summary: string;
-  };
-  role: string;
-};
-
-export type ManagerPassViewState = {
-  actionState: ManagerPassActionState;
-  hiringStage: ManagerHiringStage;
-  stateLabel: string;
-  headline: string;
-  summary: string;
-  urgency: "normal" | "attention";
-  waitingOn: string;
-  next: string;
-  expectedMovement: string;
-  latestUpdate: string;
-  passHandoff: string | null;
-  nextDecision: ManagerNextDecision;
-  evidence: ManagerEvidenceSummary;
 };
 
 function toDate(value: Date | string | null | undefined): Date | null {
@@ -145,7 +97,27 @@ function expectedMovement(input: ManagerPassStateInput, waitingOn: string, next:
   const targetHire = formatDate(input.pass?.targetHireDate);
   if (targetHire) return `Expected movement: HR is working toward ${targetHire}.`;
 
-  return `Expected movement: no date is set yet. The Pass will update when ${waitingOn.toLowerCase()} completes ${next.toLowerCase()}.`;
+  if (waitingOn === "Manager") {
+    return `Expected movement: the hiring manager will ${actionPhrase(next)}.`;
+  }
+  if (waitingOn === "HR") {
+    return "Expected movement: HR will update this Pass when the next step is ready.";
+  }
+  return "Expected movement: this Pass will update when the next step is recorded.";
+}
+
+function actionPhrase(next: string): string {
+  const phrase = next
+    .trim()
+    .replace(/\.$/, "")
+    .replace(/^Manager completes\s+/i, "")
+    .replace(/^Hiring Manager completes\s+/i, "")
+    .replace(/^HR completes\s+/i, "")
+    .replace(/^Record\s+/i, "record ")
+    .replace(/^Submit\s+/i, "submit ")
+    .replace(/^Review\s+/i, "review ")
+    .replace(/^Set\s+/i, "set ");
+  return phrase || "complete the next step";
 }
 
 function withPassState(base: Omit<ManagerPassViewState, "waitingOn" | "next" | "expectedMovement" | "latestUpdate" | "passHandoff">, input: ManagerPassStateInput, now: Date): ManagerPassViewState {
@@ -167,7 +139,7 @@ function withPassState(base: Omit<ManagerPassViewState, "waitingOn" | "next" | "
     latestUpdate: base.actionState === "ACTION_REQUIRED"
       ? `${base.nextDecision.label} is waiting for you.`
       : "HR has your latest input.",
-    passHandoff: base.actionState === "COMPLETED" || base.actionState === "WAITING" ? "Pass Handoff: Manager -> HR" : null,
+    passHandoff: base.actionState === "COMPLETED" || base.actionState === "WAITING" ? "Pass Handoff: Hiring Manager -> HR" : null,
   };
 }
 
