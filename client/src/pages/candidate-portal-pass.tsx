@@ -20,7 +20,6 @@ import {
   Lock,
   MessageSquare,
   Send,
-  ShieldCheck,
   Upload,
   User,
 } from "lucide-react";
@@ -276,9 +275,11 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500 text-white">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
+            <img
+              src="/brand/hirepass-endorsed-dark.svg"
+              alt="HirePass by TAKAVEN"
+              className="h-auto w-24 shrink-0 sm:w-32"
+            />
             <div className="min-w-0">
               <p className="text-xs uppercase tracking-wide text-slate-500">Candidate Pass</p>
               <h1 className="truncate text-base font-semibold text-white">{pass.positionTitle}</h1>

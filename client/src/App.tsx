@@ -49,7 +49,11 @@ function InternalLogin() {
         }}
       >
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">HirePass</p>
+          <img
+            src="/brand/hirepass-endorsed-dark.svg"
+            alt="HirePass by TAKAVEN"
+            className="h-auto w-40"
+          />
           <h1 className="mt-1 text-xl font-semibold text-white">Internal sign in</h1>
         </div>
         <label className="block space-y-1 text-sm">
@@ -100,14 +104,28 @@ function InternalAuthGate() {
   });
 
   if (isLoading) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Checking access...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+        <div className="flex flex-col items-center gap-3">
+          <img src="/brand/hirepass-endorsed-dark.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
+          <p className="text-sm text-slate-400">Checking access...</p>
+        </div>
+      </div>
+    );
   }
   if (!data?.user) return <InternalLogin />;
   return <MainLayout />;
 }
 
 function RouteFallback() {
-  return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Loading HirePass...</div>;
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+      <div className="flex flex-col items-center gap-3">
+        <img src="/brand/hirepass-endorsed-dark.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
+        <p className="text-sm text-slate-400">Loading HirePass...</p>
+      </div>
+    </div>
+  );
 }
 
 function MainRouter() {
