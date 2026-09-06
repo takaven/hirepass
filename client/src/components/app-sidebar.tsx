@@ -1,14 +1,5 @@
 import { useLocation, Link } from "wouter";
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  Calendar,
-  Settings,
-  Building2,
-  BarChart3,
-  ShieldCheck,
-} from "lucide-react";
+import { LayoutDashboard, Users, FileText, Calendar, Settings, Building2, BarChart3, ShieldCheck } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -67,13 +58,11 @@ export function AppSidebar() {
     <Sidebar className="bg-white/60 dark:bg-black/40 backdrop-blur-xl border-r border-black/5 dark:border-white/10">
       <SidebarHeader className="p-3">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-            <FileText className="w-4 h-4 text-white" strokeWidth={2} />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-semibold text-[11px] tracking-tight leading-none">HirePass</span>
-            <span className="text-[10px] text-muted-foreground leading-tight">Recruitment Pass</span>
-          </div>
+          <img
+            src="/brand/hirepass-endorsed-light.svg"
+            alt="HirePass by TAKAVEN"
+            className="h-auto w-32"
+          />
         </Link>
       </SidebarHeader>
 
