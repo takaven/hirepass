@@ -89,6 +89,10 @@ npm run build
 
 The GitHub `HirePass Foundation Validation` workflow runs the accepted source validation path.
 
+## Deployment And Handover
+
+Use `DEPLOYMENT_RUNBOOK.md` for customer installation, smoke verification, credential handover, backup responsibility and post-handover support boundaries.
+
 ## Handover
 
 A normal handover should include:
