@@ -1,4 +1,5 @@
 import { pool } from "./db";
+import type { PoolClient } from "pg";
 import { removeStoredCandidateDocument, storeCandidateCvUpload } from "./document-files";
 
 const OPEN_STATUSES = ["sourcing", "screening", "active"];
@@ -26,7 +27,7 @@ export type PublicIntakeInput = {
 export async function submitPublicCandidate(input: PublicIntakeInput) {
   const normalizedEmail = input.email.trim().toLowerCase();
   const storedCv = await storeCandidateCvUpload({ candidateId: 0, fileName: input.fileName, mimeType: input.mimeType, fileDataBase64: input.fileDataBase64 });
-  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
+  let client: PoolClient | undefined;
   try {
     client = await pool.connect();
     await client.query("begin");
