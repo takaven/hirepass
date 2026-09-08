@@ -34,6 +34,7 @@ export const notifications = pgTable("notifications", {
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message"),
   link: varchar("link", { length: 500 }),
+  candidateId: integer("candidate_id"),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });

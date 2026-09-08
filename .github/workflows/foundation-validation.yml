@@ -12,6 +12,22 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hirepass
+          POSTGRES_PASSWORD: hirepass
+          POSTGRES_DB: hirepass_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hirepass -d hirepass_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hirepass:hirepass@127.0.0.1:5432/hirepass_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +46,15 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Apply fresh PostgreSQL schema
+        run: npm run db:push
+
+      - name: Phase 0 PostgreSQL integration
+        run: npm run test:db
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev
 
       - name: Build
         run: npm run build

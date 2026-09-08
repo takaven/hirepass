@@ -21,7 +21,7 @@ describe("candidate privacy erasure", () => {
     const client = {
       query: async (query: string) => {
         statements.push(query.replace(/\s+/g, " ").trim());
-        if (query.includes("select id, cv_file_path")) return { rows: [{ id: 42, cv_file_path: null }] };
+        if (query.includes("select id, name, cv_file_path")) return { rows: [{ id: 42, name: "Named Candidate", cv_file_path: null }] };
         if (query.includes("select cd.file_path")) return { rows: [] };
         return { rows: [], rowCount: 1 };
       },
@@ -33,6 +33,7 @@ describe("candidate privacy erasure", () => {
     const sql = statements.join("\n").toLowerCase();
     assert.match(sql, /is_anonymized = true/);
     assert.match(sql, /update candidate_links set is_active = false/);
+    assert.match(sql, /update notifications set title = 'candidate update'/);
     assert.match(sql, /delete from candidate_messages/);
     assert.match(sql, /update pass_candidates set ai_brief = null/);
     assert.equal(sql.includes("delete from pass_candidates"), false);

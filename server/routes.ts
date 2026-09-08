@@ -898,6 +898,7 @@ export async function registerRoutes(
           
           await storage.createNotification({
             userId: notificationUserId,
+            candidateId: candidate.id,
             type: 'candidate_status_change',
             title: `Candidate Status Updated`,
             message: `${candidate.name} moved from ${oldStatusLabel} to ${newStatusLabel} for ${pass.positionTitle}`,

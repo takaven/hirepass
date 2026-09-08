@@ -25,6 +25,21 @@ export function validateRateLimitConfig() {
   if (!secret || secret.length < 32) throw new Error("HIREPASS_RATE_LIMIT_SECRET (or session secret) must be at least 32 characters");
 }
 
+export async function consumeRateLimit(identity: string, now: Date, windowMs: number) {
+  const expiresAt = new Date(now.getTime() + windowMs);
+  const result = await pool.query<{ count: number; expires_at: Date }>(
+    `insert into rate_limit_counters (key, count, window_started_at, expires_at)
+     values ($1, 1, $2, $3)
+     on conflict (key) do update set
+       count = case when rate_limit_counters.expires_at <= $2 then 1 else rate_limit_counters.count + 1 end,
+       window_started_at = case when rate_limit_counters.expires_at <= $2 then $2 else rate_limit_counters.window_started_at end,
+       expires_at = case when rate_limit_counters.expires_at <= $2 then $3 else rate_limit_counters.expires_at end
+     returning count, expires_at`,
+    [identity, now, expiresAt],
+  );
+  return result.rows[0];
+}
+
 export function persistentRateLimit() {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (process.env.NODE_ENV !== "production") return next();
@@ -36,18 +51,7 @@ export function persistentRateLimit() {
       const secret = process.env.HIREPASS_RATE_LIMIT_SECRET || process.env.HIREPASS_SESSION_SECRET!;
       const identity = createHmac("sha256", secret).update(`${group}:${req.ip}`).digest("hex");
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + policy.windowMs);
-      const result = await pool.query<{ count: number; expires_at: Date }>(
-        `insert into rate_limit_counters (key, count, window_started_at, expires_at)
-         values ($1, 1, $2, $3)
-         on conflict (key) do update set
-           count = case when rate_limit_counters.expires_at <= $2 then 1 else rate_limit_counters.count + 1 end,
-           window_started_at = case when rate_limit_counters.expires_at <= $2 then $2 else rate_limit_counters.window_started_at end,
-           expires_at = case when rate_limit_counters.expires_at <= $2 then $3 else rate_limit_counters.expires_at end
-         returning count, expires_at`,
-        [identity, now, expiresAt],
-      );
-      const counter = result.rows[0];
+      const counter = await consumeRateLimit(identity, now, policy.windowMs);
       res.setHeader("RateLimit-Limit", String(policy.limit));
       res.setHeader("RateLimit-Remaining", String(Math.max(0, policy.limit - counter.count)));
       if (counter.count > policy.limit) {
