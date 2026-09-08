@@ -131,9 +131,9 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 
 Do not admit real customer candidate data until applicable launch gates are closed:
 
-1. **Pass-token logging — security blocker:** the global API logger logs `req.path`, while Candidate and Manager Pass bearer tokens are embedded in those paths. Redact token segments or log matched route templates, and add tests proving active tokens cannot appear in logs.
+1. **Pass-token logging:** Candidate and Manager Pass bearer-token segments are replaced by matched route templates before request logs are emitted. The regression suite covers successful, invalid, expired and revoked outcomes on top-level and nested Pass routes.
 2. **Production verification:** run type checking, tests, build and fictional-data smoke verification against the exact release commit.
-3. **Privacy and retention:** agree lawful basis, candidate notice, retention duration, deletion/export responsibility and backup treatment.
+3. **Privacy and retention:** candidate records carry optional customer-selected retention review and privacy-notice evidence. Removing talent-pool membership is a profile update; removing an application is separate from privacy erasure. Privacy erasure deletes stored candidate files and direct communications, revokes Candidate Passes and anonymises candidate PII/free text while retaining non-identifying application status, evaluation scores, decisions and audit timing. The customer must still agree lawful basis, retention duration, export/access ownership and backup treatment.
 4. **Authentication and abuse protection:** decide whether one controlled administrator is acceptable; use individual accounts when accountability requires them, and apply login/request throttling in-app or at a trusted edge.
 5. **Manager interview workflow:** correct availability capture before relying on manager-proposed scheduling.
 6. **Evaluation integrity:** do not record fixed scores as evaluator-supplied; collect criteria or use a simpler recommendation-and-notes form.

@@ -30,9 +30,12 @@ import {
 import { buildPassControlItem } from "./hr-pass-control";
 import { disableOutOfScopeProductionRoutes, requireInternalAdmin } from "./auth";
 import { verifyDatabaseReady } from "./db";
+import { eraseCandidatePii } from "./candidate-privacy";
 import {
   readStoredCandidateDocument,
   removeStoredCandidateDocument,
+  setSafeDownloadHeaders,
+  storeCandidateCvUpload,
   storeCandidateDocumentUpload,
   validateUploadRoot,
 } from "./document-files";
@@ -710,13 +713,55 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/candidates/:id/cv", async (req, res) => {
+    const candidateId = parsePositiveId(req.params.id);
+    if (!candidateId) return res.status(400).json({ error: "Valid candidate ID is required" });
+    const candidate = await storage.getCandidate(candidateId);
+    if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+    const uploadSchema = z.object({
+      fileName: z.string().min(1).max(255),
+      mimeType: z.string().max(100).optional(),
+      fileDataBase64: z.string().min(1),
+    });
+    try {
+      const input = uploadSchema.parse(req.body);
+      const upload = await storeCandidateCvUpload({ candidateId, ...input });
+      const updated = await storage.updateCandidate(candidateId, { cvFilePath: upload.storageKey, cvFileName: upload.originalName });
+      if (!updated) {
+        await removeStoredCandidateDocument(upload.storageKey);
+        return res.status(500).json({ error: "Failed to record CV" });
+      }
+      if (candidate.cvFilePath && candidate.cvFilePath !== upload.storageKey) await removeStoredCandidateDocument(candidate.cvFilePath);
+      res.status(201).json({ fileName: upload.originalName, size: upload.size });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Invalid CV upload" });
+    }
+  });
+
+  app.get("/api/candidates/:id/cv", async (req, res) => {
+    const candidateId = parsePositiveId(req.params.id);
+    if (!candidateId) return res.status(400).json({ error: "Valid candidate ID is required" });
+    const candidate = await storage.getCandidate(candidateId);
+    if (!candidate?.cvFilePath) return res.status(404).json({ error: "CV not found" });
+    try {
+      const file = await readStoredCandidateDocument(candidate.cvFilePath);
+      setSafeDownloadHeaders(res, candidate.cvFileName || "candidate-cv.pdf");
+      res.type("application/pdf").send(file);
+    } catch {
+      res.status(404).json({ error: "CV not found" });
+    }
+  });
+
   app.delete("/api/candidates/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteCandidate(parseInt(req.params.id));
+      const candidateId = parsePositiveId(req.params.id);
+      if (!candidateId) return res.status(400).json({ error: "Valid candidate ID is required" });
+      const deleted = await eraseCandidatePii(candidateId);
       if (!deleted) {
         return res.status(404).json({ error: "Candidate not found" });
       }
-      res.status(204).send();
+      res.status(200).json({ erased: true, auditHistoryPreserved: true });
     } catch (error) {
       console.error("Error deleting candidate:", error);
       res.status(500).json({ error: "Failed to delete candidate" });
@@ -765,16 +810,9 @@ export async function registerRoutes(
   });
 
   app.delete("/api/pass-candidates/:id", async (req, res) => {
-    try {
-      const deleted = await storage.removePassCandidate(parseInt(req.params.id));
-      if (!deleted) {
-        return res.status(404).json({ error: "Pass candidate not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error removing pass candidate:", error);
-      res.status(500).json({ error: "Failed to remove pass candidate" });
-    }
+    res.status(409).json({
+      error: "Application hard-deletion is disabled because it is not a candidate privacy-erasure operation; update its workflow status instead",
+    });
   });
 
   // Pass candidates pipeline view
@@ -1273,7 +1311,7 @@ export async function registerRoutes(
         passId,
         managerId,
         linkType: linkType || "manager",
-        expiresAt: expiresAt ? new Date(expiresAt) : undefined
+        expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry()
       });
       res.status(201).json(shareLink);
     } catch (error) {
@@ -1324,7 +1362,7 @@ export async function registerRoutes(
         token,
         passCandidateId,
         isActive: true,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry(),
       });
       
       res.status(201).json(candidateLink);
@@ -1980,7 +2018,7 @@ export async function registerRoutes(
         : lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
           ? "image/jpeg"
           : "application/pdf";
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(document.fileName || "document")}"`);
+      setSafeDownloadHeaders(res, document.fileName || "document");
       res.type(contentType);
       res.send(file);
     } catch (error) {
@@ -2230,7 +2268,7 @@ export async function registerRoutes(
         passCandidateId,
         canFillApplication: true,
         canTakeAssessment: true,
-        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry(),
         isActive: true
       });
       
@@ -2530,28 +2568,7 @@ export async function registerRoutes(
 
   // ============ DOCUMENT/RESUME UPLOAD ROUTES ============
   app.post("/api/candidates/:id/resume", async (req, res) => {
-    try {
-      const candidateId = parseInt(req.params.id);
-      const { resumeText, fileName } = req.body;
-      
-      if (!resumeText) {
-        return res.status(400).json({ error: "Resume text is required" });
-      }
-
-      const candidate = await storage.updateCandidate(candidateId, {
-        cvFileName: fileName || "resume.txt",
-        cvFilePath: `/resumes/${candidateId}/${fileName || "resume.txt"}`
-      });
-
-      if (!candidate) {
-        return res.status(404).json({ error: "Candidate not found" });
-      }
-
-      res.json({ message: "Resume uploaded successfully", candidate });
-    } catch (error) {
-      console.error("Error uploading resume:", error);
-      res.status(500).json({ error: "Failed to upload resume" });
-    }
+    res.status(410).json({ error: "Legacy text-resume upload is disabled; use the secure candidate CV endpoint" });
   });
 
   // ============ AI ROUTES ============

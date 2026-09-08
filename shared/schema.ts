@@ -190,6 +190,12 @@ export const candidates = pgTable('candidates', {
   
   source: varchar('source', { length: 100 }),
   sourceDetails: varchar('source_details', { length: 255 }),
+
+  retentionReviewAt: timestamp('retention_review_at'),
+  privacyNoticeVersion: varchar('privacy_notice_version', { length: 100 }),
+  privacyNoticeAcceptedAt: timestamp('privacy_notice_accepted_at'),
+  isAnonymized: boolean('is_anonymized').default(false).notNull(),
+  anonymizedAt: timestamp('anonymized_at'),
   
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow()
@@ -350,7 +356,7 @@ export const shareLinks = pgTable('share_links', {
   managerId: integer('manager_id'),
   
   linkType: varchar('link_type', { length: 50 }).default('manager'),
-  expiresAt: timestamp('expires_at'),
+  expiresAt: timestamp('expires_at').notNull(),
   
   accessCount: integer('access_count').default(0),
   lastAccessedAt: timestamp('last_accessed_at'),
@@ -371,7 +377,7 @@ export const candidateLinks = pgTable('candidate_links', {
   applicationCompletedAt: timestamp('application_completed_at'),
   assessmentCompletedAt: timestamp('assessment_completed_at'),
   
-  expiresAt: timestamp('expires_at'),
+  expiresAt: timestamp('expires_at').notNull(),
   isActive: boolean('is_active').default(true),
   
   createdAt: timestamp('created_at').defaultNow()
@@ -409,6 +415,14 @@ export const activityLog = pgTable('activity_log', {
   details: jsonb('details'),
   
   createdAt: timestamp('created_at').defaultNow()
+});
+
+// Shared, database-backed counters avoid false protection in multi-instance deployments.
+export const rateLimitCounters = pgTable('rate_limit_counters', {
+  key: varchar('key', { length: 128 }).primaryKey(),
+  count: integer('count').notNull().default(0),
+  windowStartedAt: timestamp('window_started_at').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
 });
 
 // ============ DOCUMENTS ============

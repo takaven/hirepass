@@ -61,6 +61,17 @@ function detectKind(buffer: Buffer): SupportedKind | null {
   return null;
 }
 
+function validatePdf(buffer: Buffer) {
+  if (!buffer.subarray(0, 8).toString("ascii").startsWith("%PDF-")) throw new Error("Invalid PDF structure");
+  if (!buffer.subarray(Math.max(0, buffer.length - 1024)).includes(Buffer.from("%%EOF"))) {
+    throw new Error("Invalid PDF structure");
+  }
+  const latin = buffer.toString("latin1");
+  if (/\/(JavaScript|JS|Launch|EmbeddedFile|RichMedia)\b/i.test(latin)) {
+    throw new Error("PDF contains unsupported active or embedded content");
+  }
+}
+
 function normaliseClaimedMime(mimeType: unknown, fileName: string) {
   const claimed = typeof mimeType === "string" ? mimeType.toLowerCase().split(";")[0].trim() : "";
   const ext = path.extname(fileName).toLowerCase();
@@ -77,6 +88,7 @@ export async function storeCandidateDocumentUpload(input: {
   fileName: string;
   mimeType?: string;
   fileDataBase64: string;
+  allowedKinds?: SupportedKind[];
 }): Promise<StoredCandidateDocument> {
   const buffer = decodeBase64Upload(input.fileDataBase64);
   if (buffer.length === 0) throw new Error("Uploaded file is empty");
@@ -85,6 +97,8 @@ export async function storeCandidateDocumentUpload(input: {
   const originalName = safeOriginalName(input.fileName);
   const detectedKind = detectKind(buffer);
   if (!detectedKind) throw new Error("Unsupported file type");
+  if (input.allowedKinds && !input.allowedKinds.includes(detectedKind)) throw new Error("Unsupported file type");
+  if (detectedKind === "pdf") validatePdf(buffer);
 
   const signature = signatures[detectedKind];
   const claimedMime = normaliseClaimedMime(input.mimeType, originalName);
@@ -109,6 +123,30 @@ export async function storeCandidateDocumentUpload(input: {
     mimeType: signature.mime,
     absolutePath,
   };
+}
+
+export async function storeCandidateCvUpload(input: {
+  candidateId: number;
+  fileName: string;
+  mimeType?: string;
+  fileDataBase64: string;
+}) {
+  return storeCandidateDocumentUpload({
+    passCandidateId: input.candidateId,
+    documentId: 0,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    fileDataBase64: input.fileDataBase64,
+    allowedKinds: ["pdf"],
+  });
+}
+
+export function setSafeDownloadHeaders(res: { setHeader(name: string, value: string): void }, fileName: string) {
+  const safeName = safeOriginalName(fileName).replace(/["\\]/g, "_");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+  res.setHeader("Cache-Control", "private, no-store");
 }
 
 export async function removeStoredCandidateDocument(storageKey?: string | null) {

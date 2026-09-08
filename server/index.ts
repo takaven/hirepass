@@ -4,15 +4,26 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { configureInternalAuth } from "./auth";
 import { safeApiRequestLogger } from "./request-logging";
+import { persistentRateLimit, validateRateLimitConfig } from "./rate-limit";
 
 const app = express();
 const httpServer = createServer(app);
+
+validateRateLimitConfig();
+const trustProxyHops = Number(process.env.HIREPASS_TRUST_PROXY_HOPS || "0");
+if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 5) {
+  throw new Error("HIREPASS_TRUST_PROXY_HOPS must be an integer from 0 to 5");
+}
+if (trustProxyHops > 0) app.set("trust proxy", trustProxyHops);
 
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
   }
 }
+
+// Throttle before parsing potentially large public request bodies.
+app.use(persistentRateLimit());
 
 app.use(
   express.json({

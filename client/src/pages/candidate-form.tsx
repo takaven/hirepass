@@ -132,10 +132,22 @@ export default function CandidateForm() {
         email: data.email || null,
       };
 
-      if (isEditing) {
-        await apiRequest("PATCH", `/api/candidates/${id}`, payload);
-      } else {
-        await apiRequest("POST", "/api/candidates", payload);
+      const response = isEditing
+        ? await apiRequest("PATCH", `/api/candidates/${id}`, payload)
+        : await apiRequest("POST", "/api/candidates", payload);
+      const savedCandidate = await response.json() as Candidate;
+      if (resumeFile) {
+        const fileDataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Unable to read CV"));
+          reader.onload = () => resolve(String(reader.result));
+          reader.readAsDataURL(resumeFile);
+        });
+        await apiRequest("POST", `/api/candidates/${savedCandidate.id}/cv`, {
+          fileName: resumeFile.name,
+          mimeType: resumeFile.type,
+          fileDataBase64,
+        });
       }
     },
     onSuccess: () => {
@@ -161,7 +173,7 @@ export default function CandidateForm() {
     setResumeFile(file);
     toast({
       title: "Resume selected",
-      description: "Candidate details can be completed manually.",
+      description: "The PDF will be stored securely when the candidate is saved.",
     });
   };
 
@@ -213,7 +225,7 @@ export default function CandidateForm() {
             <input
               id="resume-input"
               type="file"
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,application/pdf"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];

@@ -31,6 +31,8 @@ Required production variables:
 - `HIREPASS_SESSION_SECRET`
 - `HIREPASS_UPLOAD_DIR`
 
+Production also uses the PostgreSQL-backed `rate_limit_counters` table. `HIREPASS_RATE_LIMIT_SECRET` may supply a separate 32+ character HMAC secret; otherwise the session secret is used. Set `HIREPASS_TRUST_PROXY_HOPS` only to the exact number of trusted proxies in front of HirePass. A wrong value permits client-IP spoofing or incorrectly groups users.
+
 Optional:
 
 - `HIREPASS_PASS_ID_PREFIX`, defaulting to `HP`.
@@ -57,7 +59,9 @@ Create the upload directory before starting production:
 mkdir -p "$HIREPASS_UPLOAD_DIR"
 ```
 
-The directory must be readable and writable by the application process and included in the agreed backup responsibility.
+The directory must be readable and writable by the application process, must not be served as a public/static directory, and must be included in the agreed backup responsibility. CV intake is PDF-only for the controlled launch. HirePass validates the signature and basic PDF structure, rejects active/embedded-content markers, generates storage names and forces authenticated downloads with `nosniff`, sandbox and no-store headers. DOC/DOCX are deliberately unsupported; adding DOCX requires bounded ZIP structure and decompression-limit validation.
+
+Files remain untrusted even after validation. HirePass does not execute or inline-preview them. A full antivirus service is not required for the controlled first release because files are PDF-only, non-public and forced to download; endpoint/device protection remains an operational requirement for authorised reviewers. Reassess malware scanning before broader unsupervised internet intake or inline preview support.
 
 ## Admin Bootstrap
 
@@ -90,10 +94,10 @@ Do not represent fixed pipeline stages, general CV submission, production AI rev
 
 Do not admit real candidate or employer data until all applicable items below are closed and recorded:
 
-- **Pass-token log redaction:** Candidate and Manager Pass tokens are bearer credentials embedded in API paths. The current global request logger records `req.path` and therefore exposes those tokens. Deploy only a release that redacts token segments or logs safe route templates, with a regression test proving token values are absent from log output.
-- **Credential and abuse protection:** use a production password hash, strong session secret, HTTPS and login/request throttling at the application or trusted edge.
+- **Pass-token log safety:** Candidate and Manager Pass bearer-token segments must resolve to safe route templates in application logs. Run the regression suite and ensure infrastructure/access logs also redact these URL segments.
+- **Credential and abuse protection:** use a production password hash, strong session secret and HTTPS. HirePass applies PostgreSQL-backed limits to login, public submission/upload and external Pass mutations before request-body parsing; readiness fails if the counter table is absent. Configure and verify the exact trusted-proxy hop count.
 - **Candidate privacy:** record the lawful basis and candidate notice for vacancy applications and any general talent-pool submission.
-- **Retention and deletion:** name the responsible owner and define retention duration, deletion/export procedure and how deletion propagates to backups.
+- **Retention and deletion:** name the responsible owner and define retention duration, export/access procedure and backup expiry. Talent-pool removal does not erase a candidate. Candidate privacy erasure removes files and direct messages, revokes Candidate Passes, clears candidate PII/free text and preserves non-identifying workflow/audit integrity. Application hard-deletion is disabled for launch: use workflow status to withdraw/archive an application, never as a privacy-erasure shortcut.
 - **External link operation:** define finite expiry defaults, secure delivery, revocation and reissue handling for bearer links.
 - **Data minimisation:** request only documents and candidate attributes required for the hiring process.
 
