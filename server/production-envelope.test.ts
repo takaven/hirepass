@@ -126,6 +126,9 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
   const uploadDir = await mkdtemp(path.join(tmpdir(), "hirepass-upload-test-"));
   tempDirs.push(uploadDir);
   process.env.HIREPASS_UPLOAD_DIR = uploadDir;
+  process.env.HIREPASS_COMPANY_NAME = "Test Company";
+  process.env.HIREPASS_PRIVACY_NOTICE_URL = "https://example.test/privacy";
+  process.env.HIREPASS_PRIVACY_NOTICE_VERSION = "test-v1";
   let mutableDocument: any = {
     id: 701,
     passCandidateId: 101,
@@ -156,6 +159,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getAvailableInterviewSlots: async () => [],
     getCandidateMessages: async () => [],
     getCandidateDocuments: async (passCandidateId: number) => (passCandidateId === 101 ? [mutableDocument] : []),
+    getDocumentsByCandidate: async () => [],
     updateCandidateDocument: async (id: number, data: any) => {
       if (id !== mutableDocument.id) return undefined;
       mutableDocument = { ...mutableDocument, ...data, updatedAt: now };
@@ -199,6 +203,20 @@ async function login(baseUrl: string) {
 }
 
 describe("HirePass production envelope", () => {
+  it("exposes direct open-vacancy details but protects the Candidate Library", async () => {
+    await withServer({}, async (baseUrl) => {
+      const direct = await fetch(`${baseUrl}/api/public/passes/10`);
+      assert.equal(direct.status, 200);
+      const publicPass = await direct.json() as any;
+      assert.equal(publicPass.positionTitle, pass.positionTitle);
+      assert.equal(publicPass.hiringManagerId, undefined);
+      assert.equal((await fetch(`${baseUrl}/api/candidates/201/library`)).status, 401);
+      const cookie = await login(baseUrl);
+      const library = await fetch(`${baseUrl}/api/candidates/201/library`, { headers: { cookie } });
+      assert.equal(library.status, 200);
+    });
+  });
+
   it("protects internal APIs with an owner/admin session while leaving Candidate Pass tokens separate", async () => {
     await withServer({}, async (baseUrl) => {
       assert.equal((await fetch(`${baseUrl}/api/candidates`)).status, 401);

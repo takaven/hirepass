@@ -31,6 +31,7 @@ import { buildPassControlItem } from "./hr-pass-control";
 import { disableOutOfScopeProductionRoutes, requireInternalAdmin } from "./auth";
 import { verifyDatabaseReady } from "./db";
 import { eraseCandidatePii } from "./candidate-privacy";
+import { PublicIntakeError, reuseCandidateForPass, submitPublicCandidate } from "./public-intake";
 import {
   readStoredCandidateDocument,
   removeStoredCandidateDocument,
@@ -39,6 +40,12 @@ import {
   storeCandidateDocumentUpload,
   validateUploadRoot,
 } from "./document-files";
+
+const publicPrivacyConfig = () => ({
+  companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
+  privacyNoticeUrl: process.env.HIREPASS_PRIVACY_NOTICE_URL || "",
+  privacyNoticeVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION || "launch-v1",
+});
 
 const anthropic = new Anthropic();
 
@@ -112,6 +119,10 @@ export async function registerRoutes(
       if (process.env.NODE_ENV === "production") {
         if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing");
         if (!process.env.HIREPASS_SESSION_SECRET) throw new Error("HIREPASS_SESSION_SECRET missing");
+        if (!process.env.HIREPASS_COMPANY_NAME) throw new Error("HIREPASS_COMPANY_NAME missing");
+        if (!process.env.HIREPASS_PRIVACY_NOTICE_URL) throw new Error("HIREPASS_PRIVACY_NOTICE_URL missing");
+        new URL(process.env.HIREPASS_PRIVACY_NOTICE_URL);
+        if (!process.env.HIREPASS_PRIVACY_NOTICE_VERSION) throw new Error("HIREPASS_PRIVACY_NOTICE_VERSION missing");
         await verifyDatabaseReady();
       }
       await validateUploadRoot();
@@ -726,12 +737,21 @@ export async function registerRoutes(
     try {
       const input = uploadSchema.parse(req.body);
       const upload = await storeCandidateCvUpload({ candidateId, ...input });
-      const updated = await storage.updateCandidate(candidateId, { cvFilePath: upload.storageKey, cvFileName: upload.originalName });
-      if (!updated) {
+      try {
+        await storage.createDocument({
+          candidateId,
+          docType: "cv",
+          title: "Candidate CV",
+          filePath: upload.storageKey,
+          fileName: upload.originalName,
+          status: "submitted",
+        });
+        const updated = await storage.updateCandidate(candidateId, { cvFilePath: upload.storageKey, cvFileName: upload.originalName });
+        if (!updated) throw new Error("Failed to record current CV");
+      } catch (error) {
         await removeStoredCandidateDocument(upload.storageKey);
-        return res.status(500).json({ error: "Failed to record CV" });
+        throw error;
       }
-      if (candidate.cvFilePath && candidate.cvFilePath !== upload.storageKey) await removeStoredCandidateDocument(candidate.cvFilePath);
       res.status(201).json({ fileName: upload.originalName, size: upload.size });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
@@ -750,6 +770,54 @@ export async function registerRoutes(
       res.type("application/pdf").send(file);
     } catch {
       res.status(404).json({ error: "CV not found" });
+    }
+  });
+
+  app.get("/api/candidates/:id/library", async (req, res) => {
+    const candidateId = parsePositiveId(req.params.id);
+    if (!candidateId) return res.status(400).json({ error: "Valid candidate ID is required" });
+    const candidate = await storage.getCandidate(candidateId);
+    if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+    const [applications, candidateDocuments] = await Promise.all([
+      storage.getCandidatePasses(candidateId),
+      storage.getDocumentsByCandidate(candidateId),
+    ]);
+    res.json({
+      candidate,
+      applications,
+      cvs: candidateDocuments.filter((document) => document.docType === "cv" && document.filePath).map((document) => ({
+        id: document.id,
+        passId: document.passId,
+        passCandidateId: document.passCandidateId,
+        fileName: document.fileName,
+        createdAt: document.createdAt,
+        current: document.filePath === candidate.cvFilePath,
+      })),
+    });
+  });
+
+  app.get("/api/candidates/:candidateId/cvs/:documentId", async (req, res) => {
+    const candidateId = parsePositiveId(req.params.candidateId);
+    const documentId = parsePositiveId(req.params.documentId);
+    if (!candidateId || !documentId) return res.status(400).json({ error: "Valid candidate and document IDs are required" });
+    const document = (await storage.getDocumentsByCandidate(candidateId)).find((item) => item.id === documentId && item.docType === "cv");
+    if (!document?.filePath) return res.status(404).json({ error: "CV not found" });
+    try {
+      const file = await readStoredCandidateDocument(document.filePath);
+      setSafeDownloadHeaders(res, document.fileName || "candidate-cv.pdf");
+      res.type("application/pdf").send(file);
+    } catch { res.status(404).json({ error: "CV not found" }); }
+  });
+
+  app.post("/api/candidates/:id/reuse", async (req, res) => {
+    try {
+      const candidateId = z.coerce.number().int().positive().parse(req.params.id);
+      const passId = z.coerce.number().int().positive().parse(req.body.passId);
+      res.status(201).json(await reuseCandidateForPass(candidateId, passId));
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      if (error instanceof PublicIntakeError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: "Failed to reuse candidate" });
     }
   });
 
@@ -986,100 +1054,76 @@ export async function registerRoutes(
     }
   });
 
-  // Public application route
-  const publicApplySchema = z.object({
-    passId: z.number(),
+  const publicSubmissionSchema = z.object({
     name: z.string().min(1, "Name is required"),
     email: z.string().email("Valid email is required"),
     phone: z.string().optional(),
     currentTitle: z.string().optional(),
     currentCompany: z.string().optional(),
-    experienceYears: z.number().optional(),
     currentLocation: z.string().optional(),
     linkedinUrl: z.string().url().optional().or(z.literal("")),
-    cvSummary: z.string().optional(),
-    source: z.string().optional(),
     skills: z.array(z.string()).optional(),
-    expectedSalary: z.number().optional(),
-    willingToRelocate: z.boolean().optional()
+    fileName: z.string().min(1),
+    mimeType: z.string().optional(),
+    fileDataBase64: z.string().min(1),
+    privacyAcknowledged: z.literal(true),
   });
 
-  app.post("/api/public/apply", async (req, res) => {
+  const sendPublicIntakeError = (error: unknown, res: Response) => {
+    if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+    if (error instanceof PublicIntakeError) return res.status(error.status).json({ error: error.message });
+    console.error("Public candidate submission failed", error);
+    return res.status(500).json({ error: "Submission could not be completed; no partial submission was retained" });
+  };
+
+  app.get("/api/public/config", (_req, res) => res.json(publicPrivacyConfig()));
+
+  app.get("/api/public/passes/:id", async (req, res) => {
     try {
-      const validated = publicApplySchema.parse(req.body);
-      
-      // Check if pass exists and is open
-      const pass = await storage.getPass(validated.passId);
-      if (!pass) {
-        return res.status(404).json({ error: "Position not found" });
-      }
-      
-      const openStatuses = ['sourcing', 'screening', 'active'];
-      if (!openStatuses.includes(pass.status || '')) {
-        return res.status(400).json({ error: "This position is no longer accepting applications" });
-      }
-
-      // Check if candidate already exists by email
-      const existingCandidates = await storage.getCandidates();
-      let candidate = existingCandidates.find(c => c.email === validated.email);
-      
-      if (!candidate) {
-        // Create new candidate
-        candidate = await storage.createCandidate({
-          name: validated.name,
-          email: validated.email,
-          phone: validated.phone,
-          currentTitle: validated.currentTitle,
-          currentCompany: validated.currentCompany,
-          experienceYears: validated.experienceYears,
-          currentLocation: validated.currentLocation,
-          linkedinUrl: validated.linkedinUrl,
-          cvSummary: validated.cvSummary,
-          source: validated.source || 'public_application',
-          skills: validated.skills,
-          expectedSalary: validated.expectedSalary,
-          willingToRelocate: validated.willingToRelocate
-        });
-      }
-
-      // Check if candidate already applied to this pass
-      const existingApplications = await storage.getCandidatePasses(candidate.id);
-      const alreadyApplied = existingApplications.some(pc => pc.passId === validated.passId);
-      
-      if (alreadyApplied) {
-        return res.status(409).json({ error: "You have already applied to this position" });
-      }
-
-      // Create pass-candidate link
-      const passCandidate = await storage.addCandidateToPass({
-        passId: validated.passId,
-        candidateId: candidate.id,
-        status: 'new'
-      });
-
-      // Log activity
-      await storage.logActivity({
-        passId: validated.passId,
-        actorType: 'candidate',
-        actorName: validated.name,
-        action: 'applied',
-        targetType: 'pass_candidate',
-        targetId: passCandidate.id,
-        details: { candidateEmail: validated.email }
-      });
-
-      res.status(201).json({ 
-        success: true, 
-        message: "Application submitted successfully",
-        applicationId: passCandidate.id 
+      const pass = await storage.getPass(Number(req.params.id));
+      if (!pass) return res.status(404).json({ error: "Position not found" });
+      if (!["sourcing", "screening", "active"].includes(pass.status || "")) return res.status(409).json({ error: "This position is no longer accepting applications" });
+      res.json({
+        id: pass.id, passId: pass.passId, positionTitle: pass.positionTitle,
+        department: pass.department, location: pass.location, employmentType: pass.employmentType,
+        experienceMin: pass.experienceMin, experienceMax: pass.experienceMax,
+        salaryRangeMin: pass.salaryRangeMin, salaryRangeMax: pass.salaryRangeMax,
+        salaryCurrency: pass.salaryCurrency, jobDescriptionFinal: pass.jobDescriptionFinal,
+        dateRequested: pass.dateRequested,
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
-      }
-      console.error("Error processing public application:", error);
-      res.status(500).json({ error: "Failed to submit application" });
+      res.status(500).json({ error: "Failed to fetch position" });
     }
+  });
+
+  app.post("/api/public/submit-cv", async (req, res) => {
+    try {
+      const validated = publicSubmissionSchema.parse(req.body);
+      const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion });
+      res.status(201).json({ success: true, message: "Your CV has been submitted", ...result });
+    } catch (error) { return sendPublicIntakeError(error, res); }
+  });
+
+  app.post("/api/public/passes/:id/apply", async (req, res) => {
+    try {
+      const validated = publicSubmissionSchema.parse(req.body);
+      const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId: Number(req.params.id) });
+      res.status(result.duplicateApplication ? 200 : 201).json({
+        success: true,
+        message: result.duplicateApplication ? "Your application was already received" : "Application submitted successfully",
+        ...result,
+      });
+    } catch (error) { return sendPublicIntakeError(error, res); }
+  });
+
+  // Compatibility for already-published links using the original endpoint.
+  app.post("/api/public/apply", async (req, res) => {
+    try {
+      const passId = z.number().int().positive().parse(req.body.passId);
+      const validated = publicSubmissionSchema.parse(req.body);
+      const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId });
+      res.status(result.duplicateApplication ? 200 : 201).json({ success: true, ...result });
+    } catch (error) { return sendPublicIntakeError(error, res); }
   });
 
   // ============ INTERVIEW ROUTES ============

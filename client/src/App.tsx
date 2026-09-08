@@ -25,6 +25,7 @@ const Settings = lazy(() => import("@/pages/settings"));
 const Analytics = lazy(() => import("@/pages/analytics"));
 const HrPassControl = lazy(() => import("@/pages/hr-pass-control"));
 const PublicApply = lazy(() => import("@/pages/public-apply"));
+const PublicTalentPool = lazy(() => import("@/pages/public-talent-pool"));
 const PassCandidates = lazy(() => import("@/pages/pass-candidates"));
 const RecruitmentPass = lazy(() => import("@/pages/recruitment-pass"));
 const CandidatePass = lazy(() => import("@/pages/candidate-pass"));
@@ -202,7 +203,8 @@ function MainLayout() {
 function App() {
   const [location] = useLocation();
   
-  const isApplyRoute = location === "/apply";
+  const isApplyRoute = location === "/apply" || /^\/apply\/\d+$/.test(location);
+  const isTalentPoolRoute = location === "/talent-pool" || location === "/submit-cv";
   const isRecruitmentPassRoute = /^\/pass\/(?:(?:HP|BAYN)-)?RP-\d{4}-\d{3}$/.test(location);
   // Token-based manager pass: /manager-pass/mgr_xxxxx
   const isManagerPassRoute = location.startsWith("/manager-pass/");
@@ -214,8 +216,10 @@ function App() {
       <ThemeProvider defaultTheme="light" storageKey="hirepass-theme">
         <TooltipProvider>
           <Suspense fallback={<RouteFallback />}>
-          {isApplyRoute ? (
-            <PublicApply />
+          {isTalentPoolRoute ? (
+            <PublicTalentPool />
+          ) : isApplyRoute ? (
+            <PublicApply passIdParam={location.split("/")[2]} />
           ) : isRecruitmentPassRoute ? (
             <Switch>
               <Route path="/pass/:passId">{(params) => {

@@ -431,6 +431,7 @@ export const documents = pgTable('documents', {
   id: serial('id').primaryKey(),
   passId: integer('pass_id'),
   candidateId: integer('candidate_id'),
+  passCandidateId: integer('pass_candidate_id'),
   
   docType: varchar('doc_type', { length: 50 }).notNull(),
   title: varchar('title', { length: 255 }).notNull(),
@@ -612,7 +613,8 @@ export const activityLogRelations = relations(activityLog, ({ one }) => ({
 
 export const documentsRelations = relations(documents, ({ one }) => ({
   pass: one(passes, { fields: [documents.passId], references: [passes.id] }),
-  candidate: one(candidates, { fields: [documents.candidateId], references: [candidates.id] })
+  candidate: one(candidates, { fields: [documents.candidateId], references: [candidates.id] }),
+  passCandidate: one(passCandidates, { fields: [documents.passCandidateId], references: [passCandidates.id] })
 }));
 
 export const interviewAvailabilityRelations = relations(interviewAvailability, ({ one }) => ({

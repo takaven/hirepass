@@ -8,7 +8,9 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "test": "tsx --test server/pass-access.test.ts server/external-pass-routes.test.ts server/hr-pass-control.test.ts server/production-envelope.test.ts server/candidate-privacy.test.ts client/src/lib/save-candidate.test.ts",
-    "test:db": "tsx --test server/phase-zero-postgres.test.ts",
+    "test:db": "npm run test:db:phase0 && npm run test:db:phase1",
+    "test:db:phase0": "tsx --test server/phase-zero-postgres.test.ts",
+    "test:db:phase1": "tsx --test server/phase-one-postgres.test.ts",
     "check": "tsc",
     "db:push": "drizzle-kit push"
   },

@@ -183,6 +183,11 @@ export default function PassDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <a href={`/apply/${pass.id}`} target="_blank" rel="noreferrer">
+            <Button variant="outline" className="rounded-xl gap-2" data-testid="button-public-application-link">
+              Public application link
+            </Button>
+          </a>
           <Link href={`/passes/${passId}/pass`}>
             <Button variant="outline" className="rounded-xl gap-2" data-testid="button-view-pass">
               <FileText className="w-4 h-4" strokeWidth={1.5} />

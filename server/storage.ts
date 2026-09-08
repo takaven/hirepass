@@ -73,6 +73,8 @@ export interface IStorage {
   // Pass Candidates
   getPassCandidates(passId: number): Promise<(PassCandidate & { candidate: Candidate })[]>;
   getCandidatePasses(candidateId: number): Promise<(PassCandidate & { pass: Pass })[]>;
+  getDocumentsByCandidate(candidateId: number): Promise<Document[]>;
+  createDocument(document: InsertDocument): Promise<Document>;
   getPassCandidate(id: number): Promise<PassCandidate | undefined>;
   addCandidateToPass(passCandidate: InsertPassCandidate): Promise<PassCandidate>;
   updatePassCandidate(id: number, data: Partial<InsertPassCandidate>): Promise<PassCandidate | undefined>;
@@ -379,6 +381,17 @@ export class DatabaseStorage implements IStorage {
       orderBy: [desc(passCandidates.addedAt)]
     });
     return result as (PassCandidate & { pass: Pass })[];
+  }
+
+  async getDocumentsByCandidate(candidateId: number): Promise<Document[]> {
+    return db.select().from(documents)
+      .where(eq(documents.candidateId, candidateId))
+      .orderBy(desc(documents.createdAt));
+  }
+
+  async createDocument(document: InsertDocument): Promise<Document> {
+    const [created] = await db.insert(documents).values(document).returning();
+    return created;
   }
 
   async getPassCandidate(id: number): Promise<PassCandidate | undefined> {
