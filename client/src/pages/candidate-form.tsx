@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { saveCandidateWithOptionalCv } from "@/lib/save-candidate";
 import { Link } from "wouter";
 import type { Candidate } from "@shared/schema";
 
@@ -72,6 +73,8 @@ export default function CandidateForm() {
   const { toast } = useToast();
   const isEditing = Boolean(id) && id !== "new";
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [savedCandidateId, setSavedCandidateId] = useState<number | null>(null);
+  const savedCandidateIdRef = useRef<number | null>(null);
 
   const { data: candidate, isLoading: candidateLoading } = useQuery<Candidate>({
     queryKey: ["/api/candidates", id],
@@ -132,14 +135,39 @@ export default function CandidateForm() {
         email: data.email || null,
       };
 
-      if (isEditing) {
-        await apiRequest("PATCH", `/api/candidates/${id}`, payload);
-      } else {
-        await apiRequest("POST", "/api/candidates", payload);
+      let cvPayload: { fileName: string; mimeType: string; fileDataBase64: string } | undefined;
+      if (resumeFile) {
+        const fileDataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Unable to read CV"));
+          reader.onload = () => resolve(String(reader.result));
+          reader.readAsDataURL(resumeFile);
+        });
+        cvPayload = { fileName: resumeFile.name, mimeType: resumeFile.type, fileDataBase64 };
       }
+      const result = await saveCandidateWithOptionalCv({
+        existingCandidateId: isEditing ? Number(id) : savedCandidateIdRef.current,
+        candidatePayload: payload,
+        cvPayload,
+        request: apiRequest,
+      });
+      const savedCandidate = result.savedCandidate as Candidate;
+      if (!isEditing) {
+        savedCandidateIdRef.current = savedCandidate.id;
+        setSavedCandidateId(savedCandidate.id);
+      }
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
+      if (result.cvUploadFailed) {
+        toast({
+          title: "Candidate saved; CV upload failed",
+          description: "The candidate was created successfully. Correct or reselect the PDF, then use Retry CV Upload; no duplicate candidate will be created.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: isEditing ? "Candidate updated" : "Candidate created",
         description: isEditing 
@@ -161,7 +189,7 @@ export default function CandidateForm() {
     setResumeFile(file);
     toast({
       title: "Resume selected",
-      description: "Candidate details can be completed manually.",
+      description: "The PDF will be stored securely when the candidate is saved.",
     });
   };
 
@@ -213,7 +241,7 @@ export default function CandidateForm() {
             <input
               id="resume-input"
               type="file"
-              accept=".pdf,.doc,.docx,.txt"
+              accept=".pdf,application/pdf"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -236,7 +264,7 @@ export default function CandidateForm() {
                 </div>
                 <p className="font-medium">Upload Resume</p>
                 <p className="text-sm text-muted-foreground">
-                  PDF, Word, or text file for candidate records
+                  PDF only, up to 10 MB
                 </p>
               </div>
             )}
@@ -579,7 +607,7 @@ export default function CandidateForm() {
                 ) : (
                   <Save className="w-4 h-4" strokeWidth={1.5} />
                 )}
-                {isEditing ? "Update Candidate" : "Add Candidate"}
+                {savedCandidateId && resumeFile ? "Retry CV Upload" : isEditing ? "Update Candidate" : "Add Candidate"}
               </Button>
             </div>
           </form>

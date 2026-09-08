@@ -759,7 +759,7 @@ describe("HR Pass Control lifecycle routes", () => {
           documentId: 701,
           fileName: "passport.pdf",
           mimeType: "application/pdf",
-          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document").toString("base64"),
+          fileDataBase64: Buffer.from("%PDF-1.4\nfictional test document\n%%EOF").toString("base64"),
         }),
       });
       assert.equal(upload.status, 201);

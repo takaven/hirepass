@@ -78,8 +78,8 @@ export default function Candidates() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/candidates"] });
       toast({
-        title: "Candidate deleted",
-        description: "The candidate has been removed successfully.",
+        title: "Candidate data erased",
+        description: "Personal data and files were erased; non-identifying workflow history was retained.",
       });
       setDeleteDialogOpen(false);
       setCandidateToDelete(null);
@@ -87,7 +87,7 @@ export default function Candidates() {
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to delete candidate. Please try again.",
+        description: "Failed to erase candidate data. Please try again.",
         variant: "destructive",
       });
     },
@@ -353,10 +353,10 @@ export default function Candidates() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="glass-card border-0 rounded-3xl">
           <DialogHeader>
-            <DialogTitle>Delete Candidate</DialogTitle>
+            <DialogTitle>Erase Candidate Data</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete {candidateToDelete?.name}? 
-              This action cannot be undone.
+              Erase personal data and stored files for {candidateToDelete?.name}? Candidate Passes will be revoked;
+              non-identifying application and audit history will remain. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-3 mt-4">

@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterEach, before, describe, it } from "node:test";
 import express from "express";
 import { safeApiRequestLogger } from "./request-logging";
-import { validateUploadRoot } from "./document-files";
+import { storeCandidateCvUpload, validateUploadRoot } from "./document-files";
 
 process.env.ANTHROPIC_API_KEY ||= "test-key";
 process.env.DATABASE_URL ||= "postgres://hirepass_test:hirepass_test@127.0.0.1:1/hirepass_test";
@@ -31,7 +31,8 @@ before(async () => {
 const now = new Date();
 const future = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-const pdfBase64 = Buffer.from("%PDF-1.4\nfictional hirepass test document").toString("base64");
+const validPdf = "%PDF-1.4\nfictional hirepass test document\n%%EOF";
+const pdfBase64 = Buffer.from(validPdf).toString("base64");
 
 const pass = {
   id: 10,
@@ -113,9 +114,9 @@ afterEach(async () => {
 function overrideDatabaseReadiness(result: "success" | "failure") {
   originalPoolQuery ||= pool.query;
   pool.query = (async (queryText: unknown, ...args: unknown[]) => {
-    if (queryText === "select 1") {
+    if (typeof queryText === "string" && queryText.includes("to_regclass")) {
       if (result === "failure") throw new Error("simulated database unavailable");
-      return { rows: [{ "?column?": 1 }], rowCount: 1 };
+      return { rows: [{ rate_limit_table: "rate_limit_counters" }], rowCount: 1 };
     }
     return (originalPoolQuery as any).call(pool, queryText, ...args);
   }) as typeof pool.query;
@@ -241,10 +242,41 @@ describe("HirePass production envelope", () => {
       const cookie = await login(baseUrl);
       const download = await fetch(`${baseUrl}/api/pass-candidates/101/documents/701/download`, { headers: { cookie } });
       assert.equal(download.status, 200);
-      assert.equal(await download.text(), "%PDF-1.4\nfictional hirepass test document");
+      assert.equal(await download.text(), validPdf);
+      assert.equal(download.headers.get("x-content-type-options"), "nosniff");
+      assert.match(download.headers.get("content-security-policy") || "", /sandbox/);
+      assert.match(download.headers.get("content-disposition") || "", /^attachment/);
 
       const wrongCandidate = await fetch(`${baseUrl}/api/pass-candidates/999/documents/701/download`, { headers: { cookie } });
       assert.equal(wrongCandidate.status, 404);
+    });
+  });
+
+  it("issues every generic Candidate and Stakeholder Pass with finite default expiry", async () => {
+    const issued: any[] = [];
+    await withServer({
+      createShareLink: async (data: any) => { issued.push(data); return { id: 1, token: "manager", ...data }; },
+      createCandidateLink: async (data: any) => { issued.push(data); return { id: 2, ...data }; },
+      getPassCandidate: async () => passCandidate,
+      getCandidateLinksByPassCandidate: async () => [],
+    }, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      assert.equal((await fetch(`${baseUrl}/api/share-links`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passId: 10, managerId: 301 }) })).status, 201);
+      assert.equal((await fetch(`${baseUrl}/api/candidate-links`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateId: 101 }) })).status, 201);
+      assert.equal(issued.length, 2);
+      for (const item of issued) {
+        assert(item.expiresAt instanceof Date);
+        assert(item.expiresAt.getTime() > Date.now());
+      }
+    });
+  });
+
+  it("does not treat application hard-deletion as candidate privacy erasure", async () => {
+    await withServer({}, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      const response = await fetch(`${baseUrl}/api/pass-candidates/101`, { method: "DELETE", headers: { cookie } });
+      assert.equal(response.status, 409);
+      assert.match(JSON.stringify(await response.json()), /workflow status/);
     });
   });
 
@@ -312,6 +344,55 @@ describe("HirePass production envelope", () => {
     }
   });
 
+  it("never logs Candidate or Stakeholder Pass bearer tokens for representative outcomes and nested routes", async () => {
+    const token = "known_bearer_token_must_not_appear";
+    const lines: string[] = [];
+    const app = express();
+    app.use(express.json());
+    app.use(safeApiRequestLogger((message) => lines.push(message)));
+    app.get("/api/candidate-pass/:token", (req, res) => res.status(req.params.token === token ? 200 : 404).json({ ok: true }));
+    app.post("/api/candidate-pass/:token/messages", (_req, res) => res.status(410).json({ error: "expired" }));
+    app.post("/api/candidate-pass/:token/documents/:id/review", (_req, res) => res.status(404).json({ error: "revoked" }));
+    app.get("/api/manager-pass/:token", (_req, res) => res.status(200).json({ ok: true }));
+    app.post("/api/manager-pass/:token/candidates/:id/decision", (_req, res) => res.status(401).json({ error: "invalid" }));
+    const server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    assert(address && typeof address === "object");
+    try {
+      const base = `http://127.0.0.1:${address.port}`;
+      await fetch(`${base}/api/candidate-pass/${token}`);
+      await fetch(`${base}/api/candidate-pass/${token}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      await fetch(`${base}/api/candidate-pass/${token}/documents/7/review`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      await fetch(`${base}/api/manager-pass/${token}`);
+      await fetch(`${base}/api/manager-pass/${token}/candidates/9/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      assert.equal(lines.length, 5);
+      assert.equal(lines.some((line) => line.includes(token)), false);
+      assert(lines.some((line) => line.includes("GET /api/candidate-pass/:token 200")));
+      assert(lines.some((line) => line.includes("POST /api/candidate-pass/:token/messages 410")));
+      assert(lines.some((line) => line.includes("POST /api/manager-pass/:token/candidates/:id/decision 401")));
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("accepts only passive, structurally complete PDFs for the reusable CV store", async () => {
+    const uploadDir = await mkdtemp(path.join(tmpdir(), "hirepass-cv-test-"));
+    tempDirs.push(uploadDir);
+    process.env.HIREPASS_UPLOAD_DIR = uploadDir;
+    const stored = await storeCandidateCvUpload({ candidateId: 201, fileName: "../../cv.pdf", mimeType: "application/pdf", fileDataBase64: pdfBase64 });
+    assert.match(stored.storageKey, /^201\/0-/);
+    assert.equal(stored.originalName, "cv.pdf");
+    await assert.rejects(
+      storeCandidateCvUpload({ candidateId: 201, fileName: "cv.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileDataBase64: Buffer.from("PK\u0003\u0004").toString("base64") }),
+      /Unsupported file type/,
+    );
+    await assert.rejects(
+      storeCandidateCvUpload({ candidateId: 201, fileName: "active.pdf", mimeType: "application/pdf", fileDataBase64: Buffer.from("%PDF-1.4\n/JavaScript true\n%%EOF").toString("base64") }),
+      /unsupported active or embedded content/,
+    );
+  });
+
   it("fails closed for missing production auth and upload configuration", async () => {
     const previous = {
       nodeEnv: process.env.NODE_ENV,
@@ -370,6 +451,33 @@ describe("HirePass production envelope", () => {
       });
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
+  it("uses shared persistent counters and fails closed for production login abuse protection", async () => {
+    const { persistentRateLimit } = await import("./rate-limit");
+    const previousNodeEnv = process.env.NODE_ENV;
+    let count = 0;
+    originalPoolQuery ||= pool.query;
+    pool.query = (async () => ({ rows: [{ count: ++count, expires_at: new Date(Date.now() + 60_000) }], rowCount: 1 })) as typeof pool.query;
+    process.env.NODE_ENV = "production";
+    const app = express();
+    app.use(persistentRateLimit());
+    app.post("/api/auth/login", (_req, res) => res.json({ ok: true }));
+    const server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    assert(address && typeof address === "object");
+    try {
+      const url = `http://127.0.0.1:${address.port}/api/auth/login`;
+      for (let i = 0; i < 10; i += 1) assert.equal((await fetch(url, { method: "POST" })).status, 200);
+      const blocked = await fetch(url, { method: "POST" });
+      assert.equal(blocked.status, 429);
+      assert.equal(blocked.headers.get("ratelimit-limit"), "10");
+      assert(blocked.headers.get("retry-after"));
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+      await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
     }
   });
 

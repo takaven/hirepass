@@ -16,12 +16,13 @@ export const db = drizzle(pool, { schema });
 export async function verifyDatabaseReady(timeoutMs = 3_000) {
   let timeout: NodeJS.Timeout | undefined;
   try {
-    await Promise.race([
-      pool.query("select 1"),
-      new Promise((_resolve, reject) => {
+    const result = await Promise.race([
+      pool.query<{ rate_limit_table: string | null }>("select to_regclass('public.rate_limit_counters')::text as rate_limit_table"),
+      new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(() => reject(new Error("Database readiness check timed out")), timeoutMs);
       }),
     ]);
+    if (!result.rows[0]?.rate_limit_table) throw new Error("rate_limit_counters schema is missing");
   } finally {
     if (timeout) clearTimeout(timeout);
   }

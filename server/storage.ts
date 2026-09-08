@@ -34,6 +34,11 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
+const finitePassExpiry = (value: unknown) => {
+  const parsed = value instanceof Date ? value : value ? new Date(String(value)) : null;
+  return parsed && Number.isFinite(parsed.getTime()) ? parsed : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+};
+
 export interface IStorage {
   // Managers
   getManagers(): Promise<Manager[]>;
@@ -64,7 +69,6 @@ export interface IStorage {
   getCandidate(id: number): Promise<Candidate | undefined>;
   createCandidate(candidate: InsertCandidate): Promise<Candidate>;
   updateCandidate(id: number, candidate: Partial<InsertCandidate>): Promise<Candidate | undefined>;
-  deleteCandidate(id: number): Promise<boolean>;
 
   // Pass Candidates
   getPassCandidates(passId: number): Promise<(PassCandidate & { candidate: Candidate })[]>;
@@ -76,7 +80,6 @@ export interface IStorage {
   updatePassCandidateAiScore(id: number, aiScore: number, aiScoreDetails?: object): Promise<PassCandidate | undefined>;
   bulkUpdatePassCandidateStatus(ids: number[], status: string): Promise<number>;
   getPassCandidatesPipeline(passId: number): Promise<Record<string, (PassCandidate & { candidate: Candidate })[]>>;
-  removePassCandidate(id: number): Promise<boolean>;
 
   // Public Passes
   getOpenPasses(): Promise<Pass[]>;
@@ -325,7 +328,7 @@ export class DatabaseStorage implements IStorage {
 
   // Candidates
   async getCandidates(): Promise<Candidate[]> {
-    return db.select().from(candidates).orderBy(desc(candidates.createdAt));
+    return db.select().from(candidates).where(eq(candidates.isAnonymized, false)).orderBy(desc(candidates.createdAt));
   }
 
   async getCandidate(id: number): Promise<Candidate | undefined> {
@@ -344,11 +347,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(candidates.id, id))
       .returning();
     return updated;
-  }
-
-  async deleteCandidate(id: number): Promise<boolean> {
-    const result = await db.delete(candidates).where(eq(candidates.id, id));
-    return (result.rowCount ?? 0) > 0;
   }
 
   // Pass Candidates
@@ -474,11 +472,6 @@ export class DatabaseStorage implements IStorage {
     }
     
     return pipeline;
-  }
-
-  async removePassCandidate(id: number): Promise<boolean> {
-    const result = await db.delete(passCandidates).where(eq(passCandidates.id, id));
-    return (result.rowCount ?? 0) > 0;
   }
 
   // Public Passes
@@ -682,7 +675,7 @@ export class DatabaseStorage implements IStorage {
 
   async createShareLink(shareLink: InsertShareLink): Promise<ShareLink> {
     const token = randomUUID();
-    const [newLink] = await db.insert(shareLinks).values({ ...shareLink, token }).returning();
+    const [newLink] = await db.insert(shareLinks).values({ ...shareLink, expiresAt: finitePassExpiry(shareLink.expiresAt), token }).returning();
     return newLink;
   }
 
@@ -976,7 +969,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCandidateLink(data: any): Promise<any> {
-    const [link] = await db.insert(candidateLinks).values(data).returning();
+    const [link] = await db.insert(candidateLinks).values({ ...data, expiresAt: finitePassExpiry(data.expiresAt) }).returning();
     return link;
   }
 
