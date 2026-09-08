@@ -26,8 +26,9 @@ export type PublicIntakeInput = {
 export async function submitPublicCandidate(input: PublicIntakeInput) {
   const normalizedEmail = input.email.trim().toLowerCase();
   const storedCv = await storeCandidateCvUpload({ candidateId: 0, fileName: input.fileName, mimeType: input.mimeType, fileDataBase64: input.fileDataBase64 });
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
   try {
+    client = await pool.connect();
     await client.query("begin");
     await client.query("select pg_advisory_xact_lock(hashtext($1))", [normalizedEmail]);
     let pass: { id: number; position_title: string; status: string | null } | undefined;
@@ -88,11 +89,11 @@ export async function submitPublicCandidate(input: PublicIntakeInput) {
     await client.query("commit");
     return { candidateId, applicationId, reusedCandidate: Boolean(matches.rows[0]), duplicateApplication: false };
   } catch (error) {
-    await client.query("rollback").catch(() => undefined);
+    await client?.query("rollback").catch(() => undefined);
     await removeStoredCandidateDocument(storedCv.storageKey);
     throw error;
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
