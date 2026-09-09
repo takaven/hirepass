@@ -86,4 +86,37 @@ describe("Phase 2 PostgreSQL workflow integrity", () => {
     assert.ok(committed.id);
     assert.equal((await pool.query("select status from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "interview");
   });
+
+  it("atomically commits or rolls back candidate offer responses", async () => {
+    const suffix = Date.now();
+    const pass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status) values ($1,'Offer Role','Test','Dubai','Full-time','active') returning id", [`HP-P2-OF-${suffix}`]);
+    const candidate = await pool.query<{id:number}>("insert into candidates (name,email) values ('Offer Candidate',$1) returning id", [`offer-${suffix}@example.test`]);
+    const application = await pool.query<{id:number}>("insert into pass_candidates (pass_id,candidate_id,status) values ($1,$2,'offer') returning id", [pass.rows[0].id, candidate.rows[0].id]);
+    const createOffer = async () => (await pool.query<any>("insert into offers (pass_id,pass_candidate_id,salary,salary_currency,status) values ($1,$2,7500,'USD','pending') returning *", [pass.rows[0].id, application.rows[0].id])).rows[0];
+
+    await pool.query(`create function pg_temp.reject_offer_application_change() returns trigger language plpgsql as $$ begin if new.status in ('hired','rejected') then raise exception 'injected offer application failure'; end if; return new; end $$`);
+    await pool.query("create trigger phase_three_offer_application_failure before update on pass_candidates for each row execute function pg_temp.reject_offer_application_change()");
+    let pendingOffer = await createOffer();
+    await assert.rejects(storage.respondToCandidateOffer(pendingOffer, "accept", null));
+    assert.equal((await pool.query("select status from offers where id=$1", [pendingOffer.id])).rows[0].status, "pending");
+    assert.equal((await pool.query("select status from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "offer");
+    await pool.query("delete from offers where id=$1", [pendingOffer.id]);
+
+    pendingOffer = await createOffer();
+    await assert.rejects(storage.respondToCandidateOffer(pendingOffer, "decline", "Candidate supplied reason"));
+    assert.equal((await pool.query("select status,decline_reason from offers where id=$1", [pendingOffer.id])).rows[0].status, "pending");
+    assert.equal((await pool.query("select status,rejection_notes from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "offer");
+    await pool.query("drop trigger phase_three_offer_application_failure on pass_candidates");
+    await pool.query("delete from offers where id=$1", [pendingOffer.id]);
+
+    const accepted = await storage.respondToCandidateOffer(await createOffer(), "accept", null);
+    assert.equal(accepted.status, "accepted");
+    assert.equal((await pool.query("select status from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "hired");
+    await pool.query("update pass_candidates set status='offer',rejection_reason=null,rejection_notes=null,rejected_at=null where id=$1", [application.rows[0].id]);
+    const declined = await storage.respondToCandidateOffer(await createOffer(), "decline", null);
+    assert.equal(declined.status, "declined");
+    const declinedApplication = (await pool.query("select status,rejection_notes from pass_candidates where id=$1", [application.rows[0].id])).rows[0];
+    assert.equal(declinedApplication.status, "rejected");
+    assert.equal(declinedApplication.rejection_notes, null);
+  });
 });

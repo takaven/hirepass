@@ -511,12 +511,13 @@ export async function registerRoutes(
 
   app.patch("/api/managers/:id", async (req, res) => {
     try {
-      const manager = await storage.updateManager(parseInt(req.params.id), req.body);
+      const manager = await storage.updateManager(parseInt(req.params.id), insertManagerSchema.partial().parse(req.body));
       if (!manager) {
         return res.status(404).json({ error: "Manager not found" });
       }
       res.json(manager);
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       console.error("Error updating manager:", error);
       res.status(500).json({ error: "Failed to update manager" });
     }
@@ -591,6 +592,10 @@ export async function registerRoutes(
   app.post("/api/passes", async (req, res) => {
     try {
       if (req.body.enabledStages !== undefined && !validateConfiguredStages(req.body.enabledStages)) return res.status(400).json({ error: "Workflow stages must be an ordered subset from Applied to Hired" });
+      if (req.body.hiringManagerId != null) {
+        const stakeholder = await storage.getManager(Number(req.body.hiringManagerId));
+        if (!stakeholder?.isActive || !stakeholder.canBeHiringManager) return res.status(400).json({ error: "Hiring Manager must be an active eligible stakeholder" });
+      }
       const validated = insertPassSchema.parse(req.body);
       const pass = await storage.createPass(validated);
       
@@ -617,6 +622,10 @@ export async function registerRoutes(
   app.patch("/api/passes/:id", async (req, res) => {
     try {
       if (req.body.enabledStages !== undefined && !validateConfiguredStages(req.body.enabledStages)) return res.status(400).json({ error: "Workflow stages must be an ordered subset from Applied to Hired" });
+      if (req.body.hiringManagerId != null) {
+        const stakeholder = await storage.getManager(Number(req.body.hiringManagerId));
+        if (!stakeholder?.isActive || !stakeholder.canBeHiringManager) return res.status(400).json({ error: "Hiring Manager must be an active eligible stakeholder" });
+      }
       if (req.body.enabledStages !== undefined) {
         const activeStatuses = (await storage.getPassCandidates(parseInt(req.params.id))).map((candidate) => candidate.status || "new");
         const disabledInUse = activeStatuses.find((status) => !["rejected", "withdrawn"].includes(status) && !req.body.enabledStages.includes(status));
@@ -2212,65 +2221,34 @@ export async function registerRoutes(
   });
   
   // Candidate responds to offer
+  const candidateOfferResponseSchema = z.object({
+    response: z.enum(["accept", "negotiate", "decline"]),
+    reason: z.string().trim().max(2000).optional(),
+    message: z.string().trim().max(2000).optional(),
+  }).strict();
   app.post("/api/candidate-pass/:token/offer-response", async (req, res) => {
     try {
       const candidateLink = await getValidCandidateLink(req.params.token, res);
       if (!candidateLink) return;
-      
-      const { response, reason, message: responseMessage } = req.body; // response: 'accept' | 'negotiate' | 'decline'
+
+      const { response, reason, message } = candidateOfferResponseSchema.parse(req.body);
       
       const offer = await storage.getOfferByPassCandidate(candidateLink.passCandidateId);
       if (!offer) {
         return res.status(404).json({ error: "No offer found" });
       }
-      
-      let newStatus = offer.status;
-      if (response === 'accept') {
-        newStatus = 'accepted';
-        await storage.updatePassCandidate(candidateLink.passCandidateId, { status: 'hired' });
-      } else if (response === 'decline') {
-        newStatus = 'declined';
-        await storage.updatePassCandidate(candidateLink.passCandidateId, {
-          status: 'rejected',
-          rejectionReason: 'Offer declined',
-          rejectionNotes: reason || responseMessage,
-          rejectedAt: new Date()
-        });
-        await storage.updateOffer(offer.id, { 
-          status: 'declined',
-          declineReason: reason,
-          respondedAt: new Date()
-        });
-      } else if (response === 'negotiate') {
-        newStatus = 'negotiating';
-        await storage.updateOffer(offer.id, { 
-          status: 'negotiating',
-          negotiationNotes: responseMessage,
-          respondedAt: new Date()
-        });
+      if (offer.status === "accepted" || offer.status === "declined") {
+        return res.status(409).json({ error: "This offer already has a final response" });
       }
-      
-      if (response === 'accept') {
-        await storage.updateOffer(offer.id, { 
-          status: 'accepted',
-          respondedAt: new Date()
-        });
+      if (offer.status !== "pending" && offer.status !== "negotiating") {
+        return res.status(409).json({ error: "This offer is not awaiting a candidate response" });
       }
-      const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
-      if (passCandidate) {
-        await storage.logActivity({
-          passId: passCandidate.passId,
-          actorType: "candidate",
-          actorName: "Candidate",
-          action: response === "accept" ? "candidate_offer_accepted_handoff" : "candidate_offer_response_submitted",
-          targetType: "offer",
-          targetId: offer.id,
-          details: { passCandidateId: candidateLink.passCandidateId, response },
-        });
-      }
-      
-      res.json({ message: "Offer response submitted", status: newStatus });
+      const candidateText = response === "negotiate" ? message?.trim() || null : response === "decline" ? reason?.trim() || null : null;
+      const updatedOffer = await storage.respondToCandidateOffer(offer, response, candidateText);
+      res.json({ message: "Offer response submitted", status: updatedOffer.status });
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      if (error instanceof Error && error.message === "Offer is no longer awaiting a response") return res.status(409).json({ error: error.message });
       console.error("Error responding to offer:", error);
       res.status(500).json({ error: "Failed to respond to offer" });
     }

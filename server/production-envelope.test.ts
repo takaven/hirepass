@@ -208,6 +208,24 @@ async function login(baseUrl: string) {
 }
 
 describe("HirePass production envelope", () => {
+  it("persists independent stakeholder responsibility flags and rejects an ineligible vacancy owner", async () => {
+    let created: any = null;
+    await withServer({
+      createManager: async (data: any) => (created = { id: 401, ...data }),
+      getManager: async (id: number) => id === 401 ? { ...manager, id, isActive: true, canBeHiringManager: false, canBeInterviewer: true } : undefined,
+    }, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      const stakeholder = await fetch(`${baseUrl}/api/managers`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Interview Specialist", email: "interviewer@example.test", jobTitle: "Interviewer", department: "Operations", isActive: true, canBeHiringManager: false, canBeInterviewer: true }) });
+      assert.equal(stakeholder.status, 201);
+      assert.equal(created.canBeHiringManager, false);
+      assert.equal(created.canBeInterviewer, true);
+
+      const vacancy = await fetch(`${baseUrl}/api/passes`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ hiringManagerId: 401 }) });
+      assert.equal(vacancy.status, 400);
+      assert.match((await vacancy.json() as any).error, /eligible stakeholder/);
+    });
+  });
+
   it("exposes direct open-vacancy details but protects the Candidate Library", async () => {
     await withServer({}, async (baseUrl) => {
       const direct = await fetch(`${baseUrl}/api/public/passes/10`);

@@ -375,7 +375,7 @@ export default function Candidates() {
               className="rounded-xl"
               data-testid="button-confirm-delete"
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Erasing..." : "Erase data"}
             </Button>
           </div>
         </DialogContent>

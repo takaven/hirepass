@@ -43,6 +43,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { saveCandidateWithOptionalCv } from "@/lib/save-candidate";
+import { validateClientUpload } from "@/lib/upload-preflight";
 import { Link } from "wouter";
 import type { Candidate, Pass } from "@shared/schema";
 
@@ -203,6 +204,12 @@ export default function CandidateForm() {
   });
 
   const handleResumeUpload = async (file: File) => {
+    const issue = validateClientUpload(file, "cv");
+    if (issue) {
+      setResumeFile(null);
+      toast({ title: "CV not selected", description: issue, variant: "destructive" });
+      return;
+    }
     setResumeFile(file);
     toast({
       title: "Resume selected",
@@ -232,20 +239,10 @@ export default function CandidateForm() {
               {isEditing ? "Edit Candidate" : "Add Candidate"}
             </h1>
             <p className="text-muted-foreground mt-1">
-              {isEditing ? "Update candidate information" : "Add a new candidate to your pipeline"}
+              {isEditing ? "Update candidate information" : "Add a new candidate to the Candidate Library"}
             </p>
           </div>
         </div>
-        {isEditing && (
-          <div className="flex items-center gap-2">
-            <Link href={`/candidates/${id}/pass`}>
-              <Button variant="outline" className="rounded-xl gap-2" data-testid="button-view-candidate-pass">
-                <FileText className="w-4 h-4" strokeWidth={2} />
-                Candidate Pass
-              </Button>
-            </Link>
-          </div>
-        )}
       </div>
 
       <GlassCard className="p-6">
@@ -263,6 +260,7 @@ export default function CandidateForm() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) handleResumeUpload(file);
+                e.currentTarget.value = "";
               }}
               data-testid="input-resume-upload"
             />

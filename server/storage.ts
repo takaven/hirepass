@@ -106,6 +106,7 @@ export interface IStorage {
   getOffersByPassCandidate(passCandidateId: number): Promise<Offer[]>;
   createOffer(offer: InsertOffer): Promise<Offer>;
   updateOffer(id: number, offer: Partial<InsertOffer>): Promise<Offer | undefined>;
+  respondToCandidateOffer(offer: Offer, response: "accept" | "negotiate" | "decline", candidateText: string | null): Promise<Offer>;
 
   // Interviews by PassCandidate
   getInterviewsByPassCandidate(passCandidateId: number): Promise<Interview[]>;
@@ -619,6 +620,47 @@ export class DatabaseStorage implements IStorage {
       .where(eq(offers.id, id))
       .returning();
     return updated;
+  }
+
+  async respondToCandidateOffer(offer: Offer, response: "accept" | "negotiate" | "decline", candidateText: string | null): Promise<Offer> {
+    return db.transaction(async (tx) => {
+      const respondedAt = new Date();
+      const offerChanges: Partial<InsertOffer> = response === "accept"
+        ? { status: "accepted", respondedAt }
+        : response === "decline"
+          ? { status: "declined", declineReason: candidateText, respondedAt }
+          : { status: "negotiating", negotiationNotes: candidateText, respondedAt };
+      const [updatedOffer] = await tx.update(offers)
+        .set({ ...offerChanges, updatedAt: respondedAt })
+        .where(and(eq(offers.id, offer.id), inArray(offers.status, ["pending", "negotiating"])))
+        .returning();
+      if (!updatedOffer) throw new Error("Offer is no longer awaiting a response");
+
+      if (response === "accept") {
+        const [application] = await tx.update(passCandidates).set({ status: "hired", updatedAt: respondedAt }).where(eq(passCandidates.id, offer.passCandidateId)).returning();
+        if (!application) throw new Error("Offer application no longer exists");
+      } else if (response === "decline") {
+        const [application] = await tx.update(passCandidates).set({
+          status: "rejected",
+          rejectionReason: "Offer declined",
+          rejectionNotes: candidateText,
+          rejectedAt: respondedAt,
+          updatedAt: respondedAt,
+        }).where(eq(passCandidates.id, offer.passCandidateId)).returning();
+        if (!application) throw new Error("Offer application no longer exists");
+      }
+
+      await tx.insert(activityLog).values({
+        passId: offer.passId,
+        actorType: "candidate",
+        actorName: "Candidate",
+        action: response === "accept" ? "candidate_offer_accepted_handoff" : "candidate_offer_response_submitted",
+        targetType: "offer",
+        targetId: offer.id,
+        details: { passCandidateId: offer.passCandidateId, response },
+      });
+      return updatedOffer;
+    });
   }
 
   async getOffersByPassCandidate(passCandidateId: number): Promise<Offer[]> {

@@ -840,12 +840,10 @@ describe("HR Pass Control lifecycle routes", () => {
       getPassCandidateById: async () => mutablePassCandidate,
       getPassCandidatesWithDetails: async () => [mutablePassCandidate],
       getOfferByPassCandidate: async () => mutableOffer,
-      updatePassCandidate: async (_id: number, data: any) => {
-        mutablePassCandidate = { ...mutablePassCandidate, ...data };
-        return mutablePassCandidate;
-      },
-      updateOffer: async (_id: number, data: any) => {
-        mutableOffer = { ...mutableOffer, ...data };
+      respondToCandidateOffer: async (_offer: any, response: string) => {
+        mutablePassCandidate = { ...mutablePassCandidate, status: response === "accept" ? "hired" : mutablePassCandidate.status };
+        mutableOffer = { ...mutableOffer, status: response === "accept" ? "accepted" : mutableOffer.status };
+        await storage.logActivity({ passId: 10, actorType: "candidate", actorName: "Candidate", action: "candidate_offer_accepted_handoff", targetType: "offer", targetId: 801, details: { passCandidateId: 101, response } });
         return mutableOffer;
       },
     }, async (baseUrl) => {

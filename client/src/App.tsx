@@ -27,8 +27,6 @@ const HrPassControl = lazy(() => import("@/pages/hr-pass-control"));
 const PublicApply = lazy(() => import("@/pages/public-apply"));
 const PublicTalentPool = lazy(() => import("@/pages/public-talent-pool"));
 const PassCandidates = lazy(() => import("@/pages/pass-candidates"));
-const RecruitmentPass = lazy(() => import("@/pages/recruitment-pass"));
-const CandidatePass = lazy(() => import("@/pages/candidate-pass"));
 const ManagerRecruitmentPass = lazy(() => import("@/pages/manager-recruitment-pass"));
 const CandidatePortalPass = lazy(() => import("@/pages/candidate-portal-pass"));
 
@@ -143,7 +141,6 @@ function MainRouter() {
       <Route path="/candidates/new" component={CandidateForm} />
       <Route path="/candidates/:id" component={CandidateForm} />
       <Route path="/candidates/:id/edit" component={CandidateForm} />
-      <Route path="/candidates/:id/pass" component={CandidatePass} />
       <Route path="/interviews" component={Interviews} />
       <Route path="/interviews/new" component={InterviewForm} />
       <Route path="/interviews/:id/edit" component={InterviewForm} />
@@ -205,7 +202,7 @@ function App() {
   
   const isApplyRoute = location === "/apply" || /^\/apply\/\d+$/.test(location);
   const isTalentPoolRoute = location === "/talent-pool" || location === "/submit-cv";
-  const isRecruitmentPassRoute = /^\/pass\/(?:(?:HP|BAYN)-)?RP-\d{4}-\d{3}$/.test(location);
+  const isRetiredPublicPassRoute = location.startsWith("/pass/");
   // Token-based manager pass: /manager-pass/mgr_xxxxx
   const isManagerPassRoute = location.startsWith("/manager-pass/");
   // Token-based candidate portal: /candidate-pass/cand_xxxxx
@@ -220,16 +217,8 @@ function App() {
             <PublicTalentPool />
           ) : isApplyRoute ? (
             <PublicApply passIdParam={location.split("/")[2]} />
-          ) : isRecruitmentPassRoute ? (
-            <Switch>
-              <Route path="/pass/:passId">{(params) => {
-                const passId = params.passId || "";
-                if (/^(?:(?:HP|BAYN)-)?RP-\d{4}-\d{3}$/.test(passId)) {
-                  return <RecruitmentPass passIdParam={passId} />;
-                }
-                return <NotFound />;
-              }}</Route>
-            </Switch>
+          ) : isRetiredPublicPassRoute ? (
+            <NotFound />
           ) : isManagerPassRoute ? (
             <Switch>
               <Route path="/manager-pass/:token">{(params) => {

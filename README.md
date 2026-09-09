@@ -109,12 +109,12 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | Candidate records and profiles | Exists | Reuse current model and CRUD experience. |
 | Vacancy-linked applications | Exists | Reuse public application and Pass relationships. |
 | Candidate reuse across vacancies | Exists | Improve discoverability/history after real usage. |
-| Candidate search and talent-pool data | Partial | Tags, outcome/history, availability and CV retrieval need bounded UX work. |
-| General CV submission without vacancy | Missing | Build a small intake path into the existing candidate model. |
+| Candidate search and talent-pool data | Exists for launch core | Search, profile/CV history, application outcomes, talent-pool state, reuse and erasure are available; advanced CRM-style library features remain deferred. |
+| General CV submission without vacancy | Exists | Public talent-pool intake creates or safely reuses a central candidate record and retains the submitted CV without inventing a vacancy or application. |
 | Vacancy records and multiple positions | Exists | Preserve current Pass/position structures. |
 | Public vacancy application URL | Exists | Preserve; clarify operational link handling. |
 | Flexible hiring stages | Exists | Each vacancy enables an ordered subset of the supported Applied, Review, Shortlisted, Interview, Offer and Hired stages; Rejected/Withdrawn remain terminal outcomes. |
-| Candidate Pass | Exists | Preserve; correct security/incomplete action flows. |
+| Candidate Pass | Exists | Token-based action portal supports scoped candidate actions, interviews, documents and truthful offer responses. |
 | Manager/Hiring Stakeholder Pass | Exists | Preserve scoped access and use responsibility-neutral documentation. |
 | Internal/HR Pass Control | Exists | Preserve; administrator need not belong to HR. |
 | Pass issue, expiry, revoke, extend, reissue | Exists | Preserve and regression-test. |
@@ -122,10 +122,10 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | Interviews and decisions | Exists for launch core | Availability, primary interviewer, candidate slot booking, rescheduling, recommendation/notes and final decisions use existing Pass structures. Calendar and sophisticated scheduling remain deferred. |
 | Assessments and offers | Partial | Data/routes exist; production workflows are not uniformly complete. |
 | AI-assisted CV review | Missing in production | Implement as optional, human-controlled, evidence-based add-on. |
-| Multiple internal responsibilities | Partial | Production auth has one `owner_admin`; managers use scoped Pass links. Extend minimally. |
+| Multiple internal responsibilities | Exists for launch core | One `owner_admin` controls named stakeholders and scoped Pass links; stakeholder records independently declare Hiring Manager and interviewer eligibility. |
 | Branding/company configuration | Exists at deployment level | Company name, optional location/contact and privacy notice identity come from the isolated deployment environment; the Settings page is deliberately read-only. |
 | Notifications | Partial | In-app records exist; email, reminders and recipient mapping are incomplete. |
-| Privacy and retention enforcement | Missing | Policy is required before real data; automate only what operation cannot safely handle. |
+| Privacy and retention foundation | Exists | Authorised PII erasure/file removal and deployment privacy-notice configuration exist; customer/legal retention policy remains operational configuration. |
 
 ## Launch Gates And Known Corrections
 
