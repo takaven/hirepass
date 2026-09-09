@@ -5,6 +5,7 @@ import type {
   ManagerPassActionState,
   ManagerPassViewState,
 } from "@shared/pass-state";
+import { configuredStages } from "@shared/hiring-workflow";
 
 export type {
   ManagerEvidenceSummary,
@@ -38,6 +39,7 @@ export type ManagerPassStateInput = {
     positionTitle?: string | null;
     status?: string | null;
     targetHireDate?: Date | string | null;
+    enabledStages?: string[] | null;
   } | null;
   candidates?: ManagerPassCandidateInput[];
   interviews?: Array<{ id?: number; status?: string | null; interviewDate?: Date | string | null; passCandidateId?: number | null }>;
@@ -95,13 +97,13 @@ function expectedMovement(input: ManagerPassStateInput, waitingOn: string, next:
   if (nextInterview) return `Expected movement: interview scheduled for ${nextInterview.toISOString().slice(0, 10)}.`;
 
   const targetHire = formatDate(input.pass?.targetHireDate);
-  if (targetHire) return `Expected movement: HR is working toward ${targetHire}.`;
+  if (targetHire) return `Expected movement: the hiring team is working toward ${targetHire}.`;
 
   if (waitingOn === "Manager") {
     return `Expected movement: the hiring manager will ${actionPhrase(next)}.`;
   }
-  if (waitingOn === "HR") {
-    return "Expected movement: HR will update this Pass when the next step is ready.";
+  if (waitingOn === "Hiring team") {
+    return "Expected movement: the hiring team will update this Pass when the next step is ready.";
   }
   return "Expected movement: this Pass will update when the next step is recorded.";
 }
@@ -126,10 +128,10 @@ function withPassState(base: Omit<ManagerPassViewState, "waitingOn" | "next" | "
     : base.actionState === "UPCOMING"
       ? "Scheduled event"
       : base.actionState === "COMPLETED"
-        ? "HR"
+        ? "Hiring team"
         : base.actionState === "WAITING"
-          ? "HR"
-          : "HR";
+          ? "Hiring team"
+          : "Hiring team";
   const next = base.nextDecision.description;
   return {
     ...base,
@@ -138,8 +140,8 @@ function withPassState(base: Omit<ManagerPassViewState, "waitingOn" | "next" | "
     expectedMovement: expectedMovement(input, waitingOn, next, now),
     latestUpdate: base.actionState === "ACTION_REQUIRED"
       ? `${base.nextDecision.label} is waiting for you.`
-      : "HR has your latest input.",
-    passHandoff: base.actionState === "COMPLETED" || base.actionState === "WAITING" ? "Pass Handoff: Hiring Manager -> HR" : null,
+      : "The hiring team has your latest input.",
+    passHandoff: base.actionState === "COMPLETED" || base.actionState === "WAITING" ? "Pass Handoff: Hiring stakeholder -> Hiring team" : null,
   };
 }
 
@@ -157,8 +159,16 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
   const candidates = input.candidates ?? [];
   const evidence = buildEvidence(pass, candidates);
   const expiresAt = toDate(input.link?.expiresAt);
-  const pendingCandidate = candidates.find((candidate) => ["new", "screening"].includes((candidate.status || "new").toLowerCase()));
-  const interviewCandidate = candidates.find((candidate) => (candidate.status || "").toLowerCase() === "interview" && !candidate.interviewRecommendation);
+  const stages = configuredStages(pass?.enabledStages);
+  const interviewIndex = stages.indexOf("interview");
+  const preInterview = interviewIndex >= 0 ? stages.slice(0, interviewIndex) : stages.slice(0, -1);
+  const pendingCandidate = candidates.find((candidate) => {
+    const status = (candidate.status || "new").toLowerCase();
+    const index = preInterview.indexOf(status as any);
+    return index >= 0 && (preInterview.length === 1 || index < preInterview.length - 1);
+  });
+  const completedInterviewCandidateIds = new Set(input.interviews?.filter((interview) => interview.status === "completed" || (toDate(interview.interviewDate)?.getTime() ?? Infinity) < now.getTime()).map((interview) => interview.passCandidateId));
+  const interviewCandidate = candidates.find((candidate) => (candidate.status || "").toLowerCase() === "interview" && !candidate.interviewRecommendation && completedInterviewCandidateIds.has(candidate.id));
   const finalDecisionCandidate = candidates.find((candidate) => (candidate.status || "").toLowerCase() === "interview" && candidate.interviewRecommendation);
 
   if (!input.link?.isActive) {
@@ -167,9 +177,9 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       hiringStage: "Request",
       stateLabel: "PASS NOT ACTIVE",
       headline: "This Manager Pass is no longer active.",
-      summary: "Ask HR to issue a fresh Pass if your input is still required.",
+      summary: "Ask the hiring team to issue a fresh Pass if your input is still required.",
       urgency: "attention",
-      nextDecision: { kind: "NONE", label: "Contact HR", description: "This Pass cannot accept decisions.", target: "none" },
+      nextDecision: { kind: "NONE", label: "Contact hiring team", description: "This Pass cannot accept decisions.", target: "none" },
       evidence,
     }, input, now);
   }
@@ -180,7 +190,7 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       hiringStage: "Request",
       stateLabel: "PASS EXPIRED",
       headline: "This Manager Pass has expired.",
-      summary: "Ask HR to issue a fresh Pass if your input is still required.",
+      summary: "Ask the hiring team to issue a fresh Pass if your input is still required.",
       urgency: "attention",
       nextDecision: { kind: "NONE", label: "Request fresh Pass", description: "This Pass cannot accept decisions.", target: "none" },
       evidence,
@@ -193,7 +203,7 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       hiringStage: "Request",
       stateLabel: "ACTION REQUIRED",
       headline: "Approve the hiring request.",
-      summary: "Review the role details and either approve the request or ask HR for changes.",
+      summary: "Review the role details and either approve the request or ask the hiring team for changes.",
       urgency: "attention",
       nextDecision: {
         kind: "APPROVE_JD",
@@ -211,7 +221,7 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       hiringStage: "Screening",
       stateLabel: "ACTION REQUIRED",
       headline: "Review the next candidate.",
-      summary: "Shortlist or reject the candidate using the evidence shown here.",
+      summary: "Advance or reject the candidate using the evidence shown here.",
       urgency: "attention",
       nextDecision: {
         kind: "REVIEW_CANDIDATE",
@@ -224,13 +234,16 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
     }, input, now);
   }
 
-  if (!pass?.interviewSetupCompleted && candidates.some((candidate) => (candidate.status || "").toLowerCase() === "shortlisted")) {
+  if (interviewIndex >= 0 && !pass?.interviewSetupCompleted && candidates.some((candidate) => {
+    const status = (candidate.status || "new").toLowerCase();
+    return status === "interview" || status === preInterview.at(-1);
+  })) {
     return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Interview",
       stateLabel: "ACTION REQUIRED",
       headline: "Set interview availability.",
-      summary: "Give HR the interview format and availability needed to proceed.",
+      summary: "Give the hiring team the interview format and availability needed to proceed.",
       urgency: "attention",
       nextDecision: {
         kind: "SET_INTERVIEW_AVAILABILITY",
@@ -248,12 +261,12 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       hiringStage: "Interview",
       stateLabel: "ACTION REQUIRED",
       headline: "Submit interview evaluation.",
-      summary: "Record structured feedback so HR can move the process forward.",
+      summary: "Record evidence-based feedback so the hiring team can move the process forward.",
       urgency: "attention",
       nextDecision: {
         kind: "SUBMIT_EVALUATION",
         label: "Submit evaluation",
-        description: "Complete the interview scorecard.",
+        description: "Submit a recommendation and evidence-based notes.",
         target: "evaluation",
         candidateId: interviewCandidate.id,
       },
@@ -272,7 +285,7 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       nextDecision: {
         kind: "MAKE_FINAL_DECISION",
         label: "Make final decision",
-        description: "Submit your final decision to HR.",
+        description: "Submit your final decision to the hiring team.",
         target: "decision",
         candidateId: finalDecisionCandidate.id,
       },
@@ -303,13 +316,13 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
       actionState: "COMPLETED",
       hiringStage: "Decision",
       stateLabel: "COMPLETED",
-      headline: "You're done for now. HR has your decision.",
+      headline: "You're done for now. The hiring team has your decision.",
       summary: "There are no open manager actions on this Pass.",
       urgency: "normal",
       nextDecision: {
         kind: "NONE",
         label: "No decision required",
-        description: "HR will handle the next step.",
+        description: "The hiring team will handle the next step.",
         target: "none",
       },
       evidence,
@@ -320,13 +333,13 @@ export function resolveManagerPassState(input: ManagerPassStateInput): ManagerPa
     actionState: "WAITING",
     hiringStage: "Screening",
     stateLabel: "ALL CAUGHT UP",
-    headline: "You're done for now. HR has what it needs.",
+    headline: "You're done for now. The hiring team has what it needs.",
     summary: "This Pass will show a decision when your input is required again.",
     urgency: "normal",
     nextDecision: {
       kind: "NONE",
       label: "No decision required",
-      description: "HR will update this Pass when there is something to decide.",
+      description: "The hiring team will update this Pass when there is something to decide.",
       target: "none",
     },
     evidence,

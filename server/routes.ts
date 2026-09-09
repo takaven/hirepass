@@ -33,6 +33,7 @@ import { verifyDatabaseReady } from "./db";
 import { eraseCandidatePii } from "./candidate-privacy";
 import { PublicIntakeError, reuseCandidateForPass, submitPublicCandidate } from "./public-intake";
 import { saveInternalCandidateCv } from "./internal-cv";
+import { allowedCandidateStatus, configuredStages, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
 import {
   readStoredCandidateDocument,
   removeStoredCandidateDocument,
@@ -48,6 +49,38 @@ const publicPrivacyConfig = () => ({
 });
 
 const anthropic = new Anthropic();
+
+function interviewEndTime(startTime: string, duration: number): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(startTime);
+  if (!match) throw new Error("Invalid interview start time");
+  const total = Number(match[1]) * 60 + Number(match[2]) + duration;
+  if (Number(match[1]) > 23 || Number(match[2]) > 59 || total >= 1440) throw new Error("Interview must end on the same day");
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function validInterviewDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+async function validInterviewer(managerId: unknown) {
+  const id = z.coerce.number().int().positive().safeParse(managerId);
+  if (!id.success) return null;
+  const manager = await storage.getManager(id.data);
+  return manager?.isActive && manager.canBeInterviewer ? manager : null;
+}
+
+async function validStakeholder(managerId: unknown) {
+  const id = z.coerce.number().int().positive().safeParse(managerId);
+  if (!id.success) return null;
+  const manager = await storage.getManager(id.data);
+  return manager?.isActive ? manager : null;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -203,13 +236,8 @@ export async function registerRoutes(
       const pass = await storage.getPass(passId);
       if (!pass) return res.status(404).json({ error: "Pass not found" });
       const managerId = req.body.managerId ?? pass.hiringManagerId;
-      if (pass.hiringManagerId && managerId && Number(managerId) !== pass.hiringManagerId) {
-        return res.status(404).json({ error: "Manager is not assigned to this Pass" });
-      }
-      if (managerId) {
-        const manager = await storage.getManager(Number(managerId));
-        if (!manager) return res.status(404).json({ error: "Manager is not available for this Pass" });
-      }
+      if (!managerId) return res.status(400).json({ error: "An actionable Stakeholder Pass must be assigned to a hiring stakeholder" });
+      if (!await validStakeholder(managerId)) return res.status(404).json({ error: "Active hiring stakeholder not found" });
       const link = await storage.createShareLink({
         passId,
         managerId: managerId ? Number(managerId) : undefined,
@@ -560,6 +588,7 @@ export async function registerRoutes(
 
   app.post("/api/passes", async (req, res) => {
     try {
+      if (req.body.enabledStages !== undefined && !validateConfiguredStages(req.body.enabledStages)) return res.status(400).json({ error: "Workflow stages must be an ordered subset from Applied to Hired" });
       const validated = insertPassSchema.parse(req.body);
       const pass = await storage.createPass(validated);
       
@@ -585,6 +614,12 @@ export async function registerRoutes(
 
   app.patch("/api/passes/:id", async (req, res) => {
     try {
+      if (req.body.enabledStages !== undefined && !validateConfiguredStages(req.body.enabledStages)) return res.status(400).json({ error: "Workflow stages must be an ordered subset from Applied to Hired" });
+      if (req.body.enabledStages !== undefined) {
+        const activeStatuses = (await storage.getPassCandidates(parseInt(req.params.id))).map((candidate) => candidate.status || "new");
+        const disabledInUse = activeStatuses.find((status) => !["rejected", "withdrawn"].includes(status) && !req.body.enabledStages.includes(status));
+        if (disabledInUse) return res.status(409).json({ error: `Cannot disable the ${disabledInUse} stage while candidates are using it` });
+      }
       const pass = await storage.updatePass(parseInt(req.params.id), req.body);
       if (!pass) {
         return res.status(404).json({ error: "Pass not found" });
@@ -836,6 +871,9 @@ export async function registerRoutes(
 
   app.post("/api/passes/:passId/candidates", async (req, res) => {
     try {
+      const owningPass = await storage.getPass(parseInt(req.params.passId));
+      if (!owningPass) return res.status(404).json({ error: "Pass not found" });
+      if (req.body.status && !allowedCandidateStatus(req.body.status, owningPass.enabledStages)) return res.status(400).json({ error: "Status is not enabled for this hiring workflow" });
       const validated = insertPassCandidateSchema.parse({
         ...req.body,
         passId: parseInt(req.params.passId)
@@ -853,6 +891,10 @@ export async function registerRoutes(
 
   app.patch("/api/pass-candidates/:id", async (req, res) => {
     try {
+      const existing = await storage.getPassCandidateById(parseInt(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Pass candidate not found" });
+      const owningPass = await storage.getPass(existing.passId);
+      if (req.body.status && (!owningPass || !allowedCandidateStatus(req.body.status, owningPass.enabledStages))) return res.status(400).json({ error: "Status is not enabled for this hiring workflow" });
       const passCandidate = await storage.updatePassCandidate(parseInt(req.params.id), req.body);
       if (!passCandidate) {
         return res.status(404).json({ error: "Pass candidate not found" });
@@ -890,6 +932,11 @@ export async function registerRoutes(
   app.post("/api/pass-candidates/bulk-update", async (req, res) => {
     try {
       const validated = bulkUpdateSchema.parse(req.body);
+      for (const id of validated.ids) {
+        const candidate = await storage.getPassCandidateById(id);
+        const pass = candidate ? await storage.getPass(candidate.passId) : null;
+        if (!candidate || !pass || !allowedCandidateStatus(validated.status, pass.enabledStages)) return res.status(400).json({ error: "Status is not enabled for every selected hiring workflow" });
+      }
       const updatedCount = await storage.bulkUpdatePassCandidateStatus(validated.ids, validated.status);
       res.json({ success: true, updatedCount });
     } catch (error) {
@@ -917,6 +964,8 @@ export async function registerRoutes(
       if (!existingPC) {
         return res.status(404).json({ error: "Pass candidate not found" });
       }
+      const owningPass = await storage.getPass(existingPC.passId);
+      if (!owningPass || !allowedCandidateStatus(validated.status, owningPass.enabledStages)) return res.status(400).json({ error: "Status is not enabled for this hiring workflow" });
       
       const oldStatus = existingPC.status;
       
@@ -1149,8 +1198,18 @@ export async function registerRoutes(
 
   app.post("/api/interviews", async (req, res) => {
     try {
-      const validated = insertInterviewSchema.parse(req.body);
-      const interview = await storage.createInterview(validated);
+      const passId = z.coerce.number().int().positive().parse(req.body.passId);
+      const passCandidateId = z.coerce.number().int().positive().parse(req.body.passCandidateId);
+      const [pass, passCandidate, interviewer] = await Promise.all([
+        storage.getPass(passId), storage.getPassCandidateById(passCandidateId), validInterviewer(req.body.interviewerId),
+      ]);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      if (!configuredStages(pass.enabledStages).includes("interview")) return res.status(409).json({ error: "Interview is not enabled for this hiring workflow" });
+      if (!passCandidate || passCandidate.passId !== pass.id) return res.status(400).json({ error: "Candidate application does not belong to this Pass" });
+      if (!interviewer) return res.status(400).json({ error: "An active interview-eligible stakeholder is required" });
+      const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration);
+      const validated = insertInterviewSchema.parse({ ...req.body, passId, passCandidateId, interviewerId: interviewer.id, duration, endTime: interviewEndTime(req.body.startTime, duration) });
+      const interview = await storage.createInterviewAndAdvanceCandidate(validated);
       res.status(201).json(interview);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1163,7 +1222,22 @@ export async function registerRoutes(
 
   app.patch("/api/interviews/:id", async (req, res) => {
     try {
-      const interview = await storage.updateInterview(parseInt(req.params.id), req.body);
+      const existing = await storage.getInterview(parseInt(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Interview not found" });
+      if ((req.body.passId !== undefined && Number(req.body.passId) !== existing.passId) || (req.body.passCandidateId !== undefined && Number(req.body.passCandidateId) !== existing.passCandidateId)) {
+        return res.status(409).json({ error: "Rescheduling cannot change the interview's Pass or candidate" });
+      }
+      const { passId: _passId, passCandidateId: _passCandidateId, ...mutableBody } = req.body;
+      if (mutableBody.interviewerId !== undefined && !await validInterviewer(mutableBody.interviewerId)) return res.status(400).json({ error: "An active interview-eligible stakeholder is required" });
+      const isReschedule = ["interviewDate", "startTime", "duration", "format", "location", "meetingLink", "interviewerId"].some((field) => field in req.body);
+      const changes = isReschedule
+        ? (() => {
+            const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration ?? existing.duration);
+            const startTime = req.body.startTime ?? existing.startTime;
+            return insertInterviewSchema.omit({ passId: true, passCandidateId: true }).partial().parse({ ...mutableBody, duration, startTime, endTime: interviewEndTime(startTime, duration) });
+          })()
+        : insertInterviewSchema.omit({ passId: true, passCandidateId: true }).partial().parse(mutableBody);
+      const interview = isReschedule ? await storage.rescheduleInterview(existing.id, changes) : await storage.updateInterview(existing.id, changes);
       if (!interview) {
         return res.status(404).json({ error: "Interview not found" });
       }
@@ -1339,9 +1413,14 @@ export async function registerRoutes(
   app.post("/api/share-links", async (req, res) => {
     try {
       const { passId, managerId, linkType, expiresAt } = req.body;
+      const pass = await storage.getPass(Number(passId));
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      const resolvedManagerId = managerId ?? pass.hiringManagerId;
+      if (!resolvedManagerId) return res.status(400).json({ error: "An actionable Stakeholder Pass must be assigned to a hiring stakeholder" });
+      if (!await validStakeholder(resolvedManagerId)) return res.status(404).json({ error: "Active hiring stakeholder not found" });
       const shareLink = await storage.createShareLink({
         passId,
-        managerId,
+        managerId: Number(resolvedManagerId),
         linkType: linkType || "manager",
         expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry()
       });
@@ -1464,6 +1543,7 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const pass = await storage.updatePass(activeShareLink.passId, {
         jdStatus: 'approved',
@@ -1499,6 +1579,7 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const { feedback } = req.body;
       
@@ -1541,6 +1622,7 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const { salaryRangeMin, salaryRangeMax } = req.body;
       
@@ -1568,6 +1650,9 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
+      const interviewer = await validInterviewer(activeShareLink.managerId);
+      if (!interviewer) return res.status(403).json({ error: "Interview availability requires an active interview-eligible stakeholder" });
       
       const { 
         technicalAssessmentRequired,
@@ -1577,34 +1662,44 @@ export async function registerRoutes(
         availableDates,
         timeSlots,
         additionalInterviewers,
-        isPanelInterview
+        isPanelInterview,
+        location,
+        meetingLink,
       } = req.body;
-      
-      // Update pass with interview setup
-      await storage.updatePass(activeShareLink.passId, {
+      const setup = z.object({
+        availableDates: z.array(z.string().refine(validInterviewDate, "Invalid interview date")).min(1),
+        timeSlots: z.array(z.string().regex(/^\d{2}:\d{2}$/)).min(1),
+        interviewDuration: z.coerce.number().int().min(15).max(240),
+        interviewFormat: z.enum(["online", "in-person", "hybrid"]),
+        location: z.string().max(255).optional().nullable(),
+        meetingLink: z.string().url().max(500).optional().nullable(),
+      }).parse({ availableDates, timeSlots, interviewDuration, interviewFormat, location, meetingLink });
+
+      let slots;
+      try {
+        slots = setup.availableDates.flatMap((date) => setup.timeSlots.map((startTime) => ({
+          passId: activeShareLink.passId,
+          slotDate: date,
+          startTime,
+          endTime: interviewEndTime(startTime, setup.interviewDuration),
+          duration: setup.interviewDuration,
+          format: setup.interviewFormat,
+          location: setup.location,
+          meetingLink: setup.meetingLink,
+          interviewerId: interviewer.id,
+        })));
+      } catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid interview availability" });
+      }
+
+      await storage.configureInterviewSetup(activeShareLink.passId, {
         technicalAssessmentRequired,
         interviewFormat,
         interviewRounds,
         interviewDuration,
         isPanelInterview,
         interviewSetupCompleted: true
-      });
-      
-      // Create interview slots if provided
-      if (availableDates && timeSlots) {
-        for (const date of availableDates) {
-          for (const slot of timeSlots) {
-            await storage.createInterviewSlot({
-              passId: activeShareLink.passId,
-              slotDate: date,
-              startTime: slot,
-              endTime: slot, // End time will be calculated based on duration
-              format: interviewFormat,
-              interviewerId: activeShareLink.managerId
-            });
-          }
-        }
-      }
+      }, slots);
       
       // Add additional panel interviewers
       if (additionalInterviewers && additionalInterviewers.length > 0) {
@@ -1627,6 +1722,7 @@ export async function registerRoutes(
       
       res.json({ message: "Interview setup completed" });
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       console.error("Error setting up interviews:", error);
       res.status(500).json({ error: "Failed to set up interviews" });
     }
@@ -1644,13 +1740,17 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const passCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
       if (!isPassScopedCandidate(activeShareLink.passId, passCandidate)) {
         return res.status(404).json({ error: "Candidate is not available for this Manager Pass" });
       }
       
+      const pass = await storage.getPass(activeShareLink.passId);
+      const targetStatus = pass ? nextConfiguredStage(passCandidate!.status || "new", pass.enabledStages) : null;
+      if (!targetStatus) return res.status(400).json({ error: "Candidate cannot advance from the current configured stage" });
       const updatedPassCandidate = await storage.updatePassCandidate(passCandidate!.id, {
-        status: 'shortlisted',
+        status: targetStatus,
         shortlistedAt: new Date()
       });
       await storage.logActivity({
@@ -1682,6 +1782,7 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const existingPassCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
       if (!isPassScopedCandidate(activeShareLink.passId, existingPassCandidate)) {
         return res.status(404).json({ error: "Candidate is not available for this Manager Pass" });
@@ -1724,17 +1825,19 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const interview = await storage.getInterview(req.body.interviewId);
       if (!isPassScopedInterview(activeShareLink.passId, interview)) {
         return res.status(404).json({ error: "Interview is not available for this Manager Pass" });
       }
       
-      const validated = insertInterviewEvaluationSchema.parse({
-        ...req.body,
-        evaluatorId: activeShareLink.managerId
-      });
-      
-      const evaluation = await storage.createInterviewEvaluation(validated);
+      const input = z.object({
+        interviewId: z.number().int().positive(),
+        recommendation: z.string().min(1).max(50),
+        notesObservations: z.string().min(1).max(5000),
+        finalComments: z.string().max(5000).optional(),
+      }).parse(req.body);
+      const evaluation = await storage.submitInterviewEvaluation({ ...input, evaluatorId: activeShareLink.managerId }, interview!.passCandidateId);
       await storage.logActivity({
         passId: activeShareLink.passId,
         actorType: "manager",
@@ -1766,6 +1869,9 @@ export async function registerRoutes(
         return res.status(access.status).json({ error: access.error });
       }
       const activeShareLink = access.link;
+      if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
+      const pass = await storage.getPass(activeShareLink.passId);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
       
       const { decisions } = req.body; // Array of { passCandidateId, decision: 'hire' | 'reserve' | 'reject', notes }
       
@@ -1776,7 +1882,7 @@ export async function registerRoutes(
         }
         if (decision === 'hire') {
           await storage.updatePassCandidate(passCandidateId, {
-            status: 'offer',
+            status: configuredStages(pass.enabledStages).includes("offer") ? 'offer' : 'hired',
             selectionNotes: notes
           });
         } else if (decision === 'reject') {
@@ -1787,8 +1893,11 @@ export async function registerRoutes(
             rejectedAt: new Date()
           });
         } else if (decision === 'reserve') {
+          const stages = configuredStages(pass.enabledStages);
+          const interviewIndex = stages.indexOf("interview");
+          const reserveStage = interviewIndex > 0 ? stages[interviewIndex - 1] : "new";
           await storage.updatePassCandidate(passCandidateId, {
-            status: 'shortlisted', // Keep in shortlist as reserve
+            status: reserveStage,
             selectionNotes: `RESERVE: ${notes || ''}`
           });
         }
@@ -1888,6 +1997,8 @@ export async function registerRoutes(
       if (!passCandidate) {
         return res.status(404).json({ error: "Candidate application not found" });
       }
+      const owningPass = await storage.getPass(passCandidate.passId);
+      if (!owningPass || !configuredStages(owningPass.enabledStages).includes("interview")) return res.status(409).json({ error: "Interview is not enabled for this hiring workflow" });
 
       const availableSlots = await storage.getAvailableInterviewSlots(passCandidate.passId);
       const requestedSlot = availableSlots.find((slot) => slot.id === slotId);
@@ -1895,31 +2006,12 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Interview slot is not available for this Candidate Pass" });
       }
       
-      // Book the slot
-      const slot = await storage.bookInterviewSlot(slotId, candidateLink.passCandidateId, passCandidate.passId);
-      if (!slot) {
+      const booking = await storage.bookInterviewSlotAndCreateInterview(slotId, candidateLink.passCandidateId, passCandidate.passId);
+      if (!booking) {
         return res.status(400).json({ error: "Slot not available" });
       }
-      
-      // Create the interview
+      const { slot } = booking;
       if (passCandidate) {
-        await storage.createInterview({
-          passId: passCandidate.passId,
-          passCandidateId: candidateLink.passCandidateId,
-          interviewDate: slot.slotDate,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          duration: 60, // Default duration
-          format: slot.format,
-          location: slot.location,
-          meetingLink: slot.meetingLink,
-          status: 'scheduled'
-        });
-        
-        // Update candidate status
-        await storage.updatePassCandidate(candidateLink.passCandidateId, {
-          status: 'interview'
-        });
         await storage.logActivity({
           passId: passCandidate.passId,
           actorType: "candidate",
@@ -2935,15 +3027,21 @@ export async function registerRoutes(
         }
 
         case "link_candidate_to_pass": {
+          const owningPass = await storage.getPass(toolInput.passId);
+          const requestedStatus = toolInput.status || "new";
+          if (!owningPass || !allowedCandidateStatus(requestedStatus, owningPass.enabledStages)) return { success: false, error: "Status is not enabled for this hiring workflow" };
           const passCandidate = await storage.addCandidateToPass({
             passId: toolInput.passId,
             candidateId: toolInput.candidateId,
-            status: toolInput.status || "new"
+            status: requestedStatus
           });
           return { success: true, result: { message: `Linked candidate to recruitment pass`, passCandidate } };
         }
 
         case "update_candidate_status": {
+          const existing = await storage.getPassCandidateById(toolInput.passCandidateId);
+          const owningPass = existing ? await storage.getPass(existing.passId) : null;
+          if (!existing || !owningPass || !allowedCandidateStatus(toolInput.newStatus, owningPass.enabledStages)) return { success: false, error: "Status is not enabled for this hiring workflow" };
           const updated = await storage.updatePassCandidate(toolInput.passCandidateId, {
             status: toolInput.newStatus
           });

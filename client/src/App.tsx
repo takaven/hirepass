@@ -147,6 +147,7 @@ function MainRouter() {
       <Route path="/candidates/:id/pass" component={CandidatePass} />
       <Route path="/interviews" component={Interviews} />
       <Route path="/interviews/new" component={InterviewForm} />
+      <Route path="/interviews/:id/edit" component={InterviewForm} />
       <Route path="/managers" component={Managers} />
       <Route path="/managers/new" component={ManagerForm} />
       <Route path="/managers/:id/edit" component={ManagerForm} />

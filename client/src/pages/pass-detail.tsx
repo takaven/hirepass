@@ -39,6 +39,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Pass, Candidate } from "@shared/schema";
+import { configuredStages } from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -52,7 +53,7 @@ interface PassCandidate {
 }
 
 const statusPipeline = [
-  { value: "new", label: "New", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
+  { value: "new", label: "Applied", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
   { value: "screening", label: "Screening", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
   { value: "shortlisted", label: "Shortlisted", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
   { value: "interview", label: "Interview", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
@@ -375,7 +376,7 @@ export default function PassDetail() {
                     <CandidateStatusBadge status={pc.status} />
                   </SelectTrigger>
                   <SelectContent>
-                    {statusPipeline.map(s => (
+                    {statusPipeline.filter((stage) => stage.value === "rejected" || configuredStages(pass?.enabledStages).includes(stage.value as any)).map(s => (
                       <SelectItem key={s.value} value={s.value}>
                         <CandidateStatusBadge status={s.value} />
                       </SelectItem>

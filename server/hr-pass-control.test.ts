@@ -327,7 +327,7 @@ describe("HR Pass Control state", () => {
 
     assert.equal(item.waitingOn, "hr");
     assert.equal(item.waitingAgeDays, 3);
-    assert.equal(item.passHandoff, "Pass Handoff: Hiring Manager -> HR");
+    assert.equal(item.passHandoff, "Pass Handoff: Hiring Manager -> Hiring team");
     assert.match(item.expectedMovement, new RegExp(future.toISOString().slice(0, 10)));
     assert.equal(item.isStalled, false);
   });
@@ -359,7 +359,7 @@ describe("HR Pass Control state", () => {
     });
 
     assert.equal(item.waitingOn, "manager");
-    assert.equal(item.passHandoff, "Pass Handoff: HR -> Hiring Manager");
+    assert.equal(item.passHandoff, "Pass Handoff: Hiring team -> Hiring Manager");
     assert.notEqual(item.passHandoff, "Pass Handoff: Hiring Manager -> Hiring Manager");
   });
 
@@ -605,6 +605,33 @@ describe("HR Pass Control lifecycle routes", () => {
       });
 
       assert.equal(response.status, 404);
+      assert.equal(created, false);
+    });
+  });
+
+  it("lets the admin issue scoped Stakeholder Passes to the primary or another active stakeholder", async () => {
+    const second = { ...manager, id: 302, name: "Second Stakeholder", email: "second@example.test" };
+    const issued: number[] = [];
+    await withServer({
+      getManager: async (id: number) => id === 301 ? manager : id === 302 ? second : undefined,
+      createShareLink: async (data: any) => { issued.push(data.managerId); return { ...managerLink, id: 20 + issued.length, token: `stakeholder-${issued.length}`, ...data }; },
+    }, async (baseUrl) => {
+      const primary = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const additional = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ managerId: 302 }) });
+      assert.equal(primary.status, 201);
+      assert.equal(additional.status, 201);
+      assert.deepEqual(issued, [301, 302]);
+    });
+  });
+
+  it("rejects an actionable Stakeholder Pass without a stakeholder binding", async () => {
+    let created = false;
+    await withServer({
+      getPass: async () => ({ ...pass, hiringManagerId: null }),
+      createShareLink: async () => { created = true; },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      assert.equal(response.status, 400);
       assert.equal(created, false);
     });
   });

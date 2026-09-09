@@ -33,6 +33,7 @@ import {
   type OnboardingStageProgress, type InsertOnboardingStageProgress,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { configuredStages } from "@shared/hiring-workflow";
 
 const finitePassExpiry = (value: unknown) => {
   const parsed = value instanceof Date ? value : value ? new Date(String(value)) : null;
@@ -89,6 +90,7 @@ export interface IStorage {
   getInterviews(): Promise<Interview[]>;
   getInterview(id: number): Promise<Interview | undefined>;
   createInterview(interview: InsertInterview): Promise<Interview>;
+  createInterviewAndAdvanceCandidate(interview: InsertInterview): Promise<Interview>;
   updateInterview(id: number, interview: Partial<InsertInterview>): Promise<Interview | undefined>;
   deleteInterview(id: number): Promise<boolean>;
   getInterviewsByPass(passId: number): Promise<Interview[]>;
@@ -97,6 +99,7 @@ export interface IStorage {
   // Interview Evaluations
   getEvaluationsByInterview(interviewId: number): Promise<InterviewEvaluation[]>;
   createEvaluation(evaluation: InsertInterviewEvaluation): Promise<InterviewEvaluation>;
+  submitInterviewEvaluation(evaluation: InsertInterviewEvaluation, passCandidateId: number): Promise<InterviewEvaluation>;
 
   // Offers
   getOffers(passId: number): Promise<Offer[]>;
@@ -169,6 +172,7 @@ export interface IStorage {
   getInterviewSlotsByPass(passId: number): Promise<InterviewSlot[]>;
   getPassCandidatesWithDetails(passId: number): Promise<any[]>;
   createInterviewSlot(slot: InsertInterviewSlot): Promise<InterviewSlot>;
+  configureInterviewSetup(passId: number, changes: Partial<InsertPass>, slots: InsertInterviewSlot[]): Promise<InterviewSlot[]>;
   createPanelInterviewer(data: { passId: number; managerId: number }): Promise<void>;
   createManagerFeedback(data: InsertManagerFeedback): Promise<ManagerFeedback>;
   createInterviewEvaluation(data: InsertInterviewEvaluation): Promise<InterviewEvaluation>;
@@ -188,6 +192,8 @@ export interface IStorage {
   getCandidateTimelineEvents(passCandidateId: number): Promise<CandidateTimelineEvent[]>;
   getAvailableInterviewSlots(passId: number): Promise<InterviewSlot[]>;
   bookInterviewSlot(slotId: number, passCandidateId: number, passId: number): Promise<InterviewSlot | undefined>;
+  bookInterviewSlotAndCreateInterview(slotId: number, passCandidateId: number, passId: number): Promise<{ slot: InterviewSlot; interview: Interview } | undefined>;
+  rescheduleInterview(id: number, changes: Partial<InsertInterview>): Promise<Interview | undefined>;
   getOfferByPassCandidate(passCandidateId: number): Promise<Offer | undefined>;
 }
 
@@ -510,12 +516,39 @@ export class DatabaseStorage implements IStorage {
     return newInterview;
   }
 
+  async createInterviewAndAdvanceCandidate(interview: InsertInterview): Promise<Interview> {
+    return db.transaction(async (tx) => {
+      const [newInterview] = await tx.insert(interviews).values(interview).returning();
+      const [application] = await tx.update(passCandidates)
+        .set({ status: "interview", updatedAt: new Date() })
+        .where(and(eq(passCandidates.id, interview.passCandidateId), eq(passCandidates.passId, interview.passId)))
+        .returning();
+      if (!application) throw new Error("Candidate application was not available for interview scheduling");
+      return newInterview;
+    });
+  }
+
   async updateInterview(id: number, interview: Partial<InsertInterview>): Promise<Interview | undefined> {
     const [updated] = await db.update(interviews)
       .set({ ...interview, updatedAt: new Date() })
       .where(eq(interviews.id, id))
       .returning();
     return updated;
+  }
+
+  async rescheduleInterview(id: number, changes: Partial<InsertInterview>): Promise<Interview | undefined> {
+    return db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(interviews).where(eq(interviews.id, id)).for("update");
+      if (!existing) return undefined;
+      if (existing.slotId) {
+        await tx.update(interviewSlots).set({ isBooked: false, bookedBy: null, bookedAt: null })
+          .where(and(eq(interviewSlots.id, existing.slotId), eq(interviewSlots.bookedBy, existing.passCandidateId)));
+      }
+      const [updated] = await tx.update(interviews)
+        .set({ ...changes, slotId: null, updatedAt: new Date() })
+        .where(eq(interviews.id, id)).returning();
+      return updated;
+    });
   }
 
   async deleteInterview(id: number): Promise<boolean> {
@@ -560,6 +593,14 @@ export class DatabaseStorage implements IStorage {
       .values({ ...evaluation, averageScore: averageScore as any })
       .returning();
     return newEval;
+  }
+
+  async submitInterviewEvaluation(evaluation: InsertInterviewEvaluation, passCandidateId: number): Promise<InterviewEvaluation> {
+    return db.transaction(async (tx) => {
+      const [created] = await tx.insert(interviewEvaluations).values({ ...evaluation, averageScore: null }).returning();
+      await tx.update(passCandidates).set({ interviewRecommendation: evaluation.recommendation, interviewScore: null, updatedAt: new Date() }).where(eq(passCandidates.id, passCandidateId));
+      return created;
+    });
   }
 
   // Offers
@@ -941,6 +982,17 @@ export class DatabaseStorage implements IStorage {
     return newSlot;
   }
 
+  async configureInterviewSetup(passId: number, changes: Partial<InsertPass>, slots: InsertInterviewSlot[]): Promise<InterviewSlot[]> {
+    return db.transaction(async (tx) => {
+      const [updatedPass] = await tx.update(passes)
+        .set({ ...changes, updatedAt: new Date() })
+        .where(eq(passes.id, passId))
+        .returning();
+      if (!updatedPass) throw new Error("Pass was not available for interview setup");
+      return slots.length ? tx.insert(interviewSlots).values(slots).returning() : [];
+    });
+  }
+
   async createPanelInterviewer(data: { passId: number; managerId: number }): Promise<void> {
     await db.insert(panelInterviewers).values(data);
   }
@@ -1032,7 +1084,8 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(interviewSlots)
       .where(and(
         eq(interviewSlots.passId, passId),
-        eq(interviewSlots.isBooked, false)
+        eq(interviewSlots.isBooked, false),
+        eq(interviewSlots.isActive, true)
       ))
       .orderBy(interviewSlots.slotDate, interviewSlots.startTime);
   }
@@ -1048,6 +1101,35 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  async bookInterviewSlotAndCreateInterview(slotId: number, passCandidateId: number, passId: number): Promise<{ slot: InterviewSlot; interview: Interview } | undefined> {
+    return db.transaction(async (tx) => {
+      const [pass] = await tx.select().from(passes).where(eq(passes.id, passId)).for("update");
+      const [application] = await tx.select().from(passCandidates).where(and(eq(passCandidates.id, passCandidateId), eq(passCandidates.passId, passId))).for("update");
+      if (!pass || !application || !configuredStages(pass.enabledStages).includes("interview")) return undefined;
+      const [slot] = await tx.update(interviewSlots)
+        .set({ isBooked: true, bookedBy: passCandidateId, bookedAt: new Date() })
+        .where(and(eq(interviewSlots.id, slotId), eq(interviewSlots.passId, passId), eq(interviewSlots.isBooked, false), eq(interviewSlots.isActive, true)))
+        .returning();
+      if (!slot) return undefined;
+      const [interview] = await tx.insert(interviews).values({
+        passId,
+        passCandidateId,
+        interviewDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        duration: slot.duration,
+        format: slot.format,
+        location: slot.location,
+        meetingLink: slot.meetingLink,
+        interviewerId: slot.interviewerId,
+        slotId: slot.id,
+        status: "scheduled",
+      }).returning();
+      await tx.update(passCandidates).set({ status: "interview", updatedAt: new Date() }).where(eq(passCandidates.id, passCandidateId));
+      return { slot, interview };
+    });
   }
 
   async getOfferByPassCandidate(passCandidateId: number): Promise<Offer | undefined> {

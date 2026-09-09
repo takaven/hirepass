@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import {
@@ -62,7 +62,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
-import type { Pass, Candidate, PassPosition } from "@shared/schema";
+import type { Pass, Candidate, PassPosition, Manager } from "@shared/schema";
+import { configuredStages } from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -80,8 +81,8 @@ interface PassCandidate {
 type PipelineData = Record<string, PassCandidate[]>;
 
 const STAGES = [
-  { key: "new", label: "New", color: "bg-gray-500" },
-  { key: "screening", label: "Screening", color: "bg-blue-500" },
+  { key: "new", label: "Applied", color: "bg-gray-500" },
+  { key: "screening", label: "Review", color: "bg-blue-500" },
   { key: "shortlisted", label: "Shortlisted", color: "bg-indigo-500" },
   { key: "interview", label: "Interview", color: "bg-purple-500" },
   { key: "offer", label: "Offer", color: "bg-amber-500" },
@@ -114,6 +115,7 @@ export default function PassCandidates() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [filterPositionId, setFilterPositionId] = useState<string>("all");
   const [generatedManagerLink, setGeneratedManagerLink] = useState<string | null>(null);
+  const [selectedStakeholderId, setSelectedStakeholderId] = useState<string>("");
   const [selectedCandidateForLink, setSelectedCandidateForLink] = useState<string>("");
   const [generatedCandidateLink, setGeneratedCandidateLink] = useState<string | null>(null);
 
@@ -121,6 +123,11 @@ export default function PassCandidates() {
     queryKey: ["/api/passes", passId],
     enabled: !!passId,
   });
+  const { data: stakeholders } = useQuery<Manager[]>({ queryKey: ["/api/managers"] });
+  useEffect(() => {
+    if (!selectedStakeholderId && pass?.hiringManagerId) setSelectedStakeholderId(String(pass.hiringManagerId));
+  }, [pass?.hiringManagerId, selectedStakeholderId]);
+  const visibleStages = STAGES.filter((stage) => stage.key === "rejected" || configuredStages(pass?.enabledStages).includes(stage.key as any));
 
   const { data: pipeline, isLoading: pipelineLoading } = useQuery<PipelineData>({
     queryKey: ["/api/passes", passId, "candidates", "pipeline"],
@@ -236,6 +243,7 @@ export default function PassCandidates() {
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/share-links", { 
         passId: parseInt(passId!),
+        managerId: selectedStakeholderId ? parseInt(selectedStakeholderId) : undefined,
         linkType: "manager"
       });
       return res.json();
@@ -494,7 +502,7 @@ export default function PassCandidates() {
                   <SelectValue placeholder="Move to Stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAGES.map(stage => (
+                  {visibleStages.map(stage => (
                     <SelectItem key={stage.key} value={stage.key}>
                       {stage.label}
                     </SelectItem>
@@ -517,7 +525,7 @@ export default function PassCandidates() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {STAGES.map(stage => {
+        {visibleStages.map(stage => {
           const candidates = filteredPipeline?.[stage.key] || [];
           const isOver = dragOverColumn === stage.key;
           
@@ -723,7 +731,7 @@ export default function PassCandidates() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {STAGES.map(stage => (
+                      {visibleStages.map(stage => (
                         <SelectItem key={stage.key} value={stage.key}>
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${stage.color}`} />
@@ -882,6 +890,7 @@ export default function PassCandidates() {
         setShareLinkDialogOpen(open);
         if (!open) {
           setGeneratedManagerLink(null);
+          setSelectedStakeholderId(pass?.hiringManagerId ? String(pass.hiringManagerId) : "");
           setGeneratedCandidateLink(null);
           setSelectedCandidateForLink("");
         }
@@ -897,10 +906,10 @@ export default function PassCandidates() {
             <div className="space-y-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <Users className="w-4 h-4" strokeWidth={2} />
-                Manager Portal Link
+                Hiring Stakeholder Pass
               </h3>
               <p className="text-sm text-muted-foreground">
-                Share this link with hiring managers to review candidates and make decisions.
+                Select a named active stakeholder. Every issued Pass has the same scoped vacancy-level actions.
               </p>
               {generatedManagerLink ? (
                 <div className="flex items-center gap-2">
@@ -933,11 +942,16 @@ export default function PassCandidates() {
                   </Button>
                 </div>
               ) : (
+                <div className="space-y-3">
+                <Select value={selectedStakeholderId} onValueChange={setSelectedStakeholderId}>
+                  <SelectTrigger data-testid="select-stakeholder"><SelectValue placeholder="Select stakeholder" /></SelectTrigger>
+                  <SelectContent>{stakeholders?.filter((stakeholder) => stakeholder.isActive).map((stakeholder) => <SelectItem key={stakeholder.id} value={String(stakeholder.id)}>{stakeholder.name} — {stakeholder.jobTitle}</SelectItem>)}</SelectContent>
+                </Select>
                 <Button
                   variant="outline"
                   className="rounded-xl gap-2"
                   onClick={() => createManagerLinkMutation.mutate()}
-                  disabled={createManagerLinkMutation.isPending}
+                  disabled={createManagerLinkMutation.isPending || !selectedStakeholderId}
                   data-testid="button-generate-manager-link"
                 >
                   {createManagerLinkMutation.isPending ? (
@@ -945,8 +959,9 @@ export default function PassCandidates() {
                   ) : (
                     <LinkIcon className="w-4 h-4" strokeWidth={2} />
                   )}
-                  Generate Manager Link
+                  Generate Stakeholder Pass
                 </Button>
+                </div>
               )}
             </div>
 

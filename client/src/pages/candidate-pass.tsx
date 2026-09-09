@@ -404,7 +404,7 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" strokeWidth={2} />
-                    <span>Contact HR if you need to reschedule: recruitment@hirepass.example</span>
+                    <span>Contact the hiring team if you need to reschedule.</span>
                   </li>
                 </ul>
               </div>
@@ -455,9 +455,9 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
                   <div className="text-sm text-muted-foreground">Guard Name & Date</div>
                 </div>
                 <div>
-                  <div className="text-sm text-muted-foreground mb-8">HR Verification</div>
+                  <div className="text-sm text-muted-foreground mb-8">Hiring-team verification</div>
                   <div className="border-b border-gray-300 mb-2"></div>
-                  <div className="text-sm text-muted-foreground">HR Name & Date</div>
+                  <div className="text-sm text-muted-foreground">Hiring representative and date</div>
                 </div>
               </div>
             </section>
@@ -491,4 +491,3 @@ export default function CandidatePass({ passIdParam, params: propsParams }: Cand
     </div>
   );
 }
-

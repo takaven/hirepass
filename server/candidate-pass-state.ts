@@ -244,14 +244,14 @@ function expectedMovement(input: CandidatePassStateInput, waitingOn: string, nex
 
 function passHandoff(latest: { text: string; date: Date | null }, waitingOn: string): string | null {
   if (!latest.date) return null;
-  const owner = waitingOn === "Hiring team" ? "HR" : waitingOn;
-  if (latest.text.startsWith("Manager Pass issued")) return "Pass Handoff: HR -> Hiring Manager";
-  if (latest.text.startsWith("Candidate Pass issued")) return "Pass Handoff: HR -> Candidate";
+  const owner = waitingOn;
+  if (latest.text.startsWith("Manager Pass issued")) return "Pass Handoff: Hiring team -> Hiring stakeholder";
+  if (latest.text.startsWith("Candidate Pass issued")) return "Pass Handoff: Hiring team -> Candidate";
   if (latest.text.startsWith("Hiring Manager")) return `Pass Handoff: Hiring Manager -> ${owner}`;
   if (latest.text.startsWith("Interview slot") || latest.text.startsWith("Document") || latest.text.startsWith("Assessment") || latest.text.startsWith("Offer")) {
     return `Pass Handoff: Candidate -> ${owner}`;
   }
-  if (latest.text.startsWith("Hiring team")) return `Pass Handoff: HR -> ${owner}`;
+  if (latest.text.startsWith("Hiring team")) return `Pass Handoff: Hiring team -> ${owner}`;
   return null;
 }
 
@@ -389,7 +389,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
     }, input, now);
   }
 
-  if (availableInterviewSlots > 0 && (status === "shortlisted" || status === "screening")) {
+  if (availableInterviewSlots > 0 && ["new", "screening", "shortlisted", "interview"].includes(status)) {
     return withPassState({
       actionState: "ACTION_REQUIRED",
       hiringStage: "Interview",
@@ -489,7 +489,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
   return withPassState({
     actionState: "WAITING",
     hiringStage,
-      stateLabel: "WAITING ON HR",
+      stateLabel: "WAITING ON HIRING TEAM",
     headline: "You're all set. We're waiting on the hiring team.",
     summary: "There is nothing you need to do right now.",
     waitingOn: "Hiring team",

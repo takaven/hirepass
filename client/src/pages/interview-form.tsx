@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useRoute } from "wouter";
 import { z } from "zod";
 import {
   ArrowLeft,
@@ -36,7 +36,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
-import type { Pass, Candidate, Manager } from "@shared/schema";
+import type { Pass, Candidate, Manager, Interview } from "@shared/schema";
 
 interface PassCandidate {
   id: number;
@@ -49,6 +49,7 @@ interface PassCandidate {
 const interviewFormSchema = z.object({
   passId: z.string().min(1, "Recruitment pass is required"),
   passCandidateId: z.string().min(1, "Candidate is required"),
+  interviewerId: z.string().min(1, "Interviewer is required"),
   interviewDate: z.string().min(1, "Date is required"),
   startTime: z.string().min(1, "Start time is required"),
   duration: z.coerce.number().min(15, "Duration must be at least 15 minutes"),
@@ -64,6 +65,8 @@ type InterviewFormValues = z.infer<typeof interviewFormSchema>;
 
 export default function InterviewForm() {
   const [, setLocation] = useLocation();
+  const [, editParams] = useRoute("/interviews/:id/edit");
+  const interviewId = editParams?.id;
   const { toast } = useToast();
   const [selectedPassId, setSelectedPassId] = useState<string>("");
 
@@ -79,12 +82,14 @@ export default function InterviewForm() {
   const { data: managers } = useQuery<Manager[]>({
     queryKey: ["/api/managers"],
   });
+  const { data: existingInterview } = useQuery<Interview>({ queryKey: ["/api/interviews", interviewId], enabled: !!interviewId });
 
   const form = useForm<InterviewFormValues>({
     resolver: zodResolver(interviewFormSchema),
     defaultValues: {
       passId: "",
       passCandidateId: "",
+      interviewerId: "",
       interviewDate: "",
       startTime: "09:00",
       duration: 60,
@@ -97,22 +102,29 @@ export default function InterviewForm() {
     },
   });
 
+  useEffect(() => {
+    if (!existingInterview) return;
+    setSelectedPassId(String(existingInterview.passId));
+    form.reset({
+      passId: String(existingInterview.passId), passCandidateId: String(existingInterview.passCandidateId),
+      interviewerId: existingInterview.interviewerId ? String(existingInterview.interviewerId) : "",
+      interviewDate: existingInterview.interviewDate, startTime: existingInterview.startTime,
+      duration: existingInterview.duration, format: existingInterview.format,
+      roundNumber: existingInterview.roundNumber ?? 1, roundName: existingInterview.roundName ?? "Screening",
+      location: existingInterview.location ?? "", meetingLink: existingInterview.meetingLink ?? "",
+      interviewNotes: existingInterview.interviewNotes ?? "",
+    });
+  }, [existingInterview, form]);
+
   const mutation = useMutation({
     mutationFn: async (data: InterviewFormValues) => {
-      const startHour = parseInt(data.startTime.split(":")[0]);
-      const startMinute = parseInt(data.startTime.split(":")[1]);
-      const endMinute = startMinute + data.duration;
-      const endHour = startHour + Math.floor(endMinute / 60);
-      const endMinuteFormatted = endMinute % 60;
-      const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinuteFormatted).padStart(2, "0")}`;
-
       const payload = {
-        passId: parseInt(data.passId),
-        passCandidateId: parseInt(data.passCandidateId),
+        ...(interviewId ? {} : { passId: parseInt(data.passId), passCandidateId: parseInt(data.passCandidateId) }),
         interviewDate: data.interviewDate,
         startTime: data.startTime,
-        endTime: endTime,
+        endTime: data.startTime,
         duration: data.duration,
+        interviewerId: parseInt(data.interviewerId),
         format: data.format,
         roundNumber: data.roundNumber,
         roundName: data.roundName || null,
@@ -122,13 +134,13 @@ export default function InterviewForm() {
         status: "scheduled",
       };
 
-      await apiRequest("POST", "/api/interviews", payload);
+      await apiRequest(interviewId ? "PATCH" : "POST", interviewId ? `/api/interviews/${interviewId}` : "/api/interviews", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/interviews"] });
       toast({
-        title: "Interview scheduled",
-        description: "The interview has been scheduled successfully.",
+        title: interviewId ? "Interview rescheduled" : "Interview scheduled",
+        description: interviewId ? "The updated schedule is now visible on the Pass." : "The interview has been scheduled successfully.",
       });
       setLocation("/interviews");
     },
@@ -178,6 +190,7 @@ export default function InterviewForm() {
                       form.setValue("passCandidateId", "");
                     }} 
                     value={field.value}
+                    disabled={!!interviewId}
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-pass">
@@ -209,7 +222,7 @@ export default function InterviewForm() {
                   <Select 
                     onValueChange={field.onChange} 
                     value={field.value}
-                    disabled={!selectedPassId}
+                    disabled={!selectedPassId || !!interviewId}
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-candidate">
@@ -268,10 +281,11 @@ export default function InterviewForm() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="Screening">Screening</SelectItem>
+                        <SelectItem value="Hiring Manager">Hiring Manager</SelectItem>
                         <SelectItem value="Technical">Technical</SelectItem>
-                        <SelectItem value="HR">HR</SelectItem>
-                        <SelectItem value="Final">Final</SelectItem>
                         <SelectItem value="Panel">Panel</SelectItem>
+                        <SelectItem value="Final">Final</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -279,6 +293,17 @@ export default function InterviewForm() {
                 )}
               />
             </div>
+
+            <FormField control={form.control} name="interviewerId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Primary interviewer</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl><SelectTrigger className="rounded-xl" data-testid="select-interviewer"><SelectValue placeholder="Select interviewer" /></SelectTrigger></FormControl>
+                  <SelectContent>{managers?.filter((manager) => manager.canBeInterviewer).map((manager) => <SelectItem key={manager.id} value={String(manager.id)}>{manager.name} — {manager.jobTitle}</SelectItem>)}</SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField

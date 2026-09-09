@@ -259,8 +259,12 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getAvailableInterviewSlots: async () => [interviewSlot],
     getActivitiesByPass: async () => [],
     bookInterviewSlot: async () => undefined,
+    bookInterviewSlotAndCreateInterview: async () => undefined,
     createInterview: async () => undefined,
+    createInterviewAndAdvanceCandidate: async (data: any) => ({ id: 902, ...data }),
+    configureInterviewSetup: async () => [],
     updatePassCandidate: async () => undefined,
+    submitInterviewEvaluation: async (data: any) => ({ id: 1, ...data, averageScore: null }),
     createCandidateMessage: async () => ({ id: 1, passCandidateId: 101 }),
     createCandidateDocument: async () => ({ id: 1, passCandidateId: 101 }),
     markMessageAsRead: async () => undefined,
@@ -281,7 +285,8 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getPassWithDetails: async () => pass,
     getPassCandidatesWithDetails: async () => [{ ...passCandidate, candidate }],
     getInterviewsByPass: async () => [interview],
-    getManager: async () => manager,
+    getInterview: async () => interview,
+    getManager: async (id: number) => id === manager.id ? manager : undefined,
     getInterviewSlotsByPass: async () => [interviewSlot],
     logActivity: async (activity: any) => ({ id: 1, createdAt: new Date(), ...activity }),
     ...overrides,
@@ -355,9 +360,9 @@ describe("external Candidate Pass route security", () => {
     let bookedWith: unknown[] | null = null;
     await withServer({
       getAvailableInterviewSlots: async () => [interviewSlot],
-      bookInterviewSlot: async (...args: unknown[]) => {
+      bookInterviewSlotAndCreateInterview: async (...args: unknown[]) => {
         bookedWith = args;
-        return { ...interviewSlot, isBooked: true, bookedBy: 101, bookedAt: new Date() };
+        return { slot: { ...interviewSlot, isBooked: true, bookedBy: 101, bookedAt: new Date() }, interview: { id: 1 } };
       },
     }, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, {
@@ -375,7 +380,7 @@ describe("external Candidate Pass route security", () => {
     let booked = false;
     await withServer({
       getAvailableInterviewSlots: async () => [{ ...interviewSlot, id: 999, passId: 11 }],
-      bookInterviewSlot: async () => {
+      bookInterviewSlotAndCreateInterview: async () => {
         booked = true;
         return undefined;
       },
@@ -438,6 +443,119 @@ describe("external Candidate Pass route security", () => {
   });
 });
 
+describe("internal interview route invariants", () => {
+  const directPayload = { passId: 10, passCandidateId: 101, interviewerId: 301, interviewDate: "2026-10-10", startTime: "09:00", duration: 45, format: "online", roundNumber: 1, roundName: "Hiring Manager", status: "scheduled" };
+
+  it("accepts one valid scoped direct interview", async () => {
+    let created: any = null;
+    await withServer({ createInterviewAndAdvanceCandidate: async (data: any) => { created = { id: 902, ...data }; return created; } }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) });
+      assert.equal(response.status, 201);
+      assert.equal(created.endTime, "09:45");
+      assert.equal(created.interviewerId, 301);
+    });
+  });
+
+  it("rejects missing, nonexistent, inactive or ineligible interviewers", async () => {
+    await withServer({ getManager: async (id: number) => id === 302 ? { ...manager, id, isActive: false } : id === 303 ? { ...manager, id, canBeInterviewer: false } : undefined }, async (baseUrl) => {
+      for (const interviewerId of [undefined, 999, 302, 303]) {
+        const response = await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...directPayload, interviewerId }) });
+        assert.equal(response.status, 400);
+      }
+    });
+  });
+
+  it("rejects cross-Pass candidates and workflows without Interview", async () => {
+    await withServer({ getPassCandidateById: async () => ({ ...passCandidate, passId: 11 }) }, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) })).status, 400);
+    });
+    await withServer({ getPass: async () => ({ ...pass, enabledStages: ["new", "screening", "hired"] }) }, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) })).status, 409);
+    });
+  });
+
+  it("reschedules mutable details but rejects Pass or candidate reassignment", async () => {
+    let changes: any = null;
+    await withServer({ rescheduleInterview: async (_id: number, data: any) => { changes = data; return { ...interview, ...data }; } }, async (baseUrl) => {
+      const valid = await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ interviewDate: "2026-10-11", startTime: "11:00", duration: 30, interviewerId: 301 }) });
+      assert.equal(valid.status, 200);
+      assert.equal(changes.endTime, "11:30");
+      assert.equal(changes.passId, undefined);
+      assert.equal(changes.passCandidateId, undefined);
+      changes = null;
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ interviewerId: 999 }) })).status, 400);
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ passId: 11 }) })).status, 409);
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ passCandidateId: 999 }) })).status, 409);
+      assert.equal(changes, null);
+    });
+  });
+
+  it("rejects booking when Interview is disabled without mutating the slot", async () => {
+    let booked = false;
+    await withServer({
+      getPass: async () => ({ ...pass, enabledStages: ["new", "screening", "hired"] }),
+      bookInterviewSlotAndCreateInterview: async () => { booked = true; return undefined; },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slotId: 501 }) });
+      assert.equal(response.status, 409);
+      assert.equal(booked, false);
+    });
+  });
+});
+
+describe("Stakeholder Pass interview setup integrity", () => {
+  const validSetup = {
+    technicalAssessmentRequired: false,
+    interviewFormat: "online",
+    interviewRounds: 1,
+    interviewDuration: 45,
+    availableDates: ["2026-10-10"],
+    timeSlots: ["09:00", "11:15"],
+    meetingLink: "https://example.com/interview",
+    location: null,
+    isPanelInterview: false,
+  };
+
+  it("accepts an eligible stakeholder and persists the fully validated slot set once", async () => {
+    let persisted: any = null;
+    await withServer({ configureInterviewSetup: async (passId: number, changes: any, slots: any[]) => { persisted = { passId, changes, slots }; return slots; } }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+      assert.equal(response.status, 200);
+      assert.equal(persisted.changes.interviewSetupCompleted, true);
+      assert.deepEqual(persisted.slots.map((slot: any) => [slot.startTime, slot.endTime, slot.interviewerId]), [["09:00", "09:45", 301], ["11:15", "12:00", 301]]);
+    });
+  });
+
+  it("rejects inactive or non-interviewer stakeholders before mutation", async () => {
+    for (const stakeholder of [{ ...manager, isActive: false }, { ...manager, canBeInterviewer: false }]) {
+      let mutated = false;
+      await withServer({ getManager: async () => stakeholder, configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+        assert.equal(response.status, 403);
+        assert.equal(mutated, false);
+      });
+    }
+  });
+
+  it("rejects every malformed availability case before mutation", async () => {
+    const invalidCases = [
+      { timeSlots: ["24:00"] },
+      { timeSlots: ["09:60"] },
+      { timeSlots: ["23:45"], interviewDuration: 30 },
+      { timeSlots: ["9am"] },
+      { availableDates: ["2026-02-30"] },
+    ];
+    for (const invalid of invalidCases) {
+      let mutated = false;
+      await withServer({ configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...validSetup, ...invalid }) });
+        assert.equal(response.status, 400);
+        assert.equal(mutated, false);
+      });
+    }
+  });
+});
+
 describe("external Manager Pass route privacy", () => {
   it("returns a decision-evidence DTO instead of raw candidate records", async () => {
     await withServer({}, async (baseUrl) => {
@@ -452,6 +570,26 @@ describe("external Manager Pass route privacy", () => {
       assertAbsent(payload.pass, ["salaryRangeMin", "salaryRangeMax", "salaryCurrency", "requisitionFilePath", "notes", "managerNotes"]);
       assertAbsent(payload.interviews, ["passId", "interviewNotes", "meetingLink", "createdAt", "updatedAt"]);
       assertAbsent(payload.interviewSlots, ["passId", "meetingLink", "interviewerId", "bookedBy", "bookedAt", "isActive", "createdAt"]);
+    });
+  });
+
+  it("persists only evaluator-supplied recommendation and notes", async () => {
+    let persisted: any = null;
+    await withServer({
+      submitInterviewEvaluation: async (data: any, passCandidateId: number) => {
+        persisted = { data, passCandidateId };
+        return { id: 1, ...data, averageScore: null };
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/evaluations`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ interviewId: interview.id, recommendation: "proceed", notesObservations: "Observed evidence", educationalBackground: 4, averageScore: "4.00" }),
+      });
+      assert.equal(response.status, 201);
+      assert.equal(persisted.data.evaluatorId, manager.id);
+      assert.equal(persisted.data.educationalBackground, undefined);
+      assert.equal(persisted.data.averageScore, undefined);
+      assert.equal(persisted.passCandidateId, interview.passCandidateId);
     });
   });
 });

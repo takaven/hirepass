@@ -55,7 +55,7 @@ type PassControlItem = {
 const waitingLabels: Record<WaitingOn, string> = {
   candidate: "Waiting on candidate",
   manager: "Waiting on manager",
-  hr: "Waiting on HR",
+  hr: "Waiting on hiring team",
   upcoming_event: "Upcoming event",
   no_action: "No action",
   completed: "Completed",
@@ -113,7 +113,7 @@ export default function HrPassControl() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">HR Pass Control</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Internal Pass Control</p>
           <h1 className="text-2xl font-semibold tracking-tight">Live action workspace</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             See who is waiting on whom, refresh controlled links, record nudges and inspect recent Pass activity.
@@ -195,7 +195,7 @@ export default function HrPassControl() {
                         )}
                         <Button
                           size="sm"
-                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: item.waitingOn === "manager" ? "manager" : "hr", reason: "Manual HR follow-up recorded from Pass Control." } })}
+                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: item.waitingOn === "manager" ? "manager" : "hr", reason: "Manual hiring-team follow-up recorded from Pass Control." } })}
                         >
                           <Bell className="mr-1 h-3.5 w-3.5" /> Nudge
                         </Button>
