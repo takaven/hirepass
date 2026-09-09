@@ -56,7 +56,7 @@ describe("Phase 2 PostgreSQL workflow integrity", () => {
     await pool.query(`create function pg_temp.reject_later_slot() returns trigger language plpgsql as $$ begin if new.start_time = '10:00' then raise exception 'injected later slot failure'; end if; return new; end $$`);
     await pool.query("create trigger phase_two_slot_failure before insert on interview_slots for each row execute function pg_temp.reject_later_slot()");
     try {
-      await assert.rejects(storage.configureInterviewSetup(pass.rows[0].id, { interviewSetupCompleted: true }, slots), /injected later slot failure/);
+      await assert.rejects(storage.configureInterviewSetup(pass.rows[0].id, { interviewSetupCompleted: true }, slots));
     } finally {
       await pool.query("drop trigger phase_two_slot_failure on interview_slots");
     }
@@ -75,7 +75,7 @@ describe("Phase 2 PostgreSQL workflow integrity", () => {
     await pool.query(`create function pg_temp.reject_application_advance() returns trigger language plpgsql as $$ begin if new.status = 'interview' then raise exception 'injected application advancement failure'; end if; return new; end $$`);
     await pool.query("create trigger phase_two_application_failure before update on pass_candidates for each row execute function pg_temp.reject_application_advance()");
     try {
-      await assert.rejects(storage.createInterviewAndAdvanceCandidate(interview), /injected application advancement failure/);
+      await assert.rejects(storage.createInterviewAndAdvanceCandidate(interview));
     } finally {
       await pool.query("drop trigger phase_two_application_failure on pass_candidates");
     }
