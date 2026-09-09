@@ -74,9 +74,9 @@ The launch-safe output should favour explainable evidence over a falsely precise
 - evidence linked to the CV and vacancy criteria;
 - a coarse match band or score only when its meaning is defined and visible.
 
-AI is decision support. It must not automatically reject, select or silently disadvantage a candidate. An authorised person remains accountable for shortlist, rejection and selection. The system should preserve vacancy criteria, analysis, model/configuration provenance where practical, and the human decision needed for audit.
+AI is decision support. It must not automatically reject, select or silently disadvantage a candidate. An authorised person remains accountable for shortlist, rejection and selection. The system preserves confirmed criteria, analysis, model/configuration provenance, source-document provenance and the human decision needed for audit.
 
-The repository contains legacy AI routes and scoring fields, but those routes are disabled in production. AI-assisted CV review is therefore an intended add-on requiring production implementation and governance; it is not a current production capability.
+The repository contains legacy AI routes and scoring fields, but those routes are disabled in production and are not the launch AI surface. The supported AI add-on starts with criteria confirmation, PDF text extraction, queued vacancy-application review and evidence-backed candidate review bands. It does not provide automatic rejection, candidate comparison, talent-pool matching or a general recruiting assistant.
 
 ### Interviews And Decisions
 
@@ -121,7 +121,7 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | Messages and documents | Partial | In-product flows exist; outbound delivery and some review/configuration do not. |
 | Interviews and decisions | Exists for launch core | Availability, primary interviewer, candidate slot booking, rescheduling, recommendation/notes and final decisions use existing Pass structures. Calendar and sophisticated scheduling remain deferred. |
 | Assessments and offers | Partial | Data/routes exist; production workflows are not uniformly complete. |
-| AI-assisted CV review | Missing in production | Implement as optional, human-controlled, evidence-based add-on. |
+| AI-assisted CV review | Exists as optional Slice A add-on foundation | Supports confirmed criteria, queued vacancy-application review, evidence-backed outputs and stale-review handling when enabled/configured. Candidate comparison, talent-pool matching and assistant features remain out of scope. |
 | Multiple internal responsibilities | Exists for launch core | One `owner_admin` controls named stakeholders and scoped Pass links; stakeholder records independently declare Hiring Manager and interviewer eligibility. |
 | Branding/company configuration | Exists at deployment level | Company name, optional location/contact and privacy notice identity come from the isolated deployment environment; the Settings page is deliberately read-only. |
 | Notifications | Partial | In-app records exist; email, reminders and recipient mapping are incomplete. |
@@ -177,7 +177,7 @@ Copy `.env.example` to `.env` for local or disposable development and fill only 
 
 Core variables are `DATABASE_URL`, `HIREPASS_ADMIN_USERNAME`, `HIREPASS_SESSION_SECRET`, `HIREPASS_UPLOAD_DIR`, `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Production also requires `HIREPASS_ADMIN_PASSWORD_HASH`; plaintext `HIREPASS_ADMIN_PASSWORD` is local/disposable only. The session secret must be at least 32 characters. `HIREPASS_COMPANY_LOCATION` and `HIREPASS_CAREERS_CONTACT_EMAIL` are optional public display values.
 
-`HIREPASS_PASS_ID_PREFIX` is optional and defaults to `HP`. `ANTHROPIC_API_KEY` may exercise legacy AI outside production but does not enable the intended production review capability.
+`HIREPASS_PASS_ID_PREFIX` is optional and defaults to `HP`. AI-assisted review is disabled unless `HIREPASS_AI_ENABLED=true` and `ANTHROPIC_API_KEY` is configured. `HIREPASS_AI_MODEL` defaults to `claude-sonnet-5`; batch size and timeout may be bounded with `HIREPASS_AI_MAX_BATCH` and `HIREPASS_AI_TIMEOUT_MS`.
 
 ## Production And Verification
 

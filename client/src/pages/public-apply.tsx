@@ -10,7 +10,7 @@ import { getPublicSubmissionConfirmation, type PublicSubmissionResult } from "@/
 import { validateClientUpload } from "@/lib/upload-preflight";
 
 export type PublicPass = { id:number; positionTitle:string; department?:string; location?:string; employmentType?:string; experienceMin?:number; experienceMax?:number; jobDescriptionFinal?:string; status?:string };
-export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; privacyNoticeUrl:string; privacyNoticeVersion:string };
+export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; privacyNoticeUrl:string; privacyNoticeVersion:string; aiEnabled?: boolean };
 
 async function filePayload(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -67,6 +67,7 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
     <Field label="Skills" name="skills" placeholder="Optional, comma separated"/>
     <label className="space-y-2 text-sm font-medium sm:col-span-2"><span>CV (PDF, maximum 10 MB) *</span><Input className="h-auto min-h-11 py-2" type="file" accept=".pdf,application/pdf" required onChange={(event) => { const selected = event.target.files?.[0] || null; const issue = selected ? validateClientUpload(selected, "cv") : null; setError(issue || ""); setFile(issue ? null : selected); if (issue) event.currentTarget.value = ""; }}/></label>
     <label className="flex items-start gap-3 rounded-xl border p-4 text-sm sm:col-span-2"><Checkbox aria-label="Acknowledge candidate privacy notice" checked={accepted} onCheckedChange={(value) => setAccepted(value === true)}/><span>I acknowledge the {config.privacyNoticeUrl ? <a className="font-medium underline underline-offset-4" href={config.privacyNoticeUrl} target="_blank" rel="noreferrer">candidate privacy notice</a> : "candidate privacy notice provided by the hiring company"} (version {config.privacyNoticeVersion}).</span></label>
+    {config.aiEnabled && <p className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground sm:col-span-2">AI-assisted review may help the hiring team assess role-related information in your submission. Hiring decisions are made by people.</p>}
     {error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2" role="alert">{error}</p>}
     <Button className="min-h-11 w-full sm:col-span-2" disabled={busy || !file || !accepted}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}{pass ? "Submit application" : "Submit CV"}</Button>
   </form></GlassCard>;

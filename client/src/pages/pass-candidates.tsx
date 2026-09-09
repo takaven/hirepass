@@ -78,6 +78,13 @@ interface PassCandidate {
   candidate: Candidate;
 }
 
+interface AiReview {
+  id: number;
+  passCandidateId: number | null;
+  status: string;
+  reviewBand: string | null;
+}
+
 type PipelineData = Record<string, PassCandidate[]>;
 
 const STAGES = [
@@ -138,6 +145,32 @@ export default function PassCandidates() {
     queryKey: ["/api/passes", passId, "positions"],
     enabled: !!passId,
   });
+  const { data: aiReviews } = useQuery<AiReview[]>({
+    queryKey: [`/api/intelligence/passes/${passId}/reviews`],
+    enabled: !!passId,
+  });
+  const reviewByApplication = useMemo(() => {
+    const map = new Map<number, AiReview>();
+    aiReviews?.forEach((review) => {
+      if (review.passCandidateId && !map.has(review.passCandidateId)) map.set(review.passCandidateId, review);
+    });
+    return map;
+  }, [aiReviews]);
+  const reviewLabel = (candidateId: number) => {
+    const review = reviewByApplication.get(candidateId);
+    if (!review) return "Waiting for criteria";
+    if (review.status === "pending") return "Queued";
+    if (review.status === "processing") return "Reviewing";
+    if (review.status === "failed") return "Failed";
+    if (review.status === "stale") return "Stale";
+    switch (review.reviewBand) {
+      case "strong_evidence": return "Strong evidence";
+      case "clarify_required": return "Clarification needed";
+      case "required_gap_evidenced": return "Required gap evidenced";
+      case "insufficient_evidence": return "Insufficient evidence";
+      default: return "AI review complete";
+    }
+  };
 
   const { data: allCandidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
@@ -624,6 +657,9 @@ export default function PassCandidates() {
                                   Applied {format(new Date(pc.addedAt), "MMM d, yyyy")}
                                 </p>
                               )}
+                              <Badge variant="secondary" className="mt-2 text-[10px]">
+                                {reviewLabel(pc.id)}
+                              </Badge>
                             </div>
                           </div>
                         </div>

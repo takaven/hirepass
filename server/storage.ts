@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, sql, inArray, or } from "drizzle-orm";
+import { eq, desc, asc, and, gte, sql, inArray, or, isNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   managers, passes, candidates, passCandidates, interviews, 
@@ -8,6 +8,7 @@ import {
   users, notifications, passPositions, onboardingRecords,
   candidateMessages, candidateDocuments, interviewSlots, candidateTimelineEvents,
   onboardingLinks, onboardingStageProgress,
+  aiReviewCriteria, aiCandidateReviews,
   type Manager, type InsertManager,
   type Pass, type InsertPass,
   type PassPosition, type InsertPassPosition,
@@ -31,6 +32,8 @@ import {
   type CandidateTimelineEvent, type InsertCandidateTimelineEvent,
   type OnboardingLink, type InsertOnboardingLink,
   type OnboardingStageProgress, type InsertOnboardingStageProgress,
+  type AiReviewCriterion, type InsertAiReviewCriterion,
+  type AiCandidateReview, type InsertAiCandidateReview,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { configuredStages } from "@shared/hiring-workflow";
@@ -64,6 +67,7 @@ export interface IStorage {
   updatePassPosition(id: number, data: Partial<InsertPassPosition>): Promise<PassPosition | undefined>;
   deletePassPosition(id: number): Promise<boolean>;
   incrementPositionHiredCount(positionId: number): Promise<void>;
+  confirmPassCriteriaTarget(passId: number, positionId: number | null): Promise<number>;
 
   // Candidates
   getCandidates(): Promise<Candidate[]>;
@@ -75,6 +79,8 @@ export interface IStorage {
   getPassCandidates(passId: number): Promise<(PassCandidate & { candidate: Candidate })[]>;
   getCandidatePasses(candidateId: number): Promise<(PassCandidate & { pass: Pass })[]>;
   getDocumentsByCandidate(candidateId: number): Promise<Document[]>;
+  getDocument(id: number): Promise<Document | undefined>;
+  updateDocument(id: number, data: Partial<Document>): Promise<Document | undefined>;
   getPassCandidate(id: number): Promise<PassCandidate | undefined>;
   addCandidateToPass(passCandidate: InsertPassCandidate): Promise<PassCandidate>;
   updatePassCandidate(id: number, data: Partial<InsertPassCandidate>): Promise<PassCandidate | undefined>;
@@ -82,6 +88,16 @@ export interface IStorage {
   updatePassCandidateAiScore(id: number, aiScore: number, aiScoreDetails?: object): Promise<PassCandidate | undefined>;
   bulkUpdatePassCandidateStatus(ids: number[], status: string): Promise<number>;
   getPassCandidatesPipeline(passId: number): Promise<Record<string, (PassCandidate & { candidate: Candidate })[]>>;
+
+  // AI Intelligence
+  getAiCriteria(passId: number, positionId: number | null): Promise<AiReviewCriterion[]>;
+  replaceAiCriteria(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[]): Promise<AiReviewCriterion[]>;
+  markAiReviewsStale(passId: number, positionId: number | null, reason: string): Promise<void>;
+  getLatestAiReview(passCandidateId: number): Promise<AiCandidateReview | undefined>;
+  getAiReviewsByPass(passId: number): Promise<AiCandidateReview[]>;
+  createAiReview(data: InsertAiCandidateReview): Promise<AiCandidateReview>;
+  updateAiReview(id: number, data: Partial<InsertAiCandidateReview>): Promise<AiCandidateReview | undefined>;
+  claimPendingAiReviews(limit: number, workerId: string): Promise<AiCandidateReview[]>;
 
   // Public Passes
   getOpenPasses(): Promise<Pass[]>;
@@ -249,7 +265,7 @@ export class DatabaseStorage implements IStorage {
         hiringManager: true,
         passCandidates: {
           with: { candidate: true },
-          orderBy: [desc(passCandidates.aiScore)]
+          orderBy: [desc(passCandidates.addedAt)]
         },
         interviews: {
           with: { evaluations: true }
@@ -334,6 +350,21 @@ export class DatabaseStorage implements IStorage {
       .where(eq(passPositions.id, positionId));
   }
 
+  async confirmPassCriteriaTarget(passId: number, positionId: number | null): Promise<number> {
+    if (positionId) {
+      const [updated] = await db.update(passPositions)
+        .set({ aiCriteriaVersion: sql`${passPositions.aiCriteriaVersion} + 1`, aiCriteriaConfirmedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(passPositions.id, positionId), eq(passPositions.passId, passId)))
+        .returning();
+      return updated?.aiCriteriaVersion ?? 0;
+    }
+    const [updated] = await db.update(passes)
+      .set({ aiCriteriaVersion: sql`${passes.aiCriteriaVersion} + 1`, aiCriteriaConfirmedAt: new Date(), updatedAt: new Date() })
+      .where(eq(passes.id, passId))
+      .returning();
+    return updated?.aiCriteriaVersion ?? 0;
+  }
+
   // Candidates
   async getCandidates(): Promise<Candidate[]> {
     return db.select().from(candidates).where(eq(candidates.isAnonymized, false)).orderBy(desc(candidates.createdAt));
@@ -362,7 +393,7 @@ export class DatabaseStorage implements IStorage {
     const result = await db.query.passCandidates.findMany({
       where: eq(passCandidates.passId, passId),
       with: { candidate: true },
-      orderBy: [desc(passCandidates.aiScore)]
+      orderBy: [desc(passCandidates.addedAt)]
     });
     return result as (PassCandidate & { candidate: Candidate })[];
   }
@@ -393,6 +424,19 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(documents)
       .where(eq(documents.candidateId, candidateId))
       .orderBy(desc(documents.createdAt));
+  }
+
+  async getDocument(id: number): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents).where(eq(documents.id, id));
+    return document;
+  }
+
+  async updateDocument(id: number, data: Partial<Document>): Promise<Document | undefined> {
+    const [updated] = await db.update(documents)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(documents.id, id))
+      .returning();
+    return updated;
   }
 
 
@@ -487,6 +531,85 @@ export class DatabaseStorage implements IStorage {
     }
     
     return pipeline;
+  }
+
+  async getAiCriteria(passId: number, positionId: number | null): Promise<AiReviewCriterion[]> {
+    return db.select().from(aiReviewCriteria)
+      .where(and(
+        eq(aiReviewCriteria.passId, passId),
+        positionId === null ? isNull(aiReviewCriteria.positionId) : eq(aiReviewCriteria.positionId, positionId),
+        eq(aiReviewCriteria.isActive, true),
+      ))
+      .orderBy(asc(aiReviewCriteria.sortOrder), asc(aiReviewCriteria.id));
+  }
+
+  async replaceAiCriteria(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[]): Promise<AiReviewCriterion[]> {
+    return db.transaction(async (tx) => {
+      await tx.update(aiReviewCriteria)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(aiReviewCriteria.passId, passId),
+          positionId === null ? isNull(aiReviewCriteria.positionId) : eq(aiReviewCriteria.positionId, positionId),
+        ));
+      if (!criteria.length) return [];
+      return tx.insert(aiReviewCriteria).values(criteria).returning();
+    });
+  }
+
+  async markAiReviewsStale(passId: number, positionId: number | null, reason: string): Promise<void> {
+    await db.update(aiCandidateReviews)
+      .set({ status: "stale", staleReason: reason, updatedAt: new Date() })
+      .where(and(
+        eq(aiCandidateReviews.passId, passId),
+        positionId === null ? isNull(aiCandidateReviews.positionId) : eq(aiCandidateReviews.positionId, positionId),
+        eq(aiCandidateReviews.status, "completed"),
+      ));
+  }
+
+  async getLatestAiReview(passCandidateId: number): Promise<AiCandidateReview | undefined> {
+    const [review] = await db.select().from(aiCandidateReviews)
+      .where(eq(aiCandidateReviews.passCandidateId, passCandidateId))
+      .orderBy(desc(aiCandidateReviews.createdAt))
+      .limit(1);
+    return review;
+  }
+
+  async getAiReviewsByPass(passId: number): Promise<AiCandidateReview[]> {
+    return db.select().from(aiCandidateReviews)
+      .where(eq(aiCandidateReviews.passId, passId))
+      .orderBy(desc(aiCandidateReviews.createdAt));
+  }
+
+  async createAiReview(data: InsertAiCandidateReview): Promise<AiCandidateReview> {
+    const [review] = await db.insert(aiCandidateReviews).values(data).returning();
+    return review;
+  }
+
+  async updateAiReview(id: number, data: Partial<InsertAiCandidateReview>): Promise<AiCandidateReview | undefined> {
+    const [review] = await db.update(aiCandidateReviews)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiCandidateReviews.id, id))
+      .returning();
+    return review;
+  }
+
+  async claimPendingAiReviews(limit: number, workerId: string): Promise<AiCandidateReview[]> {
+    return db.transaction(async (tx) => {
+      const claimable = await tx.select({ id: aiCandidateReviews.id }).from(aiCandidateReviews)
+        .where(or(
+          eq(aiCandidateReviews.status, "pending"),
+          and(eq(aiCandidateReviews.status, "processing"), sql`${aiCandidateReviews.startedAt} < now() - interval '10 minutes'`),
+        ))
+        .orderBy(asc(aiCandidateReviews.createdAt))
+        .limit(limit)
+        .for("update", { skipLocked: true });
+      if (!claimable.length) return [];
+      const ids = claimable.map((row) => row.id);
+      return tx.update(aiCandidateReviews)
+        .set({ status: "processing", workerId, startedAt: new Date(), updatedAt: new Date(), attemptCount: sql`${aiCandidateReviews.attemptCount} + 1` })
+        .where(inArray(aiCandidateReviews.id, ids))
+        .returning();
+    });
   }
 
   // Public Passes

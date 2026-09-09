@@ -99,6 +99,8 @@ export const passes = pgTable('passes', {
   technicalAssessmentRequired: boolean('technical_assessment_required').default(false),
   technicalAssessmentAreas: text('technical_assessment_areas'),
   interviewSetupCompleted: boolean('interview_setup_completed').default(false),
+  aiCriteriaVersion: integer('ai_criteria_version').default(0).notNull(),
+  aiCriteriaConfirmedAt: timestamp('ai_criteria_confirmed_at'),
   
   // Assessment URLs (MS Forms or external links)
   softSkillsAssessmentUrl: varchar('soft_skills_assessment_url', { length: 500 }),
@@ -139,6 +141,8 @@ export const passPositions = pgTable('pass_positions', {
   
   jobDescriptionDraft: text('job_description_draft'),
   jobDescriptionFinal: text('job_description_final'),
+  aiCriteriaVersion: integer('ai_criteria_version').default(0).notNull(),
+  aiCriteriaConfirmedAt: timestamp('ai_criteria_confirmed_at'),
   
   hiredCount: integer('hired_count').default(0),
   
@@ -444,10 +448,62 @@ export const documents = pgTable('documents', {
   
   version: integer('version').default(1),
   isAiGenerated: boolean('is_ai_generated').default(false),
+  extractedText: text('extracted_text'),
+  extractionStatus: varchar('extraction_status', { length: 50 }),
+  extractionVersion: varchar('extraction_version', { length: 50 }),
+  extractionErrorCode: varchar('extraction_error_code', { length: 100 }),
+  extractedAt: timestamp('extracted_at'),
   
   status: varchar('status', { length: 50 }).default('draft'),
   
   createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+// ============ AI REVIEW CRITERIA ============
+export const aiReviewCriteria = pgTable('ai_review_criteria', {
+  id: serial('id').primaryKey(),
+  passId: integer('pass_id').notNull().references(() => passes.id, { onDelete: 'cascade' }),
+  positionId: integer('position_id').references(() => passPositions.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  evaluationInstruction: text('evaluation_instruction').notNull(),
+  importance: varchar('importance', { length: 30 }).notNull().default('required'),
+  source: varchar('source', { length: 30 }).notNull().default('manual'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+// ============ AI CANDIDATE REVIEWS ============
+export const aiCandidateReviews = pgTable('ai_candidate_reviews', {
+  id: serial('id').primaryKey(),
+  reviewType: varchar('review_type', { length: 50 }).notNull().default('application'),
+  passId: integer('pass_id').notNull().references(() => passes.id, { onDelete: 'cascade' }),
+  positionId: integer('position_id').references(() => passPositions.id, { onDelete: 'set null' }),
+  passCandidateId: integer('pass_candidate_id').references(() => passCandidates.id, { onDelete: 'cascade' }),
+  candidateId: integer('candidate_id').notNull().references(() => candidates.id, { onDelete: 'cascade' }),
+  documentId: integer('document_id').references(() => documents.id, { onDelete: 'set null' }),
+  criteriaVersion: integer('criteria_version').notNull(),
+  criteriaSnapshot: jsonb('criteria_snapshot').notNull(),
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
+  staleReason: varchar('stale_reason', { length: 255 }),
+  result: jsonb('result'),
+  reviewBand: varchar('review_band', { length: 50 }),
+  provider: varchar('provider', { length: 50 }),
+  model: varchar('model', { length: 100 }),
+  promptVersion: varchar('prompt_version', { length: 50 }).notNull(),
+  schemaVersion: varchar('schema_version', { length: 50 }).notNull(),
+  reviewRuleVersion: varchar('review_rule_version', { length: 50 }).notNull(),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  latencyMs: integer('latency_ms'),
+  safeErrorCode: varchar('safe_error_code', { length: 100 }),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  workerId: varchar('worker_id', { length: 100 }),
+  createdAt: timestamp('created_at').defaultNow(),
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
   updatedAt: timestamp('updated_at').defaultNow()
 });
 
@@ -541,12 +597,15 @@ export const passesRelations = relations(passes, ({ one, many }) => ({
   feedback: many(managerFeedback),
   documents: many(documents),
   activities: many(activityLog),
-  technicalAssessments: many(technicalAssessments)
+  technicalAssessments: many(technicalAssessments),
+  aiReviewCriteria: many(aiReviewCriteria),
+  aiCandidateReviews: many(aiCandidateReviews)
 }));
 
 export const candidatesRelations = relations(candidates, ({ many }) => ({
   passCandidates: many(passCandidates),
-  documents: many(documents)
+  documents: many(documents),
+  aiCandidateReviews: many(aiCandidateReviews)
 }));
 
 export const passCandidatesRelations = relations(passCandidates, ({ one, many }) => ({
@@ -555,7 +614,8 @@ export const passCandidatesRelations = relations(passCandidates, ({ one, many })
   technicalAssessment: one(technicalAssessments, { fields: [passCandidates.technicalAssessmentId], references: [technicalAssessments.id] }),
   interviews: many(interviews),
   assessmentResponses: many(assessmentResponses),
-  candidateLinks: many(candidateLinks)
+  candidateLinks: many(candidateLinks),
+  aiCandidateReviews: many(aiCandidateReviews)
 }));
 
 export const interviewsRelations = relations(interviews, ({ one, many }) => ({
@@ -620,6 +680,19 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   pass: one(passes, { fields: [documents.passId], references: [passes.id] }),
   candidate: one(candidates, { fields: [documents.candidateId], references: [candidates.id] }),
   passCandidate: one(passCandidates, { fields: [documents.passCandidateId], references: [passCandidates.id] })
+}));
+
+export const aiReviewCriteriaRelations = relations(aiReviewCriteria, ({ one }) => ({
+  pass: one(passes, { fields: [aiReviewCriteria.passId], references: [passes.id] }),
+  position: one(passPositions, { fields: [aiReviewCriteria.positionId], references: [passPositions.id] })
+}));
+
+export const aiCandidateReviewsRelations = relations(aiCandidateReviews, ({ one }) => ({
+  pass: one(passes, { fields: [aiCandidateReviews.passId], references: [passes.id] }),
+  position: one(passPositions, { fields: [aiCandidateReviews.positionId], references: [passPositions.id] }),
+  passCandidate: one(passCandidates, { fields: [aiCandidateReviews.passCandidateId], references: [passCandidates.id] }),
+  candidate: one(candidates, { fields: [aiCandidateReviews.candidateId], references: [candidates.id] }),
+  document: one(documents, { fields: [aiCandidateReviews.documentId], references: [documents.id] })
 }));
 
 export const interviewAvailabilityRelations = relations(interviewAvailability, ({ one }) => ({
@@ -799,6 +872,8 @@ export const insertCandidateLinkSchema = createInsertSchema(candidateLinks).omit
 export const insertManagerFeedbackSchema = createInsertSchema(managerFeedback).omit({ id: true, createdAt: true });
 export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id: true, createdAt: true });
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAiReviewCriterionSchema = createInsertSchema(aiReviewCriteria).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAiCandidateReviewSchema = createInsertSchema(aiCandidateReviews).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTechnicalAssessmentSchema = createInsertSchema(technicalAssessments).omit({ id: true, createdAt: true });
 export const insertAssessmentResponseSchema = createInsertSchema(assessmentResponses).omit({ id: true, createdAt: true });
 export const insertSettingSchema = createInsertSchema(settings).omit({ id: true, updatedAt: true });
@@ -847,6 +922,10 @@ export type ActivityLog = typeof activityLog.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type AiReviewCriterion = typeof aiReviewCriteria.$inferSelect;
+export type InsertAiReviewCriterion = z.infer<typeof insertAiReviewCriterionSchema>;
+export type AiCandidateReview = typeof aiCandidateReviews.$inferSelect;
+export type InsertAiCandidateReview = z.infer<typeof insertAiCandidateReviewSchema>;
 export type TechnicalAssessment = typeof technicalAssessments.$inferSelect;
 export type InsertTechnicalAssessment = z.infer<typeof insertTechnicalAssessmentSchema>;
 export type AssessmentResponse = typeof assessmentResponses.$inferSelect;

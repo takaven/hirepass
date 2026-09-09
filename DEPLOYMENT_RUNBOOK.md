@@ -39,7 +39,7 @@ Optional:
 
 Do not use `HIREPASS_ADMIN_PASSWORD` in production. It is available for local or disposable development only.
 
-Legacy AI and onboarding-token routes are disabled in production and are not part of the current production offer. The intended AI-assisted CV review add-on requires separate production implementation, human-decision safeguards and release verification; setting `ANTHROPIC_API_KEY` does not make legacy routes a supported production capability.
+Legacy `/api/ai/*` routes and onboarding-token routes are disabled in production and are not part of the current production offer. The supported AI-assisted review add-on uses `/api/intelligence/*`, requires explicit `HIREPASS_AI_ENABLED=true`, `ANTHROPIC_API_KEY`, provider/privacy approval and release verification. Core HirePass must continue operating when AI is disabled or unavailable.
 
 ## Database
 
@@ -88,7 +88,33 @@ For a standard setup, agree the starting hiring workflow and configure only the 
 
 Complex workflow tailoring, candidate/data migration, integrations, custom reporting or product changes are separately scoped work.
 
-Do not represent arbitrary workflow design, production AI review, outbound email/reminders or multiple named internal accounts as configuration that exists. Bounded stages and general CV submission are core capabilities; confirm the exact release behavior against the current source.
+Do not represent arbitrary workflow design, outbound email/reminders, candidate comparison, talent-pool matching, a recruiting assistant or multiple named internal accounts as configuration that exists. Bounded stages, general CV submission and optional evidence-backed vacancy-application AI review are current capabilities; confirm the exact release behavior against the current source.
+
+## Optional AI-Assisted Review
+
+Leave AI disabled unless the customer has approved provider use, privacy wording and operational handling for candidate CV processing.
+
+Required variables when enabling the add-on:
+
+- `HIREPASS_AI_ENABLED=true`
+- `ANTHROPIC_API_KEY`
+- `HIREPASS_AI_MODEL`, default `claude-sonnet-5`
+- `HIREPASS_AI_MAX_BATCH`, default `25`
+- `HIREPASS_AI_TIMEOUT_MS`, default `30000`
+
+AI review operates only after human-confirmed criteria exist for the exact vacancy or vacancy position. Public intake discloses AI-assisted review when `HIREPASS_AI_ENABLED=true`. New vacancy applications are queued after submission commits; AI failure must not block public submission or the hiring workflow.
+
+Before real candidate data is reviewed by AI, run a fictional-data AI smoke test covering:
+
+- manual criteria confirmation;
+- optional provider-generated criteria suggestion where configured;
+- successful PDF extraction;
+- queued application review;
+- source-linked evidence in the review output;
+- provider failure/timeout handling;
+- continued manual review when AI is unavailable.
+
+Do not use AI output as an automatic reject/select decision. Hiring decisions remain human-owned.
 
 ## Mandatory Pre-Data Security And Privacy Gate
 
