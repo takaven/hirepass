@@ -261,6 +261,8 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     bookInterviewSlot: async () => undefined,
     bookInterviewSlotAndCreateInterview: async () => undefined,
     createInterview: async () => undefined,
+    createInterviewAndAdvanceCandidate: async (data: any) => ({ id: 902, ...data }),
+    configureInterviewSetup: async () => [],
     updatePassCandidate: async () => undefined,
     submitInterviewEvaluation: async (data: any) => ({ id: 1, ...data, averageScore: null }),
     createCandidateMessage: async () => ({ id: 1, passCandidateId: 101 }),
@@ -446,7 +448,7 @@ describe("internal interview route invariants", () => {
 
   it("accepts one valid scoped direct interview", async () => {
     let created: any = null;
-    await withServer({ createInterview: async (data: any) => { created = { id: 902, ...data }; return created; } }, async (baseUrl) => {
+    await withServer({ createInterviewAndAdvanceCandidate: async (data: any) => { created = { id: 902, ...data }; return created; } }, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) });
       assert.equal(response.status, 201);
       assert.equal(created.endTime, "09:45");
@@ -498,6 +500,59 @@ describe("internal interview route invariants", () => {
       assert.equal(response.status, 409);
       assert.equal(booked, false);
     });
+  });
+});
+
+describe("Stakeholder Pass interview setup integrity", () => {
+  const validSetup = {
+    technicalAssessmentRequired: false,
+    interviewFormat: "online",
+    interviewRounds: 1,
+    interviewDuration: 45,
+    availableDates: ["2026-10-10"],
+    timeSlots: ["09:00", "11:15"],
+    meetingLink: "https://example.com/interview",
+    location: null,
+    isPanelInterview: false,
+  };
+
+  it("accepts an eligible stakeholder and persists the fully validated slot set once", async () => {
+    let persisted: any = null;
+    await withServer({ configureInterviewSetup: async (passId: number, changes: any, slots: any[]) => { persisted = { passId, changes, slots }; return slots; } }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+      assert.equal(response.status, 200);
+      assert.equal(persisted.changes.interviewSetupCompleted, true);
+      assert.deepEqual(persisted.slots.map((slot: any) => [slot.startTime, slot.endTime, slot.interviewerId]), [["09:00", "09:45", 301], ["11:15", "12:00", 301]]);
+    });
+  });
+
+  it("rejects inactive or non-interviewer stakeholders before mutation", async () => {
+    for (const stakeholder of [{ ...manager, isActive: false }, { ...manager, canBeInterviewer: false }]) {
+      let mutated = false;
+      await withServer({ getManager: async () => stakeholder, configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+        assert.equal(response.status, 403);
+        assert.equal(mutated, false);
+      });
+    }
+  });
+
+  it("rejects every malformed availability case before mutation", async () => {
+    const invalidCases = [
+      { timeSlots: ["24:00"] },
+      { timeSlots: ["09:60"] },
+      { timeSlots: ["23:45"], interviewDuration: 30 },
+      { timeSlots: ["9am"] },
+      { availableDates: ["2026-02-30"] },
+    ];
+    for (const invalid of invalidCases) {
+      let mutated = false;
+      await withServer({ configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...validSetup, ...invalid }) });
+        assert.equal(response.status, 400);
+        assert.equal(mutated, false);
+      });
+    }
   });
 });
 

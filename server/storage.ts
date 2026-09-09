@@ -90,6 +90,7 @@ export interface IStorage {
   getInterviews(): Promise<Interview[]>;
   getInterview(id: number): Promise<Interview | undefined>;
   createInterview(interview: InsertInterview): Promise<Interview>;
+  createInterviewAndAdvanceCandidate(interview: InsertInterview): Promise<Interview>;
   updateInterview(id: number, interview: Partial<InsertInterview>): Promise<Interview | undefined>;
   deleteInterview(id: number): Promise<boolean>;
   getInterviewsByPass(passId: number): Promise<Interview[]>;
@@ -171,6 +172,7 @@ export interface IStorage {
   getInterviewSlotsByPass(passId: number): Promise<InterviewSlot[]>;
   getPassCandidatesWithDetails(passId: number): Promise<any[]>;
   createInterviewSlot(slot: InsertInterviewSlot): Promise<InterviewSlot>;
+  configureInterviewSetup(passId: number, changes: Partial<InsertPass>, slots: InsertInterviewSlot[]): Promise<InterviewSlot[]>;
   createPanelInterviewer(data: { passId: number; managerId: number }): Promise<void>;
   createManagerFeedback(data: InsertManagerFeedback): Promise<ManagerFeedback>;
   createInterviewEvaluation(data: InsertInterviewEvaluation): Promise<InterviewEvaluation>;
@@ -512,6 +514,18 @@ export class DatabaseStorage implements IStorage {
   async createInterview(interview: InsertInterview): Promise<Interview> {
     const [newInterview] = await db.insert(interviews).values(interview).returning();
     return newInterview;
+  }
+
+  async createInterviewAndAdvanceCandidate(interview: InsertInterview): Promise<Interview> {
+    return db.transaction(async (tx) => {
+      const [newInterview] = await tx.insert(interviews).values(interview).returning();
+      const [application] = await tx.update(passCandidates)
+        .set({ status: "interview", updatedAt: new Date() })
+        .where(and(eq(passCandidates.id, interview.passCandidateId), eq(passCandidates.passId, interview.passId)))
+        .returning();
+      if (!application) throw new Error("Candidate application was not available for interview scheduling");
+      return newInterview;
+    });
   }
 
   async updateInterview(id: number, interview: Partial<InsertInterview>): Promise<Interview | undefined> {
@@ -966,6 +980,17 @@ export class DatabaseStorage implements IStorage {
   async createInterviewSlot(slot: InsertInterviewSlot): Promise<InterviewSlot> {
     const [newSlot] = await db.insert(interviewSlots).values(slot).returning();
     return newSlot;
+  }
+
+  async configureInterviewSetup(passId: number, changes: Partial<InsertPass>, slots: InsertInterviewSlot[]): Promise<InterviewSlot[]> {
+    return db.transaction(async (tx) => {
+      const [updatedPass] = await tx.update(passes)
+        .set({ ...changes, updatedAt: new Date() })
+        .where(eq(passes.id, passId))
+        .returning();
+      if (!updatedPass) throw new Error("Pass was not available for interview setup");
+      return slots.length ? tx.insert(interviewSlots).values(slots).returning() : [];
+    });
   }
 
   async createPanelInterviewer(data: { passId: number; managerId: number }): Promise<void> {

@@ -58,6 +58,16 @@ function interviewEndTime(startTime: string, duration: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function validInterviewDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 async function validInterviewer(managerId: unknown) {
   const id = z.coerce.number().int().positive().safeParse(managerId);
   if (!id.success) return null;
@@ -1199,8 +1209,7 @@ export async function registerRoutes(
       if (!interviewer) return res.status(400).json({ error: "An active interview-eligible stakeholder is required" });
       const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration);
       const validated = insertInterviewSchema.parse({ ...req.body, passId, passCandidateId, interviewerId: interviewer.id, duration, endTime: interviewEndTime(req.body.startTime, duration) });
-      const interview = await storage.createInterview(validated);
-      await storage.updatePassCandidate(validated.passCandidateId, { status: "interview" });
+      const interview = await storage.createInterviewAndAdvanceCandidate(validated);
       res.status(201).json(interview);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1642,6 +1651,8 @@ export async function registerRoutes(
       }
       const activeShareLink = access.link;
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
+      const interviewer = await validInterviewer(activeShareLink.managerId);
+      if (!interviewer) return res.status(403).json({ error: "Interview availability requires an active interview-eligible stakeholder" });
       
       const { 
         technicalAssessmentRequired,
@@ -1656,42 +1667,39 @@ export async function registerRoutes(
         meetingLink,
       } = req.body;
       const setup = z.object({
-        availableDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1),
+        availableDates: z.array(z.string().refine(validInterviewDate, "Invalid interview date")).min(1),
         timeSlots: z.array(z.string().regex(/^\d{2}:\d{2}$/)).min(1),
         interviewDuration: z.coerce.number().int().min(15).max(240),
         interviewFormat: z.enum(["online", "in-person", "hybrid"]),
         location: z.string().max(255).optional().nullable(),
         meetingLink: z.string().url().max(500).optional().nullable(),
       }).parse({ availableDates, timeSlots, interviewDuration, interviewFormat, location, meetingLink });
-      
-      // Update pass with interview setup
-      await storage.updatePass(activeShareLink.passId, {
+
+      let slots;
+      try {
+        slots = setup.availableDates.flatMap((date) => setup.timeSlots.map((startTime) => ({
+          passId: activeShareLink.passId,
+          slotDate: date,
+          startTime,
+          endTime: interviewEndTime(startTime, setup.interviewDuration),
+          duration: setup.interviewDuration,
+          format: setup.interviewFormat,
+          location: setup.location,
+          meetingLink: setup.meetingLink,
+          interviewerId: interviewer.id,
+        })));
+      } catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid interview availability" });
+      }
+
+      await storage.configureInterviewSetup(activeShareLink.passId, {
         technicalAssessmentRequired,
         interviewFormat,
         interviewRounds,
         interviewDuration,
         isPanelInterview,
         interviewSetupCompleted: true
-      });
-      
-      // Create interview slots if provided
-      if (setup.availableDates && setup.timeSlots) {
-        for (const date of setup.availableDates) {
-          for (const slot of setup.timeSlots) {
-            await storage.createInterviewSlot({
-              passId: activeShareLink.passId,
-              slotDate: date,
-              startTime: slot,
-              endTime: interviewEndTime(slot, setup.interviewDuration),
-              duration: setup.interviewDuration,
-              format: setup.interviewFormat,
-              location: setup.location,
-              meetingLink: setup.meetingLink,
-              interviewerId: activeShareLink.managerId
-            });
-          }
-        }
-      }
+      }, slots);
       
       // Add additional panel interviewers
       if (additionalInterviewers && additionalInterviewers.length > 0) {
@@ -1714,6 +1722,7 @@ export async function registerRoutes(
       
       res.json({ message: "Interview setup completed" });
     } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       console.error("Error setting up interviews:", error);
       res.status(500).json({ error: "Failed to set up interviews" });
     }

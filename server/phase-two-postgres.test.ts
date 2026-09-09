@@ -40,4 +40,50 @@ describe("Phase 2 PostgreSQL workflow integrity", () => {
     assert.equal(unchanged.rows[0].is_booked, false);
     assert.equal(unchanged.rows[0].booked_by, null);
   });
+
+  it("atomically persists interview setup and rolls back the complete slot set on a later slot failure", async () => {
+    const suffix = Date.now();
+    const manager = await pool.query<{id:number}>("insert into managers (name,job_title,email,can_be_interviewer) values ('Setup Interviewer','Interviewer',$1,true) returning id", [`setup-${suffix}@example.test`]);
+    const pass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status,enabled_stages,interview_setup_completed) values ($1,'Atomic Setup Role','Test','Dubai','Full-time','active',$2,false) returning id", [`HP-P2-AS-${suffix}`, JSON.stringify(["new","interview","hired"])]);
+    const slots = ["09:00", "10:00"].map((startTime, index) => ({ passId: pass.rows[0].id, slotDate: "2099-03-01", startTime, endTime: index ? "10:45" : "09:45", duration: 45, format: "online", meetingLink: "https://example.test/interview", interviewerId: manager.rows[0].id }));
+
+    const committed = await storage.configureInterviewSetup(pass.rows[0].id, { interviewSetupCompleted: true, interviewDuration: 45, interviewFormat: "online" }, slots);
+    assert.equal(committed.length, 2);
+    assert.equal((await pool.query("select interview_setup_completed from passes where id=$1", [pass.rows[0].id])).rows[0].interview_setup_completed, true);
+
+    await pool.query("delete from interview_slots where pass_id=$1", [pass.rows[0].id]);
+    await pool.query("update passes set interview_setup_completed=false where id=$1", [pass.rows[0].id]);
+    await pool.query(`create function pg_temp.reject_later_slot() returns trigger language plpgsql as $$ begin if new.start_time = '10:00' then raise exception 'injected later slot failure'; end if; return new; end $$`);
+    await pool.query("create trigger phase_two_slot_failure before insert on interview_slots for each row execute function pg_temp.reject_later_slot()");
+    try {
+      await assert.rejects(storage.configureInterviewSetup(pass.rows[0].id, { interviewSetupCompleted: true }, slots), /injected later slot failure/);
+    } finally {
+      await pool.query("drop trigger phase_two_slot_failure on interview_slots");
+    }
+    assert.equal((await pool.query("select interview_setup_completed from passes where id=$1", [pass.rows[0].id])).rows[0].interview_setup_completed, false);
+    assert.equal((await pool.query("select count(*)::int as count from interview_slots where pass_id=$1", [pass.rows[0].id])).rows[0].count, 0);
+  });
+
+  it("atomically creates a direct interview and advances its application", async () => {
+    const suffix = Date.now();
+    const manager = await pool.query<{id:number}>("insert into managers (name,job_title,email,can_be_interviewer) values ('Direct Interviewer','Interviewer',$1,true) returning id", [`direct-${suffix}@example.test`]);
+    const pass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status,enabled_stages) values ($1,'Atomic Direct Role','Test','Dubai','Full-time','active',$2) returning id", [`HP-P2-AD-${suffix}`, JSON.stringify(["new","interview","hired"])]);
+    const candidate = await pool.query<{id:number}>("insert into candidates (name,email) values ('Atomic Candidate',$1) returning id", [`atomic-${suffix}@example.test`]);
+    const application = await pool.query<{id:number}>("insert into pass_candidates (pass_id,candidate_id,status) values ($1,$2,'new') returning id", [pass.rows[0].id, candidate.rows[0].id]);
+    const interview = { passId: pass.rows[0].id, passCandidateId: application.rows[0].id, interviewerId: manager.rows[0].id, interviewDate: "2099-04-01", startTime: "09:00", endTime: "09:45", duration: 45, format: "online", status: "scheduled" };
+
+    await pool.query(`create function pg_temp.reject_application_advance() returns trigger language plpgsql as $$ begin if new.status = 'interview' then raise exception 'injected application advancement failure'; end if; return new; end $$`);
+    await pool.query("create trigger phase_two_application_failure before update on pass_candidates for each row execute function pg_temp.reject_application_advance()");
+    try {
+      await assert.rejects(storage.createInterviewAndAdvanceCandidate(interview), /injected application advancement failure/);
+    } finally {
+      await pool.query("drop trigger phase_two_application_failure on pass_candidates");
+    }
+    assert.equal((await pool.query("select count(*)::int as count from interviews where pass_candidate_id=$1", [application.rows[0].id])).rows[0].count, 0);
+    assert.equal((await pool.query("select status from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "new");
+
+    const committed = await storage.createInterviewAndAdvanceCandidate(interview);
+    assert.ok(committed.id);
+    assert.equal((await pool.query("select status from pass_candidates where id=$1", [application.rows[0].id])).rows[0].status, "interview");
+  });
 });
