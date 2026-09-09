@@ -48,7 +48,7 @@ import type { Candidate, Pass } from "@shared/schema";
 
 type CandidateLibrary = {
   applications: Array<{ id:number; status:string; addedAt?:string; pass:Pass }>;
-  cvs: Array<{ id:number; passId?:number; fileName?:string; createdAt?:string; current:boolean }>;
+  cvs: Array<{ id:number; passId?:number; fileName?:string; createdAt?:string; current:boolean; provenance:string }>;
 };
 
 const candidateFormSchema = z.object({
@@ -632,7 +632,7 @@ export default function CandidateForm() {
       </GlassCard>
       {isEditing && library && <GlassCard className="p-6 space-y-5">
         <div><h2 className="text-xl font-semibold">Candidate history</h2><p className="text-sm text-muted-foreground">Source: {candidate?.source || "Internal"} · {candidate?.inTalentPool ? "In talent pool" : "Not in talent pool"}</p></div>
-        <div><h3 className="font-medium mb-2">CV history</h3>{library.cvs.length ? <ul className="space-y-2">{library.cvs.map((cv) => <li key={cv.id} className="flex items-center justify-between gap-3 text-sm"><span>{cv.fileName || "Candidate CV"}{cv.current ? " (current)" : ""}</span><a href={`/api/candidates/${id}/cvs/${cv.id}`}><Button type="button" size="sm" variant="outline">Download</Button></a></li>)}</ul> : <p className="text-sm text-muted-foreground">No retained CV.</p>}</div>
+        <div><h3 className="font-medium mb-2">CV history</h3>{library.cvs.length ? <ul className="space-y-2">{library.cvs.map((cv) => <li key={cv.id} className="flex items-center justify-between gap-3 text-sm"><span><span className="font-medium">{cv.provenance}</span> — {cv.createdAt ? new Date(cv.createdAt).toLocaleDateString() : "Date unavailable"}<span className="block text-muted-foreground">{cv.fileName || "Candidate CV"}{cv.current ? " · current CV" : ""}</span></span><a href={`/api/candidates/${id}/cvs/${cv.id}`}><Button type="button" size="sm" variant="outline">Download</Button></a></li>)}</ul> : <p className="text-sm text-muted-foreground">No retained CV.</p>}</div>
         <div><h3 className="font-medium mb-2">Previous applications</h3>{library.applications.length ? <ul className="space-y-2">{library.applications.map((application) => <li key={application.id} className="text-sm">{application.pass.positionTitle} — {application.status}</li>)}</ul> : <p className="text-sm text-muted-foreground">No vacancy applications. This may be a general submission.</p>}</div>
         <div className="flex gap-2 items-end"><div className="flex-1"><label className="text-sm font-medium">Reuse for another vacancy</label><Select value={reusePassId} onValueChange={setReusePassId}><SelectTrigger className="mt-2"><SelectValue placeholder="Select vacancy" /></SelectTrigger><SelectContent>{passes?.filter((pass) => ["sourcing", "screening", "active"].includes(pass.status || "") && !library.applications.some((application) => application.pass.id === pass.id)).map((pass) => <SelectItem key={pass.id} value={String(pass.id)}>{pass.positionTitle}</SelectItem>)}</SelectContent></Select></div><Button type="button" disabled={!reusePassId || reuseMutation.isPending} onClick={() => reuseMutation.mutate()}>Reuse candidate</Button></div>
       </GlassCard>}

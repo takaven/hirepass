@@ -46,16 +46,12 @@ export async function submitPublicCandidate(input: PublicIntakeInput) {
     );
     if (matches.rowCount && matches.rowCount > 1) throw new PublicIntakeError(409, "This email matches multiple candidate records; contact the hiring team");
     let candidateId = matches.rows[0]?.id;
+    const createdCandidate = !candidateId;
     if (candidateId) {
       await client.query(
-        `update candidates set name=$2, phone=coalesce($3, phone), current_title=coalesce($4, current_title),
-         current_company=coalesce($5, current_company), current_location=coalesce($6, current_location),
-         linkedin_url=coalesce($7, linkedin_url), skills=coalesce($8::jsonb, skills),
-         in_talent_pool=case when $9 then true else in_talent_pool end,
-         privacy_notice_version=$10, privacy_notice_accepted_at=now(), updated_at=now() where id=$1`,
-        [candidateId, input.name, input.phone || null, input.currentTitle || null, input.currentCompany || null,
-          input.currentLocation || null, input.linkedinUrl || null, input.skills?.length ? JSON.stringify(input.skills) : null,
-          !input.passId, input.privacyNoticeVersion],
+        `update candidates set in_talent_pool=case when $2 then true else in_talent_pool end,
+         privacy_notice_version=$3,privacy_notice_accepted_at=now(),updated_at=now() where id=$1`,
+        [candidateId, !input.passId, input.privacyNoticeVersion],
       );
     } else {
       const created = await client.query<{ id: number }>(
@@ -86,7 +82,13 @@ export async function submitPublicCandidate(input: PublicIntakeInput) {
        values ($1,$2,$3,'cv',$4,$5,$6,'submitted')`,
       [pass?.id || null, candidateId, applicationId, pass ? `CV submitted for ${pass.position_title}` : "General submission CV", storedCv.storageKey, storedCv.originalName],
     );
-    await client.query("update candidates set cv_file_path=$2, cv_file_name=$3, updated_at=now() where id=$1", [candidateId, storedCv.storageKey, storedCv.originalName]);
+    await client.query(
+      `update candidates set
+       cv_file_path=case when $4 or cv_file_path is null then $2 else cv_file_path end,
+       cv_file_name=case when $4 or cv_file_path is null then $3 else cv_file_name end,
+       updated_at=now() where id=$1`,
+      [candidateId, storedCv.storageKey, storedCv.originalName, createdCandidate],
+    );
     await client.query("commit");
     return { candidateId, applicationId, reusedCandidate: Boolean(matches.rows[0]), duplicateApplication: false };
   } catch (error) {

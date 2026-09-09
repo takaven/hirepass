@@ -19,7 +19,7 @@ import {
   type ShareLink, type InsertShareLink,
   type ManagerFeedback, type InsertManagerFeedback,
   type ActivityLog, type InsertActivityLog,
-  type Document, type InsertDocument,
+  type Document,
   type Setting, type InsertSetting,
   type TechnicalAssessment, type InsertTechnicalAssessment,
   type User, type InsertUser, type UpsertUser,
@@ -74,7 +74,6 @@ export interface IStorage {
   getPassCandidates(passId: number): Promise<(PassCandidate & { candidate: Candidate })[]>;
   getCandidatePasses(candidateId: number): Promise<(PassCandidate & { pass: Pass })[]>;
   getDocumentsByCandidate(candidateId: number): Promise<Document[]>;
-  createDocument(document: InsertDocument): Promise<Document>;
   getPassCandidate(id: number): Promise<PassCandidate | undefined>;
   addCandidateToPass(passCandidate: InsertPassCandidate): Promise<PassCandidate>;
   updatePassCandidate(id: number, data: Partial<InsertPassCandidate>): Promise<PassCandidate | undefined>;
@@ -389,10 +388,6 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(documents.createdAt));
   }
 
-  async createDocument(document: InsertDocument): Promise<Document> {
-    const [created] = await db.insert(documents).values(document).returning();
-    return created;
-  }
 
   async getPassCandidate(id: number): Promise<PassCandidate | undefined> {
     const [pc] = await db.select().from(passCandidates).where(eq(passCandidates.id, id));

@@ -32,11 +32,11 @@ import { disableOutOfScopeProductionRoutes, requireInternalAdmin } from "./auth"
 import { verifyDatabaseReady } from "./db";
 import { eraseCandidatePii } from "./candidate-privacy";
 import { PublicIntakeError, reuseCandidateForPass, submitPublicCandidate } from "./public-intake";
+import { saveInternalCandidateCv } from "./internal-cv";
 import {
   readStoredCandidateDocument,
   removeStoredCandidateDocument,
   setSafeDownloadHeaders,
-  storeCandidateCvUpload,
   storeCandidateDocumentUpload,
   validateUploadRoot,
 } from "./document-files";
@@ -736,23 +736,8 @@ export async function registerRoutes(
     });
     try {
       const input = uploadSchema.parse(req.body);
-      const upload = await storeCandidateCvUpload({ candidateId, ...input });
-      try {
-        await storage.createDocument({
-          candidateId,
-          docType: "cv",
-          title: "Candidate CV",
-          filePath: upload.storageKey,
-          fileName: upload.originalName,
-          status: "submitted",
-        });
-        const updated = await storage.updateCandidate(candidateId, { cvFilePath: upload.storageKey, cvFileName: upload.originalName });
-        if (!updated) throw new Error("Failed to record current CV");
-      } catch (error) {
-        await removeStoredCandidateDocument(upload.storageKey);
-        throw error;
-      }
-      res.status(201).json({ fileName: upload.originalName, size: upload.size });
+      const upload = await saveInternalCandidateCv(candidateId, input);
+      res.status(201).json({ fileName: upload.fileName, size: upload.size });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(400).json({ error: error instanceof Error ? error.message : "Invalid CV upload" });
@@ -782,6 +767,7 @@ export async function registerRoutes(
       storage.getCandidatePasses(candidateId),
       storage.getDocumentsByCandidate(candidateId),
     ]);
+    const vacancyTitles = new Map(applications.map((application) => [application.passId, application.pass.positionTitle]));
     res.json({
       candidate,
       applications,
@@ -792,6 +778,7 @@ export async function registerRoutes(
         fileName: document.fileName,
         createdAt: document.createdAt,
         current: document.filePath === candidate.cvFilePath,
+        provenance: document.passId ? vacancyTitles.get(document.passId) || "Vacancy application" : "General submission",
       })),
     });
   });

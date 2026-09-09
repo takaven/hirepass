@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { apiRequest } from "@/lib/queryClient";
+import { getPublicSubmissionConfirmation, type PublicSubmissionResult } from "@/lib/public-submission";
 
 type PublicPass = { id:number; positionTitle:string; department?:string; location?:string; employmentType?:string; jobDescriptionFinal?:string; status?:string };
 type PublicConfig = { companyName:string; privacyNoticeUrl:string; privacyNoticeVersion:string };
@@ -23,7 +24,7 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
   const [file, setFile] = useState<File | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ title:string; detail:string } | null>(null);
   const [error, setError] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -32,7 +33,7 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
     setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
     try {
-      await apiRequest("POST", pass ? `/api/public/passes/${pass.id}/apply` : "/api/public/submit-cv", {
+      const response = await apiRequest("POST", pass ? `/api/public/passes/${pass.id}/apply` : "/api/public/submit-cv", {
         name: form.get("name"), email: form.get("email"), phone: form.get("phone") || undefined,
         currentTitle: form.get("currentTitle") || undefined, currentCompany: form.get("currentCompany") || undefined,
         currentLocation: form.get("currentLocation") || undefined, linkedinUrl: form.get("linkedinUrl") || undefined,
@@ -40,12 +41,13 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
         fileName: file.name, mimeType: file.type, fileDataBase64: await filePayload(file),
         privacyAcknowledged: true, privacyNoticeVersion: config.privacyNoticeVersion,
       });
-      setDone(true);
+      const result = await response.json() as PublicSubmissionResult;
+      setConfirmation(getPublicSubmissionConfirmation(pass ? "vacancy" : "general", result));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Submission failed. Please retry."); }
     finally { setBusy(false); }
   }
 
-  if (done) return <GlassCard className="p-10 text-center"><CheckCircle className="mx-auto mb-4 text-green-600"/><h2 className="text-2xl font-semibold">CV submitted</h2><p className="mt-2 text-muted-foreground">Your details and CV were received. The hiring team will contact you if there is a suitable next step.</p></GlassCard>;
+  if (confirmation) return <GlassCard className="p-10 text-center"><CheckCircle className="mx-auto mb-4 text-green-600"/><h2 className="text-2xl font-semibold">{confirmation.title}</h2><p className="mt-2 text-muted-foreground">{confirmation.detail}</p></GlassCard>;
   return <GlassCard className="p-6"><form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
     <Input name="name" placeholder="Full name" required />
     <Input name="email" type="email" placeholder="Email" required />
