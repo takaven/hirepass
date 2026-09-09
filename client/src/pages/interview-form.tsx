@@ -119,8 +119,7 @@ export default function InterviewForm() {
   const mutation = useMutation({
     mutationFn: async (data: InterviewFormValues) => {
       const payload = {
-        passId: parseInt(data.passId),
-        passCandidateId: parseInt(data.passCandidateId),
+        ...(interviewId ? {} : { passId: parseInt(data.passId), passCandidateId: parseInt(data.passCandidateId) }),
         interviewDate: data.interviewDate,
         startTime: data.startTime,
         endTime: data.startTime,
@@ -191,6 +190,7 @@ export default function InterviewForm() {
                       form.setValue("passCandidateId", "");
                     }} 
                     value={field.value}
+                    disabled={!!interviewId}
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-pass">
@@ -222,7 +222,7 @@ export default function InterviewForm() {
                   <Select 
                     onValueChange={field.onChange} 
                     value={field.value}
-                    disabled={!selectedPassId}
+                    disabled={!selectedPassId || !!interviewId}
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-candidate">

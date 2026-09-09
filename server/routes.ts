@@ -58,6 +58,20 @@ function interviewEndTime(startTime: string, duration: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+async function validInterviewer(managerId: unknown) {
+  const id = z.coerce.number().int().positive().safeParse(managerId);
+  if (!id.success) return null;
+  const manager = await storage.getManager(id.data);
+  return manager?.isActive && manager.canBeInterviewer ? manager : null;
+}
+
+async function validStakeholder(managerId: unknown) {
+  const id = z.coerce.number().int().positive().safeParse(managerId);
+  if (!id.success) return null;
+  const manager = await storage.getManager(id.data);
+  return manager?.isActive ? manager : null;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -213,13 +227,7 @@ export async function registerRoutes(
       if (!pass) return res.status(404).json({ error: "Pass not found" });
       const managerId = req.body.managerId ?? pass.hiringManagerId;
       if (!managerId) return res.status(400).json({ error: "An actionable Stakeholder Pass must be assigned to a hiring stakeholder" });
-      if (pass.hiringManagerId && managerId && Number(managerId) !== pass.hiringManagerId) {
-        return res.status(404).json({ error: "Manager is not assigned to this Pass" });
-      }
-      if (managerId) {
-        const manager = await storage.getManager(Number(managerId));
-        if (!manager) return res.status(404).json({ error: "Manager is not available for this Pass" });
-      }
+      if (!await validStakeholder(managerId)) return res.status(404).json({ error: "Active hiring stakeholder not found" });
       const link = await storage.createShareLink({
         passId,
         managerId: managerId ? Number(managerId) : undefined,
@@ -1180,8 +1188,17 @@ export async function registerRoutes(
 
   app.post("/api/interviews", async (req, res) => {
     try {
+      const passId = z.coerce.number().int().positive().parse(req.body.passId);
+      const passCandidateId = z.coerce.number().int().positive().parse(req.body.passCandidateId);
+      const [pass, passCandidate, interviewer] = await Promise.all([
+        storage.getPass(passId), storage.getPassCandidateById(passCandidateId), validInterviewer(req.body.interviewerId),
+      ]);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      if (!configuredStages(pass.enabledStages).includes("interview")) return res.status(409).json({ error: "Interview is not enabled for this hiring workflow" });
+      if (!passCandidate || passCandidate.passId !== pass.id) return res.status(400).json({ error: "Candidate application does not belong to this Pass" });
+      if (!interviewer) return res.status(400).json({ error: "An active interview-eligible stakeholder is required" });
       const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration);
-      const validated = insertInterviewSchema.parse({ ...req.body, duration, endTime: interviewEndTime(req.body.startTime, duration) });
+      const validated = insertInterviewSchema.parse({ ...req.body, passId, passCandidateId, interviewerId: interviewer.id, duration, endTime: interviewEndTime(req.body.startTime, duration) });
       const interview = await storage.createInterview(validated);
       await storage.updatePassCandidate(validated.passCandidateId, { status: "interview" });
       res.status(201).json(interview);
@@ -1198,14 +1215,19 @@ export async function registerRoutes(
     try {
       const existing = await storage.getInterview(parseInt(req.params.id));
       if (!existing) return res.status(404).json({ error: "Interview not found" });
+      if ((req.body.passId !== undefined && Number(req.body.passId) !== existing.passId) || (req.body.passCandidateId !== undefined && Number(req.body.passCandidateId) !== existing.passCandidateId)) {
+        return res.status(409).json({ error: "Rescheduling cannot change the interview's Pass or candidate" });
+      }
+      const { passId: _passId, passCandidateId: _passCandidateId, ...mutableBody } = req.body;
+      if (mutableBody.interviewerId !== undefined && !await validInterviewer(mutableBody.interviewerId)) return res.status(400).json({ error: "An active interview-eligible stakeholder is required" });
       const isReschedule = ["interviewDate", "startTime", "duration", "format", "location", "meetingLink", "interviewerId"].some((field) => field in req.body);
       const changes = isReschedule
         ? (() => {
             const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration ?? existing.duration);
             const startTime = req.body.startTime ?? existing.startTime;
-            return insertInterviewSchema.partial().parse({ ...req.body, duration, startTime, endTime: interviewEndTime(startTime, duration) });
+            return insertInterviewSchema.omit({ passId: true, passCandidateId: true }).partial().parse({ ...mutableBody, duration, startTime, endTime: interviewEndTime(startTime, duration) });
           })()
-        : insertInterviewSchema.partial().parse(req.body);
+        : insertInterviewSchema.omit({ passId: true, passCandidateId: true }).partial().parse(mutableBody);
       const interview = isReschedule ? await storage.rescheduleInterview(existing.id, changes) : await storage.updateInterview(existing.id, changes);
       if (!interview) {
         return res.status(404).json({ error: "Interview not found" });
@@ -1386,8 +1408,7 @@ export async function registerRoutes(
       if (!pass) return res.status(404).json({ error: "Pass not found" });
       const resolvedManagerId = managerId ?? pass.hiringManagerId;
       if (!resolvedManagerId) return res.status(400).json({ error: "An actionable Stakeholder Pass must be assigned to a hiring stakeholder" });
-      if (pass.hiringManagerId && Number(resolvedManagerId) !== pass.hiringManagerId) return res.status(404).json({ error: "Stakeholder is not assigned to this Pass" });
-      if (!await storage.getManager(Number(resolvedManagerId))) return res.status(404).json({ error: "Hiring stakeholder not found" });
+      if (!await validStakeholder(resolvedManagerId)) return res.status(404).json({ error: "Active hiring stakeholder not found" });
       const shareLink = await storage.createShareLink({
         passId,
         managerId: Number(resolvedManagerId),
@@ -1967,6 +1988,8 @@ export async function registerRoutes(
       if (!passCandidate) {
         return res.status(404).json({ error: "Candidate application not found" });
       }
+      const owningPass = await storage.getPass(passCandidate.passId);
+      if (!owningPass || !configuredStages(owningPass.enabledStages).includes("interview")) return res.status(409).json({ error: "Interview is not enabled for this hiring workflow" });
 
       const availableSlots = await storage.getAvailableInterviewSlots(passCandidate.passId);
       const requestedSlot = availableSlots.find((slot) => slot.id === slotId);

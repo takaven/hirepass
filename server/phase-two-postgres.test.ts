@@ -31,5 +31,13 @@ describe("Phase 2 PostgreSQL workflow integrity", () => {
     assert.equal(evaluation.educationalBackground, null);
     assert.equal(evaluation.technicalSkills, null);
     assert.equal((await pool.query("select interview_recommendation,interview_score from pass_candidates where id=$1", [application.rows[0].id])).rows[0].interview_recommendation, "proceed");
+
+    const noInterviewPass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status,enabled_stages) values ($1,'No Interview Role','Test','Dubai','Full-time','active',$2) returning id", [`HP-P2-NI-${suffix}`, JSON.stringify(["new","screening","hired"])]);
+    const noInterviewApplication = await pool.query<{id:number}>("insert into pass_candidates (pass_id,candidate_id,status) values ($1,$2,'screening') returning id", [noInterviewPass.rows[0].id, candidate.rows[0].id]);
+    const blockedSlot = await pool.query<{id:number}>("insert into interview_slots (pass_id,slot_date,start_time,end_time,duration,format,interviewer_id) values ($1,'2099-02-03','09:00','09:30',30,'online',$2) returning id", [noInterviewPass.rows[0].id, manager.rows[0].id]);
+    assert.equal(await storage.bookInterviewSlotAndCreateInterview(blockedSlot.rows[0].id, noInterviewApplication.rows[0].id, noInterviewPass.rows[0].id), undefined);
+    const unchanged = await pool.query("select is_booked,booked_by from interview_slots where id=$1", [blockedSlot.rows[0].id]);
+    assert.equal(unchanged.rows[0].is_booked, false);
+    assert.equal(unchanged.rows[0].booked_by, null);
   });
 });

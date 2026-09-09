@@ -609,6 +609,21 @@ describe("HR Pass Control lifecycle routes", () => {
     });
   });
 
+  it("lets the admin issue scoped Stakeholder Passes to the primary or another active stakeholder", async () => {
+    const second = { ...manager, id: 302, name: "Second Stakeholder", email: "second@example.test" };
+    const issued: number[] = [];
+    await withServer({
+      getManager: async (id: number) => id === 301 ? manager : id === 302 ? second : undefined,
+      createShareLink: async (data: any) => { issued.push(data.managerId); return { ...managerLink, id: 20 + issued.length, token: `stakeholder-${issued.length}`, ...data }; },
+    }, async (baseUrl) => {
+      const primary = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const additional = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ managerId: 302 }) });
+      assert.equal(primary.status, 201);
+      assert.equal(additional.status, 201);
+      assert.deepEqual(issued, [301, 302]);
+    });
+  });
+
   it("rejects an actionable Stakeholder Pass without a stakeholder binding", async () => {
     let created = false;
     await withServer({

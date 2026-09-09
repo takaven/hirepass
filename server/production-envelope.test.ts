@@ -56,6 +56,9 @@ const manager = {
   jobTitle: "Operations Director",
   email: "manager@example.com",
   department: "Operations",
+  isActive: true,
+  canBeInterviewer: true,
+  canBeHiringManager: true,
   createdAt: oldDate,
   updatedAt: oldDate,
 };

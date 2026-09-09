@@ -33,6 +33,7 @@ import {
   type OnboardingStageProgress, type InsertOnboardingStageProgress,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { configuredStages } from "@shared/hiring-workflow";
 
 const finitePassExpiry = (value: unknown) => {
   const parsed = value instanceof Date ? value : value ? new Date(String(value)) : null;
@@ -1079,6 +1080,9 @@ export class DatabaseStorage implements IStorage {
 
   async bookInterviewSlotAndCreateInterview(slotId: number, passCandidateId: number, passId: number): Promise<{ slot: InterviewSlot; interview: Interview } | undefined> {
     return db.transaction(async (tx) => {
+      const [pass] = await tx.select().from(passes).where(eq(passes.id, passId)).for("update");
+      const [application] = await tx.select().from(passCandidates).where(and(eq(passCandidates.id, passCandidateId), eq(passCandidates.passId, passId))).for("update");
+      if (!pass || !application || !configuredStages(pass.enabledStages).includes("interview")) return undefined;
       const [slot] = await tx.update(interviewSlots)
         .set({ isBooked: true, bookedBy: passCandidateId, bookedAt: new Date() })
         .where(and(eq(interviewSlots.id, slotId), eq(interviewSlots.passId, passId), eq(interviewSlots.isBooked, false), eq(interviewSlots.isActive, true)))

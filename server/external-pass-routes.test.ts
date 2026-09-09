@@ -284,7 +284,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getPassCandidatesWithDetails: async () => [{ ...passCandidate, candidate }],
     getInterviewsByPass: async () => [interview],
     getInterview: async () => interview,
-    getManager: async () => manager,
+    getManager: async (id: number) => id === manager.id ? manager : undefined,
     getInterviewSlotsByPass: async () => [interviewSlot],
     logActivity: async (activity: any) => ({ id: 1, createdAt: new Date(), ...activity }),
     ...overrides,
@@ -437,6 +437,66 @@ describe("external Candidate Pass route security", () => {
       assertAbsent(payload.interviews, ["passId", "passCandidateId", "interviewNotes", "createdAt", "updatedAt"]);
       assertAbsent(payload.offer, ["passId", "passCandidateId", "positionNumber", "approvedBy", "approvedAt", "sentAt", "respondedAt", "declineReason", "negotiationNotes", "createdAt", "updatedAt"]);
       assertAbsent(payload.interviewSlots, ["passId", "interviewerId", "isBooked", "bookedBy", "bookedAt", "isActive", "createdAt"]);
+    });
+  });
+});
+
+describe("internal interview route invariants", () => {
+  const directPayload = { passId: 10, passCandidateId: 101, interviewerId: 301, interviewDate: "2026-10-10", startTime: "09:00", duration: 45, format: "online", roundNumber: 1, roundName: "Hiring Manager", status: "scheduled" };
+
+  it("accepts one valid scoped direct interview", async () => {
+    let created: any = null;
+    await withServer({ createInterview: async (data: any) => { created = { id: 902, ...data }; return created; } }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) });
+      assert.equal(response.status, 201);
+      assert.equal(created.endTime, "09:45");
+      assert.equal(created.interviewerId, 301);
+    });
+  });
+
+  it("rejects missing, nonexistent, inactive or ineligible interviewers", async () => {
+    await withServer({ getManager: async (id: number) => id === 302 ? { ...manager, id, isActive: false } : id === 303 ? { ...manager, id, canBeInterviewer: false } : undefined }, async (baseUrl) => {
+      for (const interviewerId of [undefined, 999, 302, 303]) {
+        const response = await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...directPayload, interviewerId }) });
+        assert.equal(response.status, 400);
+      }
+    });
+  });
+
+  it("rejects cross-Pass candidates and workflows without Interview", async () => {
+    await withServer({ getPassCandidateById: async () => ({ ...passCandidate, passId: 11 }) }, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) })).status, 400);
+    });
+    await withServer({ getPass: async () => ({ ...pass, enabledStages: ["new", "screening", "hired"] }) }, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/interviews`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(directPayload) })).status, 409);
+    });
+  });
+
+  it("reschedules mutable details but rejects Pass or candidate reassignment", async () => {
+    let changes: any = null;
+    await withServer({ rescheduleInterview: async (_id: number, data: any) => { changes = data; return { ...interview, ...data }; } }, async (baseUrl) => {
+      const valid = await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ interviewDate: "2026-10-11", startTime: "11:00", duration: 30, interviewerId: 301 }) });
+      assert.equal(valid.status, 200);
+      assert.equal(changes.endTime, "11:30");
+      assert.equal(changes.passId, undefined);
+      assert.equal(changes.passCandidateId, undefined);
+      changes = null;
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ interviewerId: 999 }) })).status, 400);
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ passId: 11 }) })).status, 409);
+      assert.equal((await fetch(`${baseUrl}/api/interviews/901`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ passCandidateId: 999 }) })).status, 409);
+      assert.equal(changes, null);
+    });
+  });
+
+  it("rejects booking when Interview is disabled without mutating the slot", async () => {
+    let booked = false;
+    await withServer({
+      getPass: async () => ({ ...pass, enabledStages: ["new", "screening", "hired"] }),
+      bookInterviewSlotAndCreateInterview: async () => { booked = true; return undefined; },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slotId: 501 }) });
+      assert.equal(response.status, 409);
+      assert.equal(booked, false);
     });
   });
 });
