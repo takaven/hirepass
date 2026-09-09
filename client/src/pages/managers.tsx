@@ -53,7 +53,7 @@ export default function Managers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/managers"] });
       toast({
-        title: "Manager removed",
+        title: "Stakeholder removed",
         description: "The manager has been removed from the directory.",
       });
       setDeleteDialogOpen(false);
@@ -85,7 +85,7 @@ export default function Managers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Managers</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Hiring Stakeholders</h1>
           <p className="text-muted-foreground mt-1">
             Hiring managers and interviewers directory
           </p>
@@ -93,7 +93,7 @@ export default function Managers() {
         <Link href="/managers/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-manager">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            Add Manager
+            Add Stakeholder
           </Button>
         </Link>
       </div>
@@ -208,7 +208,7 @@ export default function Managers() {
               <Link href="/managers/new">
                 <Button className="mt-6 rounded-xl gap-2" data-testid="button-add-first-manager">
                   <Plus className="w-4 h-4" strokeWidth={1.5} />
-                  Add First Manager
+                  Add First Stakeholder
                 </Button>
               </Link>
             )}
@@ -219,7 +219,7 @@ export default function Managers() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="glass-card border-0 rounded-3xl">
           <DialogHeader>
-            <DialogTitle>Remove Manager</DialogTitle>
+            <DialogTitle>Remove Stakeholder</DialogTitle>
             <DialogDescription>
               Are you sure you want to remove {managerToDelete?.name} from the directory?
             </DialogDescription>

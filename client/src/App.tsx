@@ -138,7 +138,6 @@ function MainRouter() {
       <Route path="/passes/new" component={PassForm} />
       <Route path="/passes/:id" component={PassDetail} />
       <Route path="/passes/:id/edit" component={PassForm} />
-      <Route path="/passes/:id/pass" component={RecruitmentPass} />
       <Route path="/passes/:passId/candidates" component={PassCandidates} />
       <Route path="/candidates" component={Candidates} />
       <Route path="/candidates/new" component={CandidateForm} />

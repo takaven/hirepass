@@ -130,6 +130,8 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
   tempDirs.push(uploadDir);
   process.env.HIREPASS_UPLOAD_DIR = uploadDir;
   process.env.HIREPASS_COMPANY_NAME = "Test Company";
+  process.env.HIREPASS_COMPANY_LOCATION = "Dubai";
+  process.env.HIREPASS_CAREERS_CONTACT_EMAIL = "careers@example.test";
   process.env.HIREPASS_PRIVACY_NOTICE_URL = "https://example.test/privacy";
   process.env.HIREPASS_PRIVACY_NOTICE_VERSION = "test-v1";
   let mutableDocument: any = {
@@ -213,6 +215,16 @@ describe("HirePass production envelope", () => {
       const publicPass = await direct.json() as any;
       assert.equal(publicPass.positionTitle, pass.positionTitle);
       assert.equal(publicPass.hiringManagerId, undefined);
+      assert.equal(publicPass.managerNotes, undefined);
+      assert.equal(publicPass.notes, undefined);
+      const publicConfig = await (await fetch(`${baseUrl}/api/public/config`)).json() as any;
+      assert.deepEqual(publicConfig, {
+        companyName: "Test Company",
+        companyLocation: "Dubai",
+        careersContactEmail: "careers@example.test",
+        privacyNoticeUrl: "https://example.test/privacy",
+        privacyNoticeVersion: "test-v1",
+      });
       assert.equal((await fetch(`${baseUrl}/api/candidates/201/library`)).status, 401);
       const cookie = await login(baseUrl);
       const library = await fetch(`${baseUrl}/api/candidates/201/library`, { headers: { cookie } });

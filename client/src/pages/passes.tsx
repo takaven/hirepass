@@ -78,7 +78,7 @@ export default function Passes() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Recruitment Passes</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Vacancies & Passes</h1>
           <p className="text-muted-foreground mt-1">
             Manage all recruitment requisitions and job openings
           </p>
@@ -86,7 +86,7 @@ export default function Passes() {
         <Link href="/passes/new">
           <Button className="rounded-xl gap-2" data-testid="button-new-pass">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            New Pass
+            New Vacancy
           </Button>
         </Link>
       </div>
@@ -96,7 +96,7 @@ export default function Passes() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
             <Input
-              placeholder="Search passes..."
+              placeholder="Search vacancies..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 rounded-xl"
@@ -112,7 +112,7 @@ export default function Passes() {
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="awaiting_jd_approval">Awaiting JD Approval</SelectItem>
               <SelectItem value="sourcing">Sourcing</SelectItem>
-              <SelectItem value="screening">Screening</SelectItem>
+              <SelectItem value="screening">Review</SelectItem>
               <SelectItem value="interviewing">Interviewing</SelectItem>
               <SelectItem value="decision">Decision</SelectItem>
               <SelectItem value="offer_pending">Offer Pending</SelectItem>

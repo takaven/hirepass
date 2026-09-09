@@ -246,7 +246,7 @@ export default function PassForm() {
       }
       
       queryClient.invalidateQueries({ queryKey: ["/api/passes"] });
-      toast({ title: "Recruitment pass created successfully" });
+      toast({ title: "Vacancy and Pass created successfully" });
       setLocation(`/passes/${createdPass.id}`);
     },
     onError: () => {
@@ -323,7 +323,7 @@ export default function PassForm() {
         </Link>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
-            {isEditing ? "Edit Pass" : "New Recruitment Pass"}
+            {isEditing ? "Edit Vacancy & Pass" : "New Vacancy & Pass"}
           </h1>
           <p className="text-muted-foreground mt-1">
             {isEditing ? `Editing ${pass?.passId}` : "Create a new recruitment requisition"}

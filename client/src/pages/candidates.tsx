@@ -129,7 +129,7 @@ export default function Candidates() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Candidates</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your candidate pool and talent pipeline
+            Search profiles, review application history and reuse candidates
           </p>
         </div>
         <Link href="/candidates/new">
@@ -239,7 +239,7 @@ export default function Candidates() {
                       data-testid={`menu-delete-${candidate.id}`}
                     >
                       <Trash2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                      Delete
+                      Erase personal data
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -272,12 +272,12 @@ export default function Candidates() {
                 )}
               </div>
 
-              {/* Linked Positions */}
+              {/* Application history */}
               {candidate.passCandidates && candidate.passCandidates.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-border/50">
                   <div className="flex items-center gap-2 mb-2">
                     <Target className="w-3 h-3 text-muted-foreground" strokeWidth={1.5} />
-                    <span className="text-xs text-muted-foreground font-medium">Linked Positions</span>
+                    <span className="text-xs text-muted-foreground font-medium">Application history</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {candidate.passCandidates.map((pc) => (

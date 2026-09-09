@@ -134,7 +134,7 @@ export default function HrPassControl() {
       {isLoading ? (
         <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading Pass controls...</CardContent></Card>
       ) : items.length === 0 ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">No recruitment Passes require attention.</CardContent></Card>
+        <Card><CardContent className="p-6 text-sm text-muted-foreground">No hiring Passes require attention.</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
@@ -170,7 +170,7 @@ export default function HrPassControl() {
                           variant="outline"
                           onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/manager-link` })}
                         >
-                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Issue Manager Pass
+                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Issue Stakeholder Pass
                         </Button>
                         {item.activeManagerLink && (
                           <>

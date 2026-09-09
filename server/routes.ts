@@ -44,6 +44,8 @@ import {
 
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
+  companyLocation: process.env.HIREPASS_COMPANY_LOCATION || "",
+  careersContactEmail: process.env.HIREPASS_CAREERS_CONTACT_EMAIL || "",
   privacyNoticeUrl: process.env.HIREPASS_PRIVACY_NOTICE_URL || "",
   privacyNoticeVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION || "launch-v1",
 });

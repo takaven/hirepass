@@ -54,7 +54,7 @@ interface PassCandidate {
 
 const statusPipeline = [
   { value: "new", label: "Applied", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
-  { value: "screening", label: "Screening", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+  { value: "screening", label: "Review", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
   { value: "shortlisted", label: "Shortlisted", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
   { value: "interview", label: "Interview", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
   { value: "offer", label: "Offer", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
@@ -189,12 +189,6 @@ export default function PassDetail() {
               Public application link
             </Button>
           </a>
-          <Link href={`/passes/${passId}/pass`}>
-            <Button variant="outline" className="rounded-xl gap-2" data-testid="button-view-pass">
-              <FileText className="w-4 h-4" strokeWidth={1.5} />
-              View Pass
-            </Button>
-          </Link>
           <Dialog open={addCandidateOpen} onOpenChange={setAddCandidateOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-xl gap-2" data-testid="button-add-candidate">

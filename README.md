@@ -60,7 +60,7 @@ with outcomes such as:
 
 Customers need controlled variation. Launch configurability should use a small ordered set of supported stages, optional stage activation and clear ownership. HirePass should not implement arbitrary workflow graphs, customer-authored automation code or an unrestricted workflow builder.
 
-The current pipeline is fixed. Bounded stage configuration is an intended improvement, not an existing capability.
+The hiring vocabulary is deliberately bounded. Each vacancy enables an ordered subset of supported stages rather than defining arbitrary strings, branches or automation.
 
 ### AI-Assisted CV Review
 
@@ -84,7 +84,7 @@ Authorised users should be able to review applicants, shortlist or reject them, 
 
 Scheduling should support dates, times, duration, format, location/meeting link, interviewer assignment, candidate confirmation and bounded rescheduling. Candidate-selectable slots are useful where enabled. Calendar integration, conflict optimisation and complex automation are deferred until demand justifies them.
 
-The existing data model and server routes support interviews, slots, booking, rounds, panel records, evaluation and decisions. The Manager Pass does not collect the dates/slots accepted by its endpoint, direct interview creation does not reliably persist interviewer assignment, and its evaluation UI submits fixed category scores. Correct these paths instead of creating a second subsystem.
+The existing interview model supports real stakeholder availability, candidate-selectable slots, one primary interviewer, direct scheduling, rescheduling, evaluator-supplied recommendation/notes and decisions. Setup/slot persistence and direct scheduling/application advancement are transactional. Calendar integration, scheduling optimisation and expanded panel coordination remain outside launch core.
 
 ## Pass Coordination Layer
 
@@ -113,17 +113,17 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | General CV submission without vacancy | Missing | Build a small intake path into the existing candidate model. |
 | Vacancy records and multiple positions | Exists | Preserve current Pass/position structures. |
 | Public vacancy application URL | Exists | Preserve; clarify operational link handling. |
-| Flexible hiring stages | Partial | Current stages are fixed; add bounded configuration only. |
+| Flexible hiring stages | Exists | Each vacancy enables an ordered subset of the supported Applied, Review, Shortlisted, Interview, Offer and Hired stages; Rejected/Withdrawn remain terminal outcomes. |
 | Candidate Pass | Exists | Preserve; correct security/incomplete action flows. |
 | Manager/Hiring Stakeholder Pass | Exists | Preserve scoped access and use responsibility-neutral documentation. |
 | Internal/HR Pass Control | Exists | Preserve; administrator need not belong to HR. |
 | Pass issue, expiry, revoke, extend, reissue | Exists | Preserve and regression-test. |
 | Messages and documents | Partial | In-product flows exist; outbound delivery and some review/configuration do not. |
-| Interviews and decisions | Partial | Correct availability, assignment, rescheduling and fixed evaluation inputs. |
+| Interviews and decisions | Exists for launch core | Availability, primary interviewer, candidate slot booking, rescheduling, recommendation/notes and final decisions use existing Pass structures. Calendar and sophisticated scheduling remain deferred. |
 | Assessments and offers | Partial | Data/routes exist; production workflows are not uniformly complete. |
 | AI-assisted CV review | Missing in production | Implement as optional, human-controlled, evidence-based add-on. |
 | Multiple internal responsibilities | Partial | Production auth has one `owner_admin`; managers use scoped Pass links. Extend minimally. |
-| Branding/company configuration | Partial | Settings storage exists; visible UI is not wired consistently. |
+| Branding/company configuration | Exists at deployment level | Company name, optional location/contact and privacy notice identity come from the isolated deployment environment; the Settings page is deliberately read-only. |
 | Notifications | Partial | In-app records exist; email, reminders and recipient mapping are incomplete. |
 | Privacy and retention enforcement | Missing | Policy is required before real data; automate only what operation cannot safely handle. |
 
@@ -135,8 +135,8 @@ Do not admit real customer candidate data until applicable launch gates are clos
 2. **Production verification:** run type checking, tests, build and fictional-data smoke verification against the exact release commit.
 3. **Privacy and retention:** candidate records carry optional customer-selected retention review and privacy-notice evidence. Removing talent-pool membership is a profile update; removing an application is separate from privacy erasure. Privacy erasure deletes stored candidate files and direct communications, revokes Candidate Passes, sanitises candidate-linked notifications and anonymises candidate PII/free text while retaining non-identifying application status, evaluation scores, decisions and audit timing. The customer must still agree lawful basis, retention duration, export/access ownership and backup treatment.
 4. **Authentication and abuse protection:** decide whether one controlled administrator is acceptable; use individual accounts when accountability requires them, and apply login/request throttling in-app or at a trusted edge.
-5. **Manager interview workflow:** correct availability capture before relying on manager-proposed scheduling.
-6. **Evaluation integrity:** do not record fixed scores as evaluator-supplied; collect criteria or use a simpler recommendation-and-notes form.
+5. **Stakeholder interview workflow:** availability capture, slot creation, direct scheduling and candidate-stage movement are validated and transactional. The availability owner must be interview-eligible.
+6. **Evaluation integrity:** launch evaluation stores evaluator-supplied recommendation and evidence notes; unused numeric score fields remain null.
 7. **Customer isolation:** use a separate deployment, PostgreSQL database, upload store and secret set for each customer.
 
 ## Product Boundary
@@ -175,7 +175,7 @@ Copy `.env.example` to `.env` for local or disposable development and fill only 
 
 ## Required Configuration
 
-Core variables are `DATABASE_URL`, `HIREPASS_ADMIN_USERNAME`, `HIREPASS_SESSION_SECRET` and `HIREPASS_UPLOAD_DIR`. Production also requires `HIREPASS_ADMIN_PASSWORD_HASH`; plaintext `HIREPASS_ADMIN_PASSWORD` is local/disposable only. The session secret must be at least 32 characters.
+Core variables are `DATABASE_URL`, `HIREPASS_ADMIN_USERNAME`, `HIREPASS_SESSION_SECRET`, `HIREPASS_UPLOAD_DIR`, `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Production also requires `HIREPASS_ADMIN_PASSWORD_HASH`; plaintext `HIREPASS_ADMIN_PASSWORD` is local/disposable only. The session secret must be at least 32 characters. `HIREPASS_COMPANY_LOCATION` and `HIREPASS_CAREERS_CONTACT_EMAIL` are optional public display values.
 
 `HIREPASS_PASS_ID_PREFIX` is optional and defaults to `HP`. `ANTHROPIC_API_KEY` may exercise legacy AI outside production but does not enable the intended production review capability.
 

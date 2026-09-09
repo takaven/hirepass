@@ -188,8 +188,8 @@ export default function CandidateForm() {
       toast({
         title: isEditing ? "Candidate updated" : "Candidate created",
         description: isEditing 
-          ? "The candidate has been updated successfully."
-          : "The candidate has been added to your pipeline.",
+              ? "The candidate has been updated successfully."
+              : "The candidate has been added to the Candidate Library.",
       });
       setLocation("/candidates");
     },
@@ -250,7 +250,7 @@ export default function CandidateForm() {
 
       <GlassCard className="p-6">
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-3">Resume Upload & Analysis</label>
+          <label className="block text-sm font-medium mb-3">Candidate CV</label>
           <div 
             className="border-2 border-dashed border-primary/30 rounded-2xl p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
             onClick={() => document.getElementById("resume-input")?.click()}
