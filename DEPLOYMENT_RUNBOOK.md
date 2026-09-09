@@ -88,7 +88,7 @@ For a standard setup, agree the starting hiring workflow and configure only the 
 
 Complex workflow tailoring, candidate/data migration, integrations, custom reporting or product changes are separately scoped work.
 
-Do not represent fixed pipeline stages, general CV submission, production AI review, outbound email/reminders or multiple named internal accounts as configuration that already exists. Confirm the exact release capability against the current source.
+Do not represent arbitrary workflow design, production AI review, outbound email/reminders or multiple named internal accounts as configuration that exists. Bounded stages and general CV submission are core capabilities; confirm the exact release behavior against the current source.
 
 ## Mandatory Pre-Data Security And Privacy Gate
 
@@ -97,7 +97,7 @@ Do not admit real candidate or employer data until all applicable items below ar
 - **Pass-token log safety:** Candidate and Manager Pass bearer-token segments must resolve to safe route templates in application logs. Run the regression suite and ensure infrastructure/access logs also redact these URL segments.
 - **Credential and abuse protection:** use a production password hash, strong session secret and HTTPS. HirePass applies PostgreSQL-backed limits to login, public submission/upload and external Pass mutations before request-body parsing; readiness fails if the counter table is absent. Configure and verify the exact trusted-proxy hop count.
 - **Candidate privacy:** record the lawful basis and candidate notice for vacancy applications and any general talent-pool submission.
-- **Public intake configuration:** set `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Publish `/talent-pool` for general submissions and `/apply/<numeric vacancy id>` for a direct vacancy application.
+- **Public intake configuration:** set `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Optionally set `HIREPASS_COMPANY_LOCATION` and `HIREPASS_CAREERS_CONTACT_EMAIL` for public display. Publish `/talent-pool` for general submissions and `/apply/<numeric vacancy id>` for a direct vacancy application.
 - **Retention and deletion:** name the responsible owner and define retention duration, export/access procedure and backup expiry. Talent-pool removal does not erase a candidate. Candidate privacy erasure removes files and direct messages, revokes Candidate Passes, sanitises candidate-linked notifications, clears candidate PII/free text and preserves non-identifying workflow/audit integrity. Application hard-deletion is disabled for launch: use workflow status to withdraw/archive an application, never as a privacy-erasure shortcut.
 - **External link operation:** define finite expiry defaults, secure delivery, revocation and reissue handling for bearer links.
 - **Data minimisation:** request only documents and candidate attributes required for the hiring process.
@@ -130,6 +130,7 @@ Then in the deployed environment verify:
 - no Candidate or Manager Pass token appears in application, proxy, access, analytics or error logs;
 - interview availability creates the expected candidate-selectable slots if that workflow is enabled;
 - evaluation records contain only values actually supplied by the evaluator;
+- Settings shows deployment identity as read-only and does not advertise email, reminder, automated retention or bulk-export controls;
 - logout works.
 
 ## Handover

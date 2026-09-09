@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { allowedCandidateStatus, configuredStages, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
+import { allowedCandidateStatus, configuredStages, HIRING_STAGE_LABELS, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
 import { resolveManagerPassState } from "./manager-pass-state";
 
 describe("bounded hiring workflows", () => {
   it("keeps the full workflow and accepts only canonical ordered subsets", () => {
+    assert.equal(HIRING_STAGE_LABELS.new, "Applied");
+    assert.equal(HIRING_STAGE_LABELS.screening, "Review");
     assert.deepEqual(configuredStages(undefined), ["new", "screening", "shortlisted", "interview", "offer", "hired"]);
     assert.equal(validateConfiguredStages(["new", "interview", "hired"]), true);
     assert.equal(validateConfiguredStages(["new", "custom", "hired"]), false);

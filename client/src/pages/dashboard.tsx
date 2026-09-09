@@ -72,14 +72,14 @@ export default function Dashboard() {
         <div>
           <h1 className="text-base font-semibold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-[11px]">
-            Recruitment pass overview
+            Candidates, vacancies, interviews and Pass actions
           </p>
         </div>
         <div className="flex gap-1.5">
           <Link href="/passes/new">
             <Button size="sm" variant="outline" className="rounded-xl gap-1 text-[11px] h-7 px-2.5" data-testid="button-new-pass">
               <FileText className="w-3 h-3" strokeWidth={2} />
-              New Pass
+              New Vacancy
             </Button>
           </Link>
           <Link href="/candidates/new">
@@ -106,7 +106,7 @@ export default function Dashboard() {
             icon={<Users className="w-4 h-4 text-primary" strokeWidth={2} />}
           />
           <MetricCard
-            title="Active Passes"
+            title="Active Vacancies"
             value={stats?.activePasses ?? 0}
             icon={<Briefcase className="w-4 h-4 text-primary" strokeWidth={2} />}
           />
@@ -181,10 +181,10 @@ export default function Dashboard() {
           )}
         </GlassCard>
 
-        {/* Active Passes */}
+        {/* Active vacancies */}
         <GlassCard className="p-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold">Active Passes</h2>
+            <h2 className="text-xs font-semibold">Active Vacancies</h2>
             <Link href="/passes">
               <Button variant="ghost" size="sm" className="text-primary rounded-lg text-[11px] h-6 px-2 gap-0.5" data-testid="link-view-all-passes">
                 View all
@@ -226,7 +226,7 @@ export default function Dashboard() {
           ) : (
             <div className="flex items-center justify-center py-6 text-center">
               <FileText className="w-4 h-4 text-primary/40 mr-1.5" strokeWidth={2} />
-              <span className="text-[11px] text-muted-foreground">No passes yet</span>
+              <span className="text-[11px] text-muted-foreground">No active vacancies yet</span>
             </div>
           )}
         </GlassCard>
@@ -285,13 +285,13 @@ export default function Dashboard() {
         <h2 className="text-xs font-semibold mb-2">Pipeline Overview</h2>
         <div className="grid grid-cols-7 gap-1.5">
           {[
-            { status: "new", label: "New", icon: UserPlus },
-            { status: "screening", label: "Screen", icon: Users },
-            { status: "shortlisted", label: "Short", icon: CheckCircle2 },
+            { status: "new", label: "Applied", icon: UserPlus },
+            { status: "screening", label: "Review", icon: Users },
+            { status: "shortlisted", label: "Shortlisted", icon: CheckCircle2 },
             { status: "interview", label: "Interview", icon: Calendar },
             { status: "offer", label: "Offer", icon: TrendingUp },
             { status: "hired", label: "Hired", icon: CheckCircle2 },
-            { status: "rejected", label: "Reject", icon: XCircle },
+            { status: "rejected", label: "Rejected", icon: XCircle },
           ].map((item) => (
             <div 
               key={item.status}
@@ -310,4 +310,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

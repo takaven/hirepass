@@ -1,204 +1,45 @@
+import { useQuery } from "@tanstack/react-query";
+import { Building2, ExternalLink, Moon, Shield, Sun } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/components/theme-provider";
-import {
-  Building2,
-  Moon,
-  Sun,
-  Bell,
-  Shield,
-  Database,
-} from "lucide-react";
+
+type PublicConfig = {
+  companyName: string;
+  companyLocation: string;
+  careersContactEmail: string;
+  privacyNoticeUrl: string;
+  privacyNoticeVersion: string;
+};
+
+function ConfigValue({ label, value }: { label: string; value?: string }) {
+  return <div className="rounded-xl bg-muted/30 p-4"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 break-words font-medium">{value || "Not configured"}</p></div>;
+}
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
+  const { data: config, isLoading } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Configure your recruitment system preferences
-        </p>
-      </div>
-
+    <div className="mx-auto max-w-3xl space-y-6">
+      <div><h1 className="text-3xl font-semibold tracking-tight">Settings</h1><p className="mt-1 text-muted-foreground">Deployment identity and working interface preferences</p></div>
       <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Building2 className="w-5 h-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h2 className="font-semibold">Company Information</h2>
-            <p className="text-sm text-muted-foreground">Your organization details</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="company-name">Company Name</Label>
-            <Input 
-              id="company-name"
-              defaultValue="Your Organization"
-              className="rounded-xl"
-              data-testid="input-company-name"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="company-location">Location</Label>
-            <Input 
-              id="company-location"
-              defaultValue="Remote / Hybrid"
-              className="rounded-xl"
-              data-testid="input-company-location"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="company-email">Contact Email</Label>
-            <Input 
-              id="company-email"
-              type="email"
-              placeholder="hr@hirepass.example"
-              className="rounded-xl"
-              data-testid="input-company-email"
-            />
-          </div>
-        </div>
+        <div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-primary/10 p-2"><Building2 className="h-5 w-5 text-primary" /></div><div><h2 className="font-semibold">Company identity</h2><p className="text-sm text-muted-foreground">Read-only values supplied by the deployment owner</p></div></div>
+        {isLoading ? <p className="text-sm text-muted-foreground">Loading deployment configuration…</p> : <div className="grid gap-3 sm:grid-cols-2">
+          <ConfigValue label="Hiring for" value={config?.companyName} />
+          <ConfigValue label="Company location" value={config?.companyLocation} />
+          <ConfigValue label="Careers contact" value={config?.careersContactEmail} />
+          <ConfigValue label="Privacy notice version" value={config?.privacyNoticeVersion} />
+          <div className="rounded-xl bg-muted/30 p-4 sm:col-span-2"><p className="text-sm text-muted-foreground">Candidate privacy notice</p>{config?.privacyNoticeUrl ? <a className="mt-1 inline-flex items-center gap-1 font-medium text-primary underline underline-offset-4" href={config.privacyNoticeUrl} target="_blank" rel="noreferrer">Open configured notice <ExternalLink className="h-4 w-4" /></a> : <p className="mt-1 font-medium">Not configured</p>}</div>
+        </div>}
+        <p className="mt-4 text-xs text-muted-foreground">Change these values through the deployment environment, then restart the application. HirePass does not claim to manage customer privacy policy or retention law.</p>
       </GlassCard>
-
       <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            {theme === "dark" ? (
-              <Moon className="w-5 h-5 text-primary" strokeWidth={1.5} />
-            ) : (
-              <Sun className="w-5 h-5 text-primary" strokeWidth={1.5} />
-            )}
-          </div>
-          <div>
-            <h2 className="font-semibold">Appearance</h2>
-            <p className="text-sm text-muted-foreground">Customize the interface</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Dark Mode</Label>
-              <p className="text-sm text-muted-foreground">
-                Switch between light and dark themes
-              </p>
-            </div>
-            <Switch
-              checked={theme === "dark"}
-              onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-              data-testid="switch-dark-mode"
-            />
-          </div>
-        </div>
+        <div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-primary/10 p-2">{theme === "dark" ? <Moon className="h-5 w-5 text-primary" /> : <Sun className="h-5 w-5 text-primary" />}</div><div><h2 className="font-semibold">Appearance</h2><p className="text-sm text-muted-foreground">A preference stored in this browser</p></div></div>
+        <div className="flex items-center justify-between rounded-xl bg-muted/30 p-4"><div><Label htmlFor="dark-mode">Dark mode</Label><p className="text-sm text-muted-foreground">Switch between light and dark themes</p></div><Switch id="dark-mode" checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} data-testid="switch-dark-mode" /></div>
       </GlassCard>
-
-      <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Bell className="w-5 h-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h2 className="font-semibold">Notifications</h2>
-            <p className="text-sm text-muted-foreground">Configure notification preferences</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Email Notifications</Label>
-              <p className="text-sm text-muted-foreground">
-                Receive email updates for new applications
-              </p>
-            </div>
-            <Switch defaultChecked data-testid="switch-email-notifications" />
-          </div>
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Interview Reminders</Label>
-              <p className="text-sm text-muted-foreground">
-                Get reminded before scheduled interviews
-              </p>
-            </div>
-            <Switch defaultChecked data-testid="switch-interview-reminders" />
-          </div>
-        </div>
-      </GlassCard>
-
-      <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Database className="w-5 h-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h2 className="font-semibold">Data Management</h2>
-            <p className="text-sm text-muted-foreground">Manage your recruitment data</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
-            <div className="space-y-0.5">
-              <Label>Data Retention</Label>
-              <p className="text-sm text-muted-foreground">
-                Keep rejected candidate data for 12 months
-              </p>
-            </div>
-            <Switch defaultChecked data-testid="switch-data-retention" />
-          </div>
-        </div>
-
-        <Separator className="my-6" />
-
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-medium text-destructive">Danger Zone</p>
-            <p className="text-sm text-muted-foreground">
-              Irreversible actions
-            </p>
-          </div>
-          <Button variant="destructive" className="rounded-xl" data-testid="button-export-data">
-            Export All Data
-          </Button>
-        </div>
-      </GlassCard>
-
-      <GlassCard>
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Shield className="w-5 h-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div>
-            <h2 className="font-semibold">About</h2>
-            <p className="text-sm text-muted-foreground">System information</p>
-          </div>
-        </div>
-
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Version</span>
-            <span className="font-medium">1.0.0</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Company</span>
-            <span className="font-medium">Your Organization</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Location</span>
-            <span className="font-medium">Configured per workspace</span>
-          </div>
-        </div>
-      </GlassCard>
+      <GlassCard><div className="flex items-center gap-3"><div className="rounded-xl bg-primary/10 p-2"><Shield className="h-5 w-5 text-primary" /></div><div><h2 className="font-semibold">HirePass by TAKAVEN</h2><p className="text-sm text-muted-foreground">Core launch configuration is managed per isolated customer deployment.</p></div></div></GlassCard>
     </div>
   );
 }
-

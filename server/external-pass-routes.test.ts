@@ -264,6 +264,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     createInterviewAndAdvanceCandidate: async (data: any) => ({ id: 902, ...data }),
     configureInterviewSetup: async () => [],
     updatePassCandidate: async () => undefined,
+    respondToCandidateOffer: async (existingOffer: any, response: string, candidateText: string | null) => ({ ...existingOffer, status: response === "accept" ? "accepted" : response === "decline" ? "declined" : "negotiating", declineReason: response === "decline" ? candidateText : existingOffer.declineReason, negotiationNotes: response === "negotiate" ? candidateText : existingOffer.negotiationNotes }),
     submitInterviewEvaluation: async (data: any) => ({ id: 1, ...data, averageScore: null }),
     createCandidateMessage: async () => ({ id: 1, passCandidateId: 101 }),
     createCandidateDocument: async () => ({ id: 1, passCandidateId: 101 }),
@@ -551,6 +552,51 @@ describe("Stakeholder Pass interview setup integrity", () => {
         const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...validSetup, ...invalid }) });
         assert.equal(response.status, 400);
         assert.equal(mutated, false);
+      });
+    }
+  });
+});
+
+describe("Candidate Pass offer responses", () => {
+  async function submit(body: unknown, status = "pending") {
+    let persisted: any = null;
+    let mutableOffer = { ...offer, status, declineReason: null, negotiationNotes: null };
+    await withServer({
+      getOfferByPassCandidate: async () => mutableOffer,
+      respondToCandidateOffer: async (_offer: any, response: string, candidateText: string | null) => {
+        persisted = { response, candidateText };
+        mutableOffer = { ...mutableOffer, status: response === "accept" ? "accepted" : response === "decline" ? "declined" : "negotiating" };
+        return mutableOffer;
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/offer-response`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      persisted = { ...persisted, httpStatus: response.status };
+    });
+    return persisted;
+  }
+
+  it("accepts without inventing candidate text", async () => {
+    assert.deepEqual(await submit({ response: "accept" }), { response: "accept", candidateText: null, httpStatus: 200 });
+  });
+
+  it("persists only supplied negotiation or decline text and permits either to be omitted", async () => {
+    assert.deepEqual(await submit({ response: "negotiate", message: "Please clarify the start date" }), { response: "negotiate", candidateText: "Please clarify the start date", httpStatus: 200 });
+    assert.deepEqual(await submit({ response: "negotiate" }), { response: "negotiate", candidateText: null, httpStatus: 200 });
+    assert.deepEqual(await submit({ response: "decline", reason: "Accepted another role" }), { response: "decline", candidateText: "Accepted another role", httpStatus: 200 });
+    assert.deepEqual(await submit({ response: "decline" }), { response: "decline", candidateText: null, httpStatus: 200 });
+  });
+
+  it("rejects unknown responses and terminal offers without persistence", async () => {
+    assert.deepEqual(await submit({ response: "maybe" }), { httpStatus: 400 });
+    assert.deepEqual(await submit({ response: "decline" }, "accepted"), { httpStatus: 409 });
+    assert.deepEqual(await submit({ response: "accept" }, "declined"), { httpStatus: 409 });
+  });
+
+  it("retains Candidate Pass expiry and revocation enforcement", async () => {
+    for (const token of ["candidate-expired", "candidate-inactive"]) {
+      await withServer({}, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/candidate-pass/${token}/offer-response`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "accept" }) });
+        assert.equal(response.status, token === "candidate-expired" ? 410 : 404);
       });
     }
   });

@@ -130,6 +130,8 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
   tempDirs.push(uploadDir);
   process.env.HIREPASS_UPLOAD_DIR = uploadDir;
   process.env.HIREPASS_COMPANY_NAME = "Test Company";
+  process.env.HIREPASS_COMPANY_LOCATION = "Dubai";
+  process.env.HIREPASS_CAREERS_CONTACT_EMAIL = "careers@example.test";
   process.env.HIREPASS_PRIVACY_NOTICE_URL = "https://example.test/privacy";
   process.env.HIREPASS_PRIVACY_NOTICE_VERSION = "test-v1";
   let mutableDocument: any = {
@@ -206,6 +208,24 @@ async function login(baseUrl: string) {
 }
 
 describe("HirePass production envelope", () => {
+  it("persists independent stakeholder responsibility flags and rejects an ineligible vacancy owner", async () => {
+    let created: any = null;
+    await withServer({
+      createManager: async (data: any) => (created = { id: 401, ...data }),
+      getManager: async (id: number) => id === 401 ? { ...manager, id, isActive: true, canBeHiringManager: false, canBeInterviewer: true } : undefined,
+    }, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      const stakeholder = await fetch(`${baseUrl}/api/managers`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Interview Specialist", email: "interviewer@example.test", jobTitle: "Interviewer", department: "Operations", isActive: true, canBeHiringManager: false, canBeInterviewer: true }) });
+      assert.equal(stakeholder.status, 201);
+      assert.equal(created.canBeHiringManager, false);
+      assert.equal(created.canBeInterviewer, true);
+
+      const vacancy = await fetch(`${baseUrl}/api/passes`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ hiringManagerId: 401 }) });
+      assert.equal(vacancy.status, 400);
+      assert.match((await vacancy.json() as any).error, /eligible stakeholder/);
+    });
+  });
+
   it("exposes direct open-vacancy details but protects the Candidate Library", async () => {
     await withServer({}, async (baseUrl) => {
       const direct = await fetch(`${baseUrl}/api/public/passes/10`);
@@ -213,6 +233,16 @@ describe("HirePass production envelope", () => {
       const publicPass = await direct.json() as any;
       assert.equal(publicPass.positionTitle, pass.positionTitle);
       assert.equal(publicPass.hiringManagerId, undefined);
+      assert.equal(publicPass.managerNotes, undefined);
+      assert.equal(publicPass.notes, undefined);
+      const publicConfig = await (await fetch(`${baseUrl}/api/public/config`)).json() as any;
+      assert.deepEqual(publicConfig, {
+        companyName: "Test Company",
+        companyLocation: "Dubai",
+        careersContactEmail: "careers@example.test",
+        privacyNoticeUrl: "https://example.test/privacy",
+        privacyNoticeVersion: "test-v1",
+      });
       assert.equal((await fetch(`${baseUrl}/api/candidates/201/library`)).status, 401);
       const cookie = await login(baseUrl);
       const library = await fetch(`${baseUrl}/api/candidates/201/library`, { headers: { cookie } });

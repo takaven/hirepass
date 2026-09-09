@@ -40,7 +40,7 @@ const navItems = [
     icon: Calendar,
   },
   {
-    title: "Managers",
+    title: "Stakeholders",
     url: "/managers",
     icon: Building2,
   },
@@ -141,7 +141,7 @@ export function AppSidebar() {
         </SidebarMenu>
         <div className="mt-2 mx-1 px-2.5 py-1.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.05]">
           <p className="text-[10px] text-muted-foreground text-center">
-            Controlled hiring passes
+            Hiring without the chasing.
           </p>
         </div>
       </SidebarFooter>

@@ -47,7 +47,7 @@ interface PassCandidate {
 }
 
 const interviewFormSchema = z.object({
-  passId: z.string().min(1, "Recruitment pass is required"),
+  passId: z.string().min(1, "Vacancy is required"),
   passCandidateId: z.string().min(1, "Candidate is required"),
   interviewerId: z.string().min(1, "Interviewer is required"),
   interviewDate: z.string().min(1, "Date is required"),
@@ -181,7 +181,7 @@ export default function InterviewForm() {
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-primary" strokeWidth={1.5} />
-                    Recruitment Pass
+                    Vacancy
                   </FormLabel>
                   <Select 
                     onValueChange={(value) => {
@@ -194,7 +194,7 @@ export default function InterviewForm() {
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-pass">
-                        <SelectValue placeholder="Select recruitment pass" />
+                        <SelectValue placeholder="Select vacancy" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

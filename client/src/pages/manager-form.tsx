@@ -45,6 +45,8 @@ const managerFormSchema = z.object({
   jobTitle: z.string().min(1, "Job title is required"),
   phone: z.string().optional(),
   isActive: z.boolean().default(true),
+  canBeHiringManager: z.boolean().default(true),
+  canBeInterviewer: z.boolean().default(true),
 });
 
 type ManagerFormValues = z.infer<typeof managerFormSchema>;
@@ -69,6 +71,8 @@ export default function ManagerForm() {
       jobTitle: "",
       phone: "",
       isActive: true,
+      canBeHiringManager: true,
+      canBeInterviewer: true,
     },
     values: manager ? {
       name: manager.name,
@@ -77,6 +81,8 @@ export default function ManagerForm() {
       jobTitle: manager.jobTitle,
       phone: manager.phone || "",
       isActive: manager.isActive ?? true,
+      canBeHiringManager: manager.canBeHiringManager ?? true,
+      canBeInterviewer: manager.canBeInterviewer ?? true,
     } : undefined,
   });
 
@@ -96,17 +102,17 @@ export default function ManagerForm() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/managers"] });
       toast({
-        title: isEditing ? "Manager updated" : "Manager added",
+        title: isEditing ? "Stakeholder updated" : "Stakeholder added",
         description: isEditing 
-          ? "The manager profile has been updated."
-          : "The manager has been added to the directory.",
+          ? "The stakeholder profile has been updated."
+          : "The stakeholder has been added to the directory.",
       });
       setLocation("/managers");
     },
     onError: () => {
       toast({
         title: "Error",
-        description: `Failed to ${isEditing ? "update" : "add"} manager. Please try again.`,
+        description: `Failed to ${isEditing ? "update" : "add"} stakeholder. Please try again.`,
         variant: "destructive",
       });
     },
@@ -130,10 +136,10 @@ export default function ManagerForm() {
         </Link>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
-            {isEditing ? "Edit Manager" : "Add Manager"}
+            {isEditing ? "Edit Stakeholder" : "Add Stakeholder"}
           </h1>
           <p className="text-muted-foreground mt-1">
-            {isEditing ? "Update manager information" : "Add a hiring manager or interviewer"}
+            {isEditing ? "Update stakeholder information and responsibilities" : "Add a hiring stakeholder"}
           </p>
         </div>
       </div>
@@ -168,7 +174,7 @@ export default function ManagerForm() {
                     Email
                   </FormLabel>
                   <FormControl>
-                    <Input {...field} type="email" placeholder="manager@hirepass.example" className="rounded-xl" data-testid="input-email" />
+                    <Input {...field} type="email" placeholder="stakeholder@company.example" className="rounded-xl" data-testid="input-email" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -243,13 +249,33 @@ export default function ManagerForm() {
 
             <FormField
               control={form.control}
+              name="canBeHiringManager"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-xl bg-muted/30 p-4">
+                  <div className="space-y-0.5"><FormLabel>Can be assigned as Hiring Manager</FormLabel><FormDescription>May own a vacancy and its hiring decisions.</FormDescription></div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-hiring-manager" /></FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="canBeInterviewer"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-xl bg-muted/30 p-4">
+                  <div className="space-y-0.5"><FormLabel>Can conduct interviews</FormLabel><FormDescription>May be selected as the primary interviewer.</FormDescription></div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-interviewer" /></FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="isActive"
               render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-xl bg-muted/30 p-4">
                   <div className="space-y-0.5">
                     <FormLabel>Active Status</FormLabel>
                     <FormDescription>
-                      Active managers can be assigned to interviews and job requisitions
+                      Only active stakeholders can receive Passes or assignments
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -276,7 +302,7 @@ export default function ManagerForm() {
                 data-testid="button-submit"
               >
                 {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isEditing ? "Update Manager" : "Add Manager"}
+                {isEditing ? "Update Stakeholder" : "Add Stakeholder"}
               </Button>
             </div>
           </form>
@@ -285,4 +311,3 @@ export default function ManagerForm() {
     </div>
   );
 }
-

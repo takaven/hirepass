@@ -251,7 +251,7 @@ export default function PassCandidates() {
     onSuccess: (data) => {
       const link = `${window.location.origin}/manager-pass/${data.token}`;
       setGeneratedManagerLink(link);
-      toast({ title: "Manager link created!" });
+      toast({ title: "Stakeholder Pass link created" });
     },
     onError: () => {
       toast({ title: "Failed to create manager link", variant: "destructive" });

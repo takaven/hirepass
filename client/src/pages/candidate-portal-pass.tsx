@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
 import type { CandidatePassActionState, CandidatePassViewState } from "@shared/pass-state";
+import { validateClientUpload } from "@/lib/upload-preflight";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -161,6 +162,8 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   const [messageText, setMessageText] = useState("");
   const [showSlotDialog, setShowSlotDialog] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  const [offerResponseMode, setOfferResponseMode] = useState<"negotiate" | "decline" | null>(null);
+  const [offerResponseText, setOfferResponseText] = useState("");
 
   const { data, isLoading, error } = useQuery<CandidatePassData>({
     queryKey: ["/api/candidate-pass", token],
@@ -197,6 +200,8 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       apiRequest("POST", `/api/candidate-pass/${token}/offer-response`, response),
     onSuccess: () => {
       toast({ title: "Offer response submitted", description: "Your Candidate Pass has been updated." });
+      setOfferResponseMode(null);
+      setOfferResponseText("");
       queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
     },
     onError: () => toast({ title: "Offer response could not be submitted", variant: "destructive" }),
@@ -463,7 +468,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-300">
-                  {offer.salary && <p>Salary: {offer.salary.toLocaleString()} AED/month</p>}
+                  {offer.salary && <p>Salary: {offer.salaryCurrency || "AED"} {offer.salary.toLocaleString()}</p>}
                   {offer.startDate && <p>Start date: {offer.startDate}</p>}
                   <p>Status: {offer.status}</p>
                 </div>
@@ -472,10 +477,10 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                     <Button className="bg-emerald-500 hover:bg-emerald-600" onClick={() => respondOfferMutation.mutate({ response: "accept" })}>
                       Accept
                     </Button>
-                    <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => respondOfferMutation.mutate({ response: "negotiate", message: "I would like to discuss the offer" })}>
+                    <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => setOfferResponseMode("negotiate")}>
                       Discuss
                     </Button>
-                    <Button variant="destructive" onClick={() => respondOfferMutation.mutate({ response: "decline", reason: "Personal reasons" })}>
+                    <Button variant="destructive" onClick={() => setOfferResponseMode("decline")}>
                       Decline
                     </Button>
                   </div>
@@ -483,6 +488,25 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               </CardContent>
             </Card>
           )}
+
+          <Dialog open={offerResponseMode !== null} onOpenChange={(open) => { if (!open) { setOfferResponseMode(null); setOfferResponseText(""); } }}>
+            <DialogContent className="border-slate-700 bg-slate-900 text-slate-100">
+              <DialogHeader>
+                <DialogTitle>{offerResponseMode === "negotiate" ? "Discuss this offer" : "Decline this offer"}</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  {offerResponseMode === "negotiate" ? "Write the message you want the hiring team to receive, or continue without a message." : "You may provide a reason, or decline without one."}
+                </DialogDescription>
+              </DialogHeader>
+              <Textarea value={offerResponseText} onChange={(event) => setOfferResponseText(event.target.value)} maxLength={2000} placeholder={offerResponseMode === "negotiate" ? "Your message (optional)" : "Reason (optional)"} />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setOfferResponseMode(null); setOfferResponseText(""); }}>Cancel</Button>
+                <Button variant={offerResponseMode === "decline" ? "destructive" : "default"} disabled={respondOfferMutation.isPending} onClick={() => {
+                  if (offerResponseMode === "negotiate") respondOfferMutation.mutate({ response: "negotiate", message: offerResponseText.trim() || undefined });
+                  if (offerResponseMode === "decline") respondOfferMutation.mutate({ response: "decline", reason: offerResponseText.trim() || undefined });
+                }}>{offerResponseMode === "negotiate" ? "Send response" : "Decline offer"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Card id="pass-documents" className="border-slate-800 bg-slate-900/80">
             <CardHeader>
@@ -511,10 +535,15 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                             Submit file
                             <input
                               type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                               className="sr-only"
                               onChange={(event) => {
                                 const file = event.target.files?.[0];
-                                if (file) submitDocumentMutation.mutate({ documentId: doc.id, file });
+                                if (file) {
+                                  const issue = validateClientUpload(file, "candidate-document");
+                                  if (issue) toast({ title: "Document not selected", description: issue, variant: "destructive" });
+                                  else submitDocumentMutation.mutate({ documentId: doc.id, file });
+                                }
                                 event.currentTarget.value = "";
                               }}
                               data-testid={`document-upload-${doc.id}`}
@@ -529,7 +558,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               {pendingDocs.length > 0 && (
                 <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
                   <Upload className="h-4 w-4" />
-                  Upload PDF, JPG or PNG files only. Your document is stored against this Candidate Pass.
+                  Upload PDF, JPG or PNG files up to 10 MB. Your document is stored against this Candidate Pass.
                 </p>
               )}
             </CardContent>

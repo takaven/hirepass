@@ -126,7 +126,7 @@ export default function HrPassControl() {
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Candidate actions</p><p className="text-2xl font-semibold">{counts.candidate}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Manager decisions</p><p className="text-2xl font-semibold">{counts.manager}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stakeholder decisions</p><p className="text-2xl font-semibold">{counts.manager}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stalled Passes</p><p className="text-2xl font-semibold">{counts.stalled}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Expired / revoked</p><p className="text-2xl font-semibold">{counts.expired}</p></CardContent></Card>
       </div>
@@ -134,7 +134,7 @@ export default function HrPassControl() {
       {isLoading ? (
         <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading Pass controls...</CardContent></Card>
       ) : items.length === 0 ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">No recruitment Passes require attention.</CardContent></Card>
+        <Card><CardContent className="p-6 text-sm text-muted-foreground">No hiring Passes require attention.</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
@@ -143,7 +143,7 @@ export default function HrPassControl() {
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
                     <CardTitle className="text-base">{item.title}</CardTitle>
-                    <p className="mt-1 text-xs text-muted-foreground">{item.readablePassId} · {item.department || "No department"} · {item.managerName || "No manager"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.readablePassId} · {item.department || "No department"} · {item.managerName || "No primary stakeholder"}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className={waitingStyles[item.waitingOn]}>{waitingLabels[item.waitingOn]}</Badge>
@@ -170,7 +170,7 @@ export default function HrPassControl() {
                           variant="outline"
                           onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/manager-link` })}
                         >
-                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Issue Manager Pass
+                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Issue Stakeholder Pass
                         </Button>
                         {item.activeManagerLink && (
                           <>

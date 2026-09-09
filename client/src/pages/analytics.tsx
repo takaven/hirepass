@@ -113,7 +113,7 @@ export default function Analytics() {
               <Briefcase className="w-5 h-5 text-green-600 dark:text-green-400" strokeWidth={2} />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Active Passes</p>
+              <p className="text-sm text-muted-foreground">Active Vacancies</p>
               <p className="text-2xl font-semibold" data-testid="text-active-passes">
                 {statusCounts.open + statusCounts.in_progress}
               </p>
@@ -169,7 +169,7 @@ export default function Analytics() {
           <div className="p-4">
             <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-green-600" strokeWidth={2} />
-              Recruitment Pass Status
+              Vacancy and Pass Status
             </h2>
             {passStatusData.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>

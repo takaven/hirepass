@@ -53,8 +53,8 @@ export default function Managers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/managers"] });
       toast({
-        title: "Manager removed",
-        description: "The manager has been removed from the directory.",
+        title: "Stakeholder removed",
+        description: "The stakeholder has been removed from the directory.",
       });
       setDeleteDialogOpen(false);
       setManagerToDelete(null);
@@ -62,7 +62,7 @@ export default function Managers() {
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to remove manager. Please try again.",
+        description: "Failed to remove stakeholder. Please try again.",
         variant: "destructive",
       });
     },
@@ -85,15 +85,15 @@ export default function Managers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Managers</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Hiring Stakeholders</h1>
           <p className="text-muted-foreground mt-1">
-            Hiring managers and interviewers directory
+            People who can own vacancies, review candidates or conduct interviews
           </p>
         </div>
         <Link href="/managers/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-manager">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            Add Manager
+            Add Stakeholder
           </Button>
         </Link>
       </div>
@@ -102,7 +102,7 @@ export default function Managers() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
           <Input
-            placeholder="Search managers..."
+            placeholder="Search stakeholders..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 rounded-xl glass-input border-0"
@@ -180,13 +180,15 @@ export default function Managers() {
                 )}
               </div>
 
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Badge 
                   variant="outline" 
                   className={`rounded-full ${manager.isActive ? "border-primary text-primary" : "border-muted-foreground text-muted-foreground"}`}
                 >
                   {manager.isActive ? "Active" : "Inactive"}
                 </Badge>
+                {manager.canBeHiringManager && <Badge variant="secondary">Hiring Manager</Badge>}
+                {manager.canBeInterviewer && <Badge variant="secondary">Interviewer</Badge>}
               </div>
             </GlassCard>
           ))}
@@ -197,18 +199,18 @@ export default function Managers() {
             <div className="p-4 rounded-3xl bg-primary/10 mb-4">
               <UserCircle className="w-12 h-12 text-primary" strokeWidth={1} />
             </div>
-            <h3 className="text-lg font-semibold">No managers found</h3>
+            <h3 className="text-lg font-semibold">No stakeholders found</h3>
             <p className="text-muted-foreground mt-1 max-w-sm">
               {searchQuery 
                 ? "Try adjusting your search"
-                : "Add hiring managers to assign interviews"
+                : "Add stakeholders and choose their hiring responsibilities"
               }
             </p>
             {!searchQuery && (
               <Link href="/managers/new">
                 <Button className="mt-6 rounded-xl gap-2" data-testid="button-add-first-manager">
                   <Plus className="w-4 h-4" strokeWidth={1.5} />
-                  Add First Manager
+                  Add First Stakeholder
                 </Button>
               </Link>
             )}
@@ -219,7 +221,7 @@ export default function Managers() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="glass-card border-0 rounded-3xl">
           <DialogHeader>
-            <DialogTitle>Remove Manager</DialogTitle>
+            <DialogTitle>Remove Stakeholder</DialogTitle>
             <DialogDescription>
               Are you sure you want to remove {managerToDelete?.name} from the directory?
             </DialogDescription>
