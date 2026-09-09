@@ -63,6 +63,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Pass, Candidate, PassPosition } from "@shared/schema";
+import { configuredStages } from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -80,8 +81,8 @@ interface PassCandidate {
 type PipelineData = Record<string, PassCandidate[]>;
 
 const STAGES = [
-  { key: "new", label: "New", color: "bg-gray-500" },
-  { key: "screening", label: "Screening", color: "bg-blue-500" },
+  { key: "new", label: "Applied", color: "bg-gray-500" },
+  { key: "screening", label: "Review", color: "bg-blue-500" },
   { key: "shortlisted", label: "Shortlisted", color: "bg-indigo-500" },
   { key: "interview", label: "Interview", color: "bg-purple-500" },
   { key: "offer", label: "Offer", color: "bg-amber-500" },
@@ -121,6 +122,7 @@ export default function PassCandidates() {
     queryKey: ["/api/passes", passId],
     enabled: !!passId,
   });
+  const visibleStages = STAGES.filter((stage) => stage.key === "rejected" || configuredStages(pass?.enabledStages).includes(stage.key as any));
 
   const { data: pipeline, isLoading: pipelineLoading } = useQuery<PipelineData>({
     queryKey: ["/api/passes", passId, "candidates", "pipeline"],
@@ -494,7 +496,7 @@ export default function PassCandidates() {
                   <SelectValue placeholder="Move to Stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAGES.map(stage => (
+                  {visibleStages.map(stage => (
                     <SelectItem key={stage.key} value={stage.key}>
                       {stage.label}
                     </SelectItem>
@@ -517,7 +519,7 @@ export default function PassCandidates() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {STAGES.map(stage => {
+        {visibleStages.map(stage => {
           const candidates = filteredPipeline?.[stage.key] || [];
           const isOver = dragOverColumn === stage.key;
           
@@ -723,7 +725,7 @@ export default function PassCandidates() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {STAGES.map(stage => (
+                      {visibleStages.map(stage => (
                         <SelectItem key={stage.key} value={stage.key}>
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${stage.color}`} />

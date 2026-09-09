@@ -97,6 +97,7 @@ export interface IStorage {
   // Interview Evaluations
   getEvaluationsByInterview(interviewId: number): Promise<InterviewEvaluation[]>;
   createEvaluation(evaluation: InsertInterviewEvaluation): Promise<InterviewEvaluation>;
+  submitInterviewEvaluation(evaluation: InsertInterviewEvaluation, passCandidateId: number): Promise<InterviewEvaluation>;
 
   // Offers
   getOffers(passId: number): Promise<Offer[]>;
@@ -188,6 +189,8 @@ export interface IStorage {
   getCandidateTimelineEvents(passCandidateId: number): Promise<CandidateTimelineEvent[]>;
   getAvailableInterviewSlots(passId: number): Promise<InterviewSlot[]>;
   bookInterviewSlot(slotId: number, passCandidateId: number, passId: number): Promise<InterviewSlot | undefined>;
+  bookInterviewSlotAndCreateInterview(slotId: number, passCandidateId: number, passId: number): Promise<{ slot: InterviewSlot; interview: Interview } | undefined>;
+  rescheduleInterview(id: number, changes: Partial<InsertInterview>): Promise<Interview | undefined>;
   getOfferByPassCandidate(passCandidateId: number): Promise<Offer | undefined>;
 }
 
@@ -518,6 +521,21 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async rescheduleInterview(id: number, changes: Partial<InsertInterview>): Promise<Interview | undefined> {
+    return db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(interviews).where(eq(interviews.id, id)).for("update");
+      if (!existing) return undefined;
+      if (existing.slotId) {
+        await tx.update(interviewSlots).set({ isBooked: false, bookedBy: null, bookedAt: null })
+          .where(and(eq(interviewSlots.id, existing.slotId), eq(interviewSlots.bookedBy, existing.passCandidateId)));
+      }
+      const [updated] = await tx.update(interviews)
+        .set({ ...changes, slotId: null, updatedAt: new Date() })
+        .where(eq(interviews.id, id)).returning();
+      return updated;
+    });
+  }
+
   async deleteInterview(id: number): Promise<boolean> {
     const result = await db.delete(interviews).where(eq(interviews.id, id));
     return (result.rowCount ?? 0) > 0;
@@ -560,6 +578,14 @@ export class DatabaseStorage implements IStorage {
       .values({ ...evaluation, averageScore: averageScore as any })
       .returning();
     return newEval;
+  }
+
+  async submitInterviewEvaluation(evaluation: InsertInterviewEvaluation, passCandidateId: number): Promise<InterviewEvaluation> {
+    return db.transaction(async (tx) => {
+      const [created] = await tx.insert(interviewEvaluations).values({ ...evaluation, averageScore: null }).returning();
+      await tx.update(passCandidates).set({ interviewRecommendation: evaluation.recommendation, interviewScore: null, updatedAt: new Date() }).where(eq(passCandidates.id, passCandidateId));
+      return created;
+    });
   }
 
   // Offers
@@ -1032,7 +1058,8 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(interviewSlots)
       .where(and(
         eq(interviewSlots.passId, passId),
-        eq(interviewSlots.isBooked, false)
+        eq(interviewSlots.isBooked, false),
+        eq(interviewSlots.isActive, true)
       ))
       .orderBy(interviewSlots.slotDate, interviewSlots.startTime);
   }
@@ -1048,6 +1075,32 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updated;
+  }
+
+  async bookInterviewSlotAndCreateInterview(slotId: number, passCandidateId: number, passId: number): Promise<{ slot: InterviewSlot; interview: Interview } | undefined> {
+    return db.transaction(async (tx) => {
+      const [slot] = await tx.update(interviewSlots)
+        .set({ isBooked: true, bookedBy: passCandidateId, bookedAt: new Date() })
+        .where(and(eq(interviewSlots.id, slotId), eq(interviewSlots.passId, passId), eq(interviewSlots.isBooked, false), eq(interviewSlots.isActive, true)))
+        .returning();
+      if (!slot) return undefined;
+      const [interview] = await tx.insert(interviews).values({
+        passId,
+        passCandidateId,
+        interviewDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        duration: slot.duration,
+        format: slot.format,
+        location: slot.location,
+        meetingLink: slot.meetingLink,
+        interviewerId: slot.interviewerId,
+        slotId: slot.id,
+        status: "scheduled",
+      }).returning();
+      await tx.update(passCandidates).set({ status: "interview", updatedAt: new Date() }).where(eq(passCandidates.id, passCandidateId));
+      return { slot, interview };
+    });
   }
 
   async getOfferByPassCandidate(passCandidateId: number): Promise<Offer | undefined> {

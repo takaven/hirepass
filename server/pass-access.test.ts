@@ -165,7 +165,7 @@ describe("Candidate Pass action state", () => {
 
     assert.equal(state.latestUpdate, "Hiring Manager submitted a decision · today, 10:32");
     assert.equal(state.latestUpdateAt, "2026-08-22T10:32:00.000Z");
-    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> HR");
+    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> Hiring team");
     assert.equal(state.latestUpdate.includes("Private Manager Name"), false);
     assert.equal(state.latestUpdate.includes("internalScore"), false);
   });
@@ -328,8 +328,8 @@ describe("Manager Pass action state", () => {
 
     assert.equal(state.actionState, "WAITING");
     assert.equal(state.nextDecision.kind, "NONE");
-    assert.equal(state.waitingOn, "HR");
-    assert.equal(state.expectedMovement, "Expected movement: HR will update this Pass when the next step is ready.");
+    assert.equal(state.waitingOn, "Hiring team");
+    assert.equal(state.expectedMovement, "Expected movement: the hiring team will update this Pass when the next step is ready.");
   });
 
   it("uses natural expected movement copy for manager-owned candidate states", () => {
@@ -403,8 +403,8 @@ describe("Manager Pass action state", () => {
     });
 
     assert.equal(state.actionState, "COMPLETED");
-    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> HR");
-    assert.equal(state.waitingOn, "HR");
+    assert.equal(state.passHandoff, "Pass Handoff: Hiring stakeholder -> Hiring team");
+    assert.equal(state.waitingOn, "Hiring team");
   });
 
   it("keeps manager candidate actions scoped to the pass", () => {

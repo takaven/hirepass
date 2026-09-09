@@ -80,6 +80,7 @@ export const passes = pgTable('passes', {
   
   status: varchar('status', { length: 50 }).default('draft'),
   currentStep: varchar('current_step', { length: 50 }).default('request'),
+  enabledStages: jsonb('enabled_stages').$type<string[]>().default(["new", "screening", "shortlisted", "interview", "offer", "hired"]).notNull(),
   
   jobDescriptionDraft: text('job_description_draft'),
   jobDescriptionFinal: text('job_description_final'),
@@ -284,6 +285,8 @@ export const interviews = pgTable('interviews', {
   format: varchar('format', { length: 50 }).notNull(),
   location: varchar('location', { length: 255 }),
   meetingLink: varchar('meeting_link', { length: 500 }),
+  interviewerId: integer('interviewer_id').references(() => managers.id),
+  slotId: integer('slot_id'),
   
   roundNumber: integer('round_number').default(1),
   roundName: varchar('round_name', { length: 100 }),
@@ -558,6 +561,7 @@ export const passCandidatesRelations = relations(passCandidates, ({ one, many })
 export const interviewsRelations = relations(interviews, ({ one, many }) => ({
   pass: one(passes, { fields: [interviews.passId], references: [passes.id] }),
   passCandidate: one(passCandidates, { fields: [interviews.passCandidateId], references: [passCandidates.id] }),
+  interviewer: one(managers, { fields: [interviews.interviewerId], references: [managers.id] }),
   evaluations: many(interviewEvaluations)
 }));
 
@@ -565,6 +569,7 @@ export const managersRelations = relations(managers, ({ many }) => ({
   passesAsHiringManager: many(passes),
   panelInterviewers: many(panelInterviewers),
   evaluations: many(interviewEvaluations),
+  interviews: many(interviews),
   feedback: many(managerFeedback)
 }));
 
@@ -679,6 +684,7 @@ export const interviewSlots = pgTable('interview_slots', {
   slotDate: date('slot_date').notNull(),
   startTime: varchar('start_time', { length: 10 }).notNull(),
   endTime: varchar('end_time', { length: 10 }).notNull(),
+  duration: integer('duration').default(60).notNull(),
   
   format: varchar('format', { length: 50 }).notNull(), // online, in-person, hybrid
   location: varchar('location', { length: 255 }),

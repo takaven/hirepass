@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertTriangle,
@@ -71,7 +72,7 @@ async function fetchManagerPass(token: string): Promise<ManagerPassData> {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const error = new Error(payload.error || "Unable to open this Manager Pass");
+    const error = new Error(payload.error || "Unable to open this Stakeholder Pass");
     (error as Error & { status?: number }).status = response.status;
     throw error;
   }
@@ -88,10 +89,10 @@ function AccessState({ status, message }: { status?: number; message?: string })
         <CardContent className="pt-8 text-center">
           <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-slate-400" : "text-red-300"}`} />
           <h1 className="mb-2 text-xl font-semibold text-white">
-            {isExpired ? "This Manager Pass has expired" : "This Manager Pass is not active"}
+            {isExpired ? "This Stakeholder Pass has expired" : "This Stakeholder Pass is not active"}
           </h1>
           <p className="text-sm text-slate-400">
-            {message || "Ask HR to issue a fresh Pass if your input is still required."}
+            {message || "Ask the hiring team to issue a fresh Pass if your input is still required."}
           </p>
         </CardContent>
       </Card>
@@ -112,6 +113,12 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const [showFinalDecisionDialog, setShowFinalDecisionDialog] = useState(false);
   const [evaluationRecommendation, setEvaluationRecommendation] = useState("proceed");
   const [finalDecision, setFinalDecision] = useState("hire");
+  const [availabilityDates, setAvailabilityDates] = useState("");
+  const [availabilityTimes, setAvailabilityTimes] = useState("");
+  const [interviewDuration, setInterviewDuration] = useState("45");
+  const [interviewFormat, setInterviewFormat] = useState("online");
+  const [interviewLocation, setInterviewLocation] = useState("");
+  const [meetingLink, setMeetingLink] = useState("");
 
   const { data, isLoading, error } = useQuery<ManagerPassData>({
     queryKey: ["/api/manager-pass", token],
@@ -125,7 +132,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const approveRequestMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/approve-jd`, {}),
     onSuccess: () => {
-      toast({ title: "Hiring request approved", description: "HR has your decision." });
+      toast({ title: "Hiring request approved", description: "The hiring team has your decision." });
       setShowRequestDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
     },
@@ -135,7 +142,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const requestChangesMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/request-jd-changes`, { feedback: decisionNotes }),
     onSuccess: () => {
-      toast({ title: "Changes requested", description: "HR has your feedback." });
+      toast({ title: "Changes requested", description: "The hiring team has your feedback." });
       setDecisionNotes("");
       setShowRequestDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
@@ -146,7 +153,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const shortlistMutation = useMutation({
     mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/shortlist`),
     onSuccess: () => {
-      toast({ title: "Candidate shortlisted", description: "Your Manager Pass has been updated." });
+      toast({ title: "Candidate advanced", description: "Your Stakeholder Pass has been updated." });
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
     },
     onError: () => toast({ title: "Candidate decision could not be submitted", variant: "destructive" }),
@@ -155,7 +162,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const rejectMutation = useMutation({
     mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
     onSuccess: () => {
-      toast({ title: "Candidate rejected", description: "Your Manager Pass has been updated." });
+      toast({ title: "Candidate rejected", description: "Your Stakeholder Pass has been updated." });
       setDecisionNotes("");
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
     },
@@ -166,13 +173,17 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
     mutationFn: () =>
       apiRequest("POST", `/api/manager-pass/${token}/interview-setup`, {
         technicalAssessmentRequired: false,
-        interviewFormat: "online",
+        interviewFormat,
         interviewRounds: 1,
-        interviewDuration: 45,
+        interviewDuration: Number(interviewDuration),
+        availableDates: availabilityDates.split(",").map((value) => value.trim()).filter(Boolean),
+        timeSlots: availabilityTimes.split(",").map((value) => value.trim()).filter(Boolean),
+        location: interviewLocation || null,
+        meetingLink: meetingLink || null,
         isPanelInterview: false,
       }),
     onSuccess: () => {
-      toast({ title: "Interview availability submitted", description: "HR can now schedule the next step." });
+      toast({ title: "Interview availability submitted", description: "The hiring team can now continue the next step." });
       setShowInterviewDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
     },
@@ -183,19 +194,12 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
     mutationFn: (interviewId: number) =>
       apiRequest("POST", `/api/manager-pass/${token}/evaluations`, {
         interviewId,
-        educationalBackground: 4,
-        priorWorkExperience: 4,
-        technicalSkills: 4,
-        personalityTeamFit: 4,
-        initiative: 4,
-        timeManagement: 4,
-        averageScore: "4.00",
         recommendation: evaluationRecommendation,
         notesObservations: decisionNotes,
         finalComments: decisionNotes,
       }),
     onSuccess: () => {
-      toast({ title: "Evaluation submitted", description: "HR has your structured feedback." });
+      toast({ title: "Evaluation submitted", description: "The hiring team has your feedback." });
       setDecisionNotes("");
       setShowEvaluationDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
@@ -209,7 +213,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         decisions: [{ passCandidateId: candidateId, decision, notes: decisionNotes }],
       }),
     onSuccess: () => {
-      toast({ title: "Final decision submitted", description: "You're done for now. HR has your decision." });
+      toast({ title: "Final decision submitted", description: "You're done for now. The hiring team has your decision." });
       setDecisionNotes("");
       setShowFinalDecisionDialog(false);
       queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
@@ -222,7 +226,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
         <div className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-300" />
-          <p className="text-sm text-slate-400">Opening Manager Pass...</p>
+          <p className="text-sm text-slate-400">Opening Stakeholder Pass...</p>
         </div>
       </div>
     );
@@ -246,7 +250,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         return (
           <div className="grid gap-2 sm:grid-cols-2">
             <Button className="min-h-11 bg-emerald-500 hover:bg-emerald-600" onClick={() => targetCandidate?.id && shortlistMutation.mutate(targetCandidate.id)}>
-              Shortlist candidate
+              Advance candidate
             </Button>
             <Button variant="destructive" className="min-h-11" onClick={() => targetCandidate?.id && rejectMutation.mutate(targetCandidate.id)}>
               Reject candidate
@@ -275,7 +279,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
               className="h-auto w-24 shrink-0 sm:w-32"
             />
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Manager Pass</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Hiring Stakeholder Pass</p>
               <h1 className="truncate text-base font-semibold text-white">{pass.positionTitle}</h1>
             </div>
           </div>
@@ -373,7 +377,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
               <div>
                 <h3 className="font-semibold text-white">You're done for now</h3>
                 <p className="mt-1 text-sm leading-6 text-emerald-100/80">
-                  HR has your decision. This Pass will show a new action if your input is needed again.
+                  The hiring team has your decision. This Pass will show a new action if your input is needed again.
                 </p>
               </div>
             </CardContent>
@@ -473,8 +477,8 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             </CardHeader>
             <CardContent className="text-sm leading-6 text-slate-300">
               {managerPassState.actionState === "ACTION_REQUIRED"
-                ? "Submit the decision above. HR receives it and the Pass will update to the next waiting or completion state."
-                : "No action is needed now. HR will update this Pass when manager input is needed again."}
+                ? "Submit the decision above. The hiring team receives it and the Pass will update to the next waiting or completion state."
+                : "No action is needed now. The hiring team will update this Pass when stakeholder input is needed again."}
             </CardContent>
           </Card>
         </section>
@@ -484,12 +488,12 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         <DialogContent className="border-slate-700 bg-slate-900 text-white">
           <DialogHeader>
             <DialogTitle>Review hiring request</DialogTitle>
-            <DialogDescription className="text-slate-400">Approve the request or ask HR for specific changes.</DialogDescription>
+            <DialogDescription className="text-slate-400">Approve the request or ask the hiring team for specific changes.</DialogDescription>
           </DialogHeader>
           <Textarea
             value={decisionNotes}
             onChange={(event) => setDecisionNotes(event.target.value)}
-            placeholder="Optional notes for HR..."
+            placeholder="Optional notes for the hiring team..."
             className="border-slate-700 bg-slate-950 text-white"
           />
           <DialogFooter className="gap-2 sm:gap-0">
@@ -505,11 +509,15 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         <DialogContent className="border-slate-700 bg-slate-900 text-white">
           <DialogHeader>
             <DialogTitle>Set interview availability</DialogTitle>
-            <DialogDescription className="text-slate-400">Share interview availability so HR can invite shortlisted candidates.</DialogDescription>
+            <DialogDescription className="text-slate-400">Share real availability so candidates can choose a valid slot.</DialogDescription>
           </DialogHeader>
-          <p className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
-            Format: online · Round: 1 · Duration: 45 minutes
-          </p>
+          <div className="grid gap-3">
+            <div><Label>Dates (comma-separated YYYY-MM-DD)</Label><Input value={availabilityDates} onChange={(e) => setAvailabilityDates(e.target.value)} placeholder="2026-10-05, 2026-10-06" className="mt-1 border-slate-700 bg-slate-950" /></div>
+            <div><Label>Start times (comma-separated HH:MM)</Label><Input value={availabilityTimes} onChange={(e) => setAvailabilityTimes(e.target.value)} placeholder="09:00, 14:30" className="mt-1 border-slate-700 bg-slate-950" /></div>
+            <div className="grid grid-cols-2 gap-3"><div><Label>Duration</Label><Select value={interviewDuration} onValueChange={setInterviewDuration}><SelectTrigger className="mt-1 border-slate-700 bg-slate-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">30 minutes</SelectItem><SelectItem value="45">45 minutes</SelectItem><SelectItem value="60">60 minutes</SelectItem><SelectItem value="90">90 minutes</SelectItem></SelectContent></Select></div><div><Label>Format</Label><Select value={interviewFormat} onValueChange={setInterviewFormat}><SelectTrigger className="mt-1 border-slate-700 bg-slate-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="in-person">In person</SelectItem><SelectItem value="hybrid">Hybrid</SelectItem></SelectContent></Select></div></div>
+            <div><Label>Location (if applicable)</Label><Input value={interviewLocation} onChange={(e) => setInterviewLocation(e.target.value)} className="mt-1 border-slate-700 bg-slate-950" /></div>
+            <div><Label>Meeting link (if applicable)</Label><Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="mt-1 border-slate-700 bg-slate-950" /></div>
+          </div>
           <DialogFooter>
             <Button onClick={() => interviewSetupMutation.mutate()} disabled={interviewSetupMutation.isPending}>
               Submit availability
@@ -541,7 +549,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             <Textarea
               value={decisionNotes}
               onChange={(event) => setDecisionNotes(event.target.value)}
-              placeholder="Evidence-based notes for HR..."
+              placeholder="Evidence-based notes for the hiring team..."
               className="border-slate-700 bg-slate-950 text-white"
             />
           </div>
@@ -557,7 +565,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         <DialogContent className="border-slate-700 bg-slate-900 text-white">
           <DialogHeader>
             <DialogTitle>Make final decision</DialogTitle>
-            <DialogDescription className="text-slate-400">Submit one clear decision for HR to action.</DialogDescription>
+            <DialogDescription className="text-slate-400">Submit one clear decision for the hiring team to action.</DialogDescription>
           </DialogHeader>
           <RadioGroup value={finalDecision} onValueChange={setFinalDecision} className="grid gap-3">
             {[

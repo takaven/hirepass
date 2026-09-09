@@ -137,7 +137,7 @@ function meaningfulActivityLabel(activity: ActivityLog): string | null {
     case "manager_pass_issued":
       return "Manager Pass issued";
     case "pass_nudge_recorded":
-      return "HR recorded follow-up";
+      return "Hiring team recorded follow-up";
     default:
       return null;
   }
@@ -168,7 +168,7 @@ function passExpectedMovement(pass: Pass, candidateStates: PassControlCandidate[
   if (waitingOn === "candidate") return candidateStates.find((candidate) => candidate.waitingOn === "candidate")?.expectedMovement || "Expected movement: waiting for candidate action.";
   if (waitingOn === "manager") return managerState.expectedMovement;
   const targetHireDate = dateValue(pass.targetHireDate);
-  if (targetHireDate) return `Expected movement: HR is working toward ${targetHireDate.toISOString().slice(0, 10)}.`;
+  if (targetHireDate) return `Expected movement: the hiring team is working toward ${targetHireDate.toISOString().slice(0, 10)}.`;
   if (waitingOn === "completed") return "Expected movement: hiring workflow complete.";
   if (waitingOn === "upcoming_event") return "Expected movement: next scheduled event.";
   return "Expected movement: no checkpoint is set yet.";
@@ -177,7 +177,7 @@ function passExpectedMovement(pass: Pass, candidateStates: PassControlCandidate[
 function passHandoffFromActivity(activity: ActivityLog | null, waitingOn: WaitingOn): string | null {
   if (!activity) return null;
   const ownerLabel = waitingOn === "hr"
-    ? "HR"
+    ? "Hiring team"
     : waitingOn === "manager"
       ? "Hiring Manager"
       : waitingOn === "candidate"
@@ -187,11 +187,11 @@ function passHandoffFromActivity(activity: ActivityLog | null, waitingOn: Waitin
           : waitingOn === "completed"
             ? "Completed"
           : "No current owner";
-  if (activity.action === "manager_pass_issued") return `Pass Handoff: HR -> ${ownerLabel}`;
-  if (activity.action === "candidate_pass_issued") return `Pass Handoff: HR -> ${ownerLabel}`;
+  if (activity.action === "manager_pass_issued") return `Pass Handoff: Hiring team -> ${ownerLabel}`;
+  if (activity.action === "candidate_pass_issued") return `Pass Handoff: Hiring team -> ${ownerLabel}`;
   if ((activity.action || "").startsWith("manager_")) return `Pass Handoff: Hiring Manager -> ${ownerLabel}`;
   if ((activity.action || "").startsWith("candidate_")) return `Pass Handoff: Candidate -> ${ownerLabel}`;
-  if ((activity.action || "").startsWith("pass_") || (activity.action || "").includes("_pass_")) return `Pass Handoff: HR -> ${ownerLabel}`;
+  if ((activity.action || "").startsWith("pass_") || (activity.action || "").includes("_pass_")) return `Pass Handoff: Hiring team -> ${ownerLabel}`;
   return null;
 }
 

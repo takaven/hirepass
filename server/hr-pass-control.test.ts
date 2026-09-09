@@ -327,7 +327,7 @@ describe("HR Pass Control state", () => {
 
     assert.equal(item.waitingOn, "hr");
     assert.equal(item.waitingAgeDays, 3);
-    assert.equal(item.passHandoff, "Pass Handoff: Hiring Manager -> HR");
+    assert.equal(item.passHandoff, "Pass Handoff: Hiring Manager -> Hiring team");
     assert.match(item.expectedMovement, new RegExp(future.toISOString().slice(0, 10)));
     assert.equal(item.isStalled, false);
   });
@@ -359,7 +359,7 @@ describe("HR Pass Control state", () => {
     });
 
     assert.equal(item.waitingOn, "manager");
-    assert.equal(item.passHandoff, "Pass Handoff: HR -> Hiring Manager");
+    assert.equal(item.passHandoff, "Pass Handoff: Hiring team -> Hiring Manager");
     assert.notEqual(item.passHandoff, "Pass Handoff: Hiring Manager -> Hiring Manager");
   });
 
@@ -605,6 +605,18 @@ describe("HR Pass Control lifecycle routes", () => {
       });
 
       assert.equal(response.status, 404);
+      assert.equal(created, false);
+    });
+  });
+
+  it("rejects an actionable Stakeholder Pass without a stakeholder binding", async () => {
+    let created = false;
+    await withServer({
+      getPass: async () => ({ ...pass, hiringManagerId: null }),
+      createShareLink: async () => { created = true; },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      assert.equal(response.status, 400);
       assert.equal(created, false);
     });
   });

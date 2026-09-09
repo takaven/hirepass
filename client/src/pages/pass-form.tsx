@@ -36,6 +36,7 @@ import { Link } from "wouter";
 import type { Pass, Manager, PassPosition } from "@shared/schema";
 import { insertPassSchema } from "@shared/schema";
 import { useState, useEffect } from "react";
+import { HIRING_STAGE_LABELS, HIRING_STAGES } from "@shared/hiring-workflow";
 
 const positionSchema = z.object({
   id: z.number().optional(),
@@ -98,6 +99,7 @@ export default function PassForm() {
       salaryRangeMax: undefined,
       salaryCurrency: "AED",
       priority: "medium",
+      enabledStages: [...HIRING_STAGES],
       hiringManagerId: undefined,
       notes: "",
       jobDescriptionDraft: "",
@@ -133,6 +135,7 @@ export default function PassForm() {
         salaryRangeMax: pass.salaryRangeMax ?? undefined,
         salaryCurrency: pass.salaryCurrency ?? "AED",
         priority: pass.priority ?? "medium",
+        enabledStages: pass.enabledStages ?? [...HIRING_STAGES],
         hiringManagerId: pass.hiringManagerId ?? undefined,
         notes: pass.notes ?? "",
         jobDescriptionDraft: pass.jobDescriptionDraft ?? "",
@@ -473,6 +476,24 @@ export default function PassForm() {
                   </FormItem>
                 )}
               />
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-6">
+            <h2 className="text-lg font-semibold">Hiring workflow</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Applied and Hired are fixed. Enable only the bounded steps this vacancy uses.</p>
+            <div className="mt-4 flex flex-wrap gap-4">
+              {HIRING_STAGES.map((stage) => {
+                const fixed = stage === "new" || stage === "hired";
+                const selected = (form.watch("enabledStages") ?? [...HIRING_STAGES]).includes(stage);
+                return <label key={stage} className="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm">
+                  <input type="checkbox" checked={selected} disabled={fixed} onChange={(event) => {
+                    const current = form.getValues("enabledStages") ?? [...HIRING_STAGES];
+                    form.setValue("enabledStages", HIRING_STAGES.filter((item) => item === stage ? event.target.checked : current.includes(item)), { shouldDirty: true });
+                  }} />
+                  {HIRING_STAGE_LABELS[stage]}
+                </label>;
+              })}
             </div>
           </GlassCard>
 

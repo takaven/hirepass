@@ -43,7 +43,7 @@ export type CandidatePassInterviewDto = Pick<
 
 export type ManagerPassInterviewDto = Pick<
   Interview,
-  "id" | "passCandidateId" | "interviewDate" | "startTime" | "endTime" | "duration" | "format" | "location" | "roundNumber" | "roundName" | "status"
+  "id" | "passCandidateId" | "interviewDate" | "startTime" | "endTime" | "duration" | "format" | "location" | "interviewerId" | "roundNumber" | "roundName" | "status"
 >;
 
 export type CandidatePassOfferDto = Pick<Offer, "id" | "salary" | "salaryCurrency" | "startDate" | "contractType" | "probationPeriod" | "benefits" | "status">;
@@ -72,6 +72,7 @@ export type ManagerPassPassDto = Pick<
   | "experienceMax"
   | "status"
   | "currentStep"
+  | "enabledStages"
   | "jobDescriptionDraft"
   | "jobDescriptionFinal"
   | "jdStatus"
@@ -122,6 +123,7 @@ export function toManagerPassPassDto(pass: Pass | undefined): ManagerPassPassDto
     experienceMax: pass.experienceMax,
     status: pass.status,
     currentStep: pass.currentStep,
+    enabledStages: pass.enabledStages,
     jobDescriptionDraft: pass.jobDescriptionDraft,
     jobDescriptionFinal: pass.jobDescriptionFinal,
     jdStatus: pass.jdStatus,
@@ -186,6 +188,7 @@ export function toManagerPassInterviewDto(interview: Interview): ManagerPassInte
     duration: interview.duration,
     format: interview.format,
     location: interview.location,
+    interviewerId: interview.interviewerId,
     roundNumber: interview.roundNumber,
     roundName: interview.roundName,
     status: interview.status,

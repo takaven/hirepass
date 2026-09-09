@@ -259,8 +259,10 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getAvailableInterviewSlots: async () => [interviewSlot],
     getActivitiesByPass: async () => [],
     bookInterviewSlot: async () => undefined,
+    bookInterviewSlotAndCreateInterview: async () => undefined,
     createInterview: async () => undefined,
     updatePassCandidate: async () => undefined,
+    submitInterviewEvaluation: async (data: any) => ({ id: 1, ...data, averageScore: null }),
     createCandidateMessage: async () => ({ id: 1, passCandidateId: 101 }),
     createCandidateDocument: async () => ({ id: 1, passCandidateId: 101 }),
     markMessageAsRead: async () => undefined,
@@ -281,6 +283,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getPassWithDetails: async () => pass,
     getPassCandidatesWithDetails: async () => [{ ...passCandidate, candidate }],
     getInterviewsByPass: async () => [interview],
+    getInterview: async () => interview,
     getManager: async () => manager,
     getInterviewSlotsByPass: async () => [interviewSlot],
     logActivity: async (activity: any) => ({ id: 1, createdAt: new Date(), ...activity }),
@@ -355,9 +358,9 @@ describe("external Candidate Pass route security", () => {
     let bookedWith: unknown[] | null = null;
     await withServer({
       getAvailableInterviewSlots: async () => [interviewSlot],
-      bookInterviewSlot: async (...args: unknown[]) => {
+      bookInterviewSlotAndCreateInterview: async (...args: unknown[]) => {
         bookedWith = args;
-        return { ...interviewSlot, isBooked: true, bookedBy: 101, bookedAt: new Date() };
+        return { slot: { ...interviewSlot, isBooked: true, bookedBy: 101, bookedAt: new Date() }, interview: { id: 1 } };
       },
     }, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, {
@@ -375,7 +378,7 @@ describe("external Candidate Pass route security", () => {
     let booked = false;
     await withServer({
       getAvailableInterviewSlots: async () => [{ ...interviewSlot, id: 999, passId: 11 }],
-      bookInterviewSlot: async () => {
+      bookInterviewSlotAndCreateInterview: async () => {
         booked = true;
         return undefined;
       },
@@ -452,6 +455,26 @@ describe("external Manager Pass route privacy", () => {
       assertAbsent(payload.pass, ["salaryRangeMin", "salaryRangeMax", "salaryCurrency", "requisitionFilePath", "notes", "managerNotes"]);
       assertAbsent(payload.interviews, ["passId", "interviewNotes", "meetingLink", "createdAt", "updatedAt"]);
       assertAbsent(payload.interviewSlots, ["passId", "meetingLink", "interviewerId", "bookedBy", "bookedAt", "isActive", "createdAt"]);
+    });
+  });
+
+  it("persists only evaluator-supplied recommendation and notes", async () => {
+    let persisted: any = null;
+    await withServer({
+      submitInterviewEvaluation: async (data: any, passCandidateId: number) => {
+        persisted = { data, passCandidateId };
+        return { id: 1, ...data, averageScore: null };
+      },
+    }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/evaluations`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ interviewId: interview.id, recommendation: "proceed", notesObservations: "Observed evidence", educationalBackground: 4, averageScore: "4.00" }),
+      });
+      assert.equal(response.status, 201);
+      assert.equal(persisted.data.evaluatorId, manager.id);
+      assert.equal(persisted.data.educationalBackground, undefined);
+      assert.equal(persisted.data.averageScore, undefined);
+      assert.equal(persisted.passCandidateId, interview.passCandidateId);
     });
   });
 });

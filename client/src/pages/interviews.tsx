@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Interview } from "@shared/schema";
+import type { Interview, Manager } from "@shared/schema";
 
 export default function Interviews() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,6 +55,8 @@ export default function Interviews() {
   const { data: interviews, isLoading } = useQuery<Interview[]>({
     queryKey: ["/api/interviews"],
   });
+  const { data: managers } = useQuery<Manager[]>({ queryKey: ["/api/managers"] });
+  const interviewerName = (id: number | null) => managers?.find((manager) => manager.id === id)?.name || (id ? `Stakeholder #${id}` : "Not assigned");
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -203,6 +205,7 @@ export default function Interviews() {
                           <p className="text-sm text-muted-foreground">
                             {interview.duration} minutes - {interview.format}
                           </p>
+                          <p className="text-sm text-muted-foreground">Interviewer: {interviewerName(interview.interviewerId)}</p>
                         </div>
                       </div>
 
@@ -236,6 +239,7 @@ export default function Interviews() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="rounded-xl">
+                            <DropdownMenuItem asChild><Link href={`/interviews/${interview.id}/edit`}>Reschedule</Link></DropdownMenuItem>
                             <DropdownMenuItem 
                               onClick={() => updateStatusMutation.mutate({ id: interview.id, status: "completed" })}
                             >
