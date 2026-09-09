@@ -50,7 +50,7 @@ jobs:
       - name: Apply fresh PostgreSQL schema
         run: npm run db:push
 
-      - name: Phase 0 PostgreSQL integration
+      - name: PostgreSQL integration
         run: npm run test:db
 
       - name: Production dependency audit
