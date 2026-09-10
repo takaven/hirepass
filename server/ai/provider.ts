@@ -212,9 +212,10 @@ Use the record_candidate_review tool. For CV evidence, include documentId and sh
   ]);
   const toolUse = message.content.find((block: any) => block.type === "tool_use" && block.name === "record_candidate_review") as any;
   if (!toolUse?.input) throw new Error("malformed_ai_output");
-  const result = candidateReviewResultSchema.parse(toolUse.input);
+  const parsed = candidateReviewResultSchema.safeParse(toolUse.input);
+  if (!parsed.success) throw new Error("schema_invalid");
   return {
-    result,
+    result: parsed.data,
     provider: config.provider,
     model: config.model,
     inputTokens: (message as any).usage?.input_tokens,

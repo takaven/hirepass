@@ -235,6 +235,62 @@ describe("AI intelligence Slice A rules", () => {
     assert.equal(result.result.criteria[0].status, "met");
   });
 
+  it("repairs provider-reported schema_invalid inside the bounded retry loop", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation.",
+    };
+    let calls = 0;
+    const result = await reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }], async (_input, repairInstruction) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(repairInstruction, undefined);
+        throw new Error("schema_invalid");
+      }
+      assert.match(repairInstruction || "", /required output contract/);
+      return {
+        provider: "test",
+        model: "test",
+        result: candidateReviewResultSchema.parse({
+          criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 42, excerpt: "bank reconciliation" }], rationale: "Evidence found.", gaps: [] }],
+          strengths: [],
+          materialGaps: [],
+          clarificationQuestions: [],
+          summary: "Human decision required.",
+        }),
+      };
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.result.criteria[0].status, "met");
+  });
+
+  it("fails safely after two provider-reported schema_invalid attempts and does not call a third time", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation.",
+    };
+    let calls = 0;
+    await assert.rejects(
+      reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }], async (_input, repairInstruction) => {
+        calls += 1;
+        if (calls === 2) assert.match(repairInstruction || "", /required output contract/);
+        throw new Error("schema_invalid");
+      }),
+      /schema_invalid/,
+    );
+    assert.equal(calls, 2);
+  });
+
   it("fails safely after two invalid evidence attempts and does not call a third time", async () => {
     process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
     const { reviewCandidateWithRepair } = await import("./ai/review");

@@ -282,6 +282,9 @@ export async function reviewCandidateWithRepair(
       return { ...ai, result: parsed };
     } catch (error) {
       lastError = error;
+      if (error instanceof Error && error.message === "schema_invalid") {
+        nextRepairInstruction = repairInstruction("schema_invalid");
+      }
       if (safeAiErrorCode(error) === "ai_not_configured") break;
     }
   }
