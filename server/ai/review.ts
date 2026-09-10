@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { extractPdfText, AI_EXTRACTION_VERSION } from "./extraction";
 import { AI_PROMPT_VERSION, AI_SCHEMA_VERSION, AI_REVIEW_RULE_VERSION, getAiConfig } from "./config";
 import { deriveReviewBand, normalizeCriteriaForSnapshot } from "./criteria";
-import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput, type CandidateReviewResult } from "./review-schema";
+import { candidateReviewResultSchema, resolveProfileEvidenceFields, validateCriterionCoverage, validateEvidence, validateProtectedOutput, type CandidateReviewResult } from "./review-schema";
 import { reviewCandidateWithAnthropic, type AiReviewRequest } from "./provider";
 
 export async function resolveReviewDocument(passCandidate: PassCandidate, candidate: Candidate): Promise<Document | null> {
@@ -243,13 +243,42 @@ export function validateReviewResult(result: CandidateReviewResult, criteriaSnap
     validateProtectedOutput(result);
 }
 
-async function reviewCandidateWithRepair(request: AiReviewRequest, criteriaSnapshot: Array<{ id: number; importance?: string }>) {
+export function aiValidationFailureReason(result: CandidateReviewResult, criteriaSnapshot: Array<{ id: number; importance?: string }>, documentId: number, cvText: string, profile: Record<string, unknown>) {
+  if (!validateCriterionCoverage(result, criteriaSnapshot)) return "criterion_coverage_invalid";
+  if (!validateEvidence(result, documentId, cvText, profile)) return "evidence_invalid";
+  if (!validateProtectedOutput(result)) return "protected_output_invalid";
+  return null;
+}
+
+function repairInstruction(reason: string) {
+  if (reason === "schema_invalid") return "Your previous tool output did not satisfy the required output contract. Return only values within the declared schema constraints.";
+  if (reason === "criterion_coverage_invalid") return "Return each confirmed criterion exactly once using its supplied criterionId. Do not add, duplicate, or omit criteria.";
+  if (reason === "evidence_invalid") return "One or more evidence excerpts could not be verified against the supplied source. For CV evidence, use a short verbatim excerpt copied from the supplied CV and the supplied CV document ID. If no exact supporting excerpt exists, return no evidence and use not_evidenced.";
+  if (reason === "protected_output_invalid") return "Do not use protected or irrelevant personal characteristics in rationale, gaps, strengths, summary, or questions. Evaluate only the confirmed role criteria.";
+  return "Return a valid evidence-backed review using only the supplied role criteria and source evidence.";
+}
+
+export async function reviewCandidateWithRepair(
+  request: AiReviewRequest,
+  criteriaSnapshot: Array<{ id: number; importance?: string }>,
+  reviewer: typeof reviewCandidateWithAnthropic = reviewCandidateWithAnthropic,
+) {
   let lastError: unknown;
+  let nextRepairInstruction: string | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const ai = await reviewCandidateWithAnthropic(request);
-      const parsed = candidateReviewResultSchema.parse(ai.result);
-      if (!validateCriterionCoverage(parsed, criteriaSnapshot) || !validateProtectedOutput(parsed)) throw new Error("ai_output_invalid");
+      const ai = await reviewer(request, nextRepairInstruction);
+      const schema = candidateReviewResultSchema.safeParse(ai.result);
+      if (!schema.success) {
+        nextRepairInstruction = repairInstruction("schema_invalid");
+        throw new Error("schema_invalid");
+      }
+      const parsed = resolveProfileEvidenceFields(schema.data, request.candidate);
+      const reason = aiValidationFailureReason(parsed, criteriaSnapshot, request.documentId, request.cvText, request.candidate);
+      if (reason) {
+        nextRepairInstruction = repairInstruction(reason);
+        throw new Error(reason);
+      }
       return { ...ai, result: parsed };
     } catch (error) {
       lastError = error;

@@ -46,7 +46,17 @@ export function validateCriterionCoverage(result: CandidateReviewResult, criteri
 }
 
 export function validateProtectedOutput(result: CandidateReviewResult) {
-  return !protectedOutputPattern.test(JSON.stringify(result));
+  const analyticalText = [
+    ...result.criteria.flatMap((criterion) => [
+      criterion.rationale,
+      ...criterion.gaps,
+    ]),
+    ...result.strengths,
+    ...result.materialGaps,
+    ...result.clarificationQuestions,
+    result.summary,
+  ].join("\n");
+  return !protectedOutputPattern.test(analyticalText);
 }
 
 export function validateEvidence(result: CandidateReviewResult, documentId: number, cvText: string, profile: Record<string, unknown> = {}) {
@@ -65,4 +75,22 @@ export function validateEvidence(result: CandidateReviewResult, documentId: numb
     }
   }
   return true;
+}
+
+export function resolveProfileEvidenceFields(result: CandidateReviewResult, profile: Record<string, unknown> = {}): CandidateReviewResult {
+  return {
+    ...result,
+    criteria: result.criteria.map((criterion) => ({
+      ...criterion,
+      evidence: criterion.evidence.map((evidence) => {
+        if (evidence.source !== "profile" || (evidence.field && allowedProfileEvidenceFields.has(evidence.field))) return evidence;
+        const matches = Array.from(allowedProfileEvidenceFields).filter((field) => {
+          const raw = profile[field];
+          const fieldText = Array.isArray(raw) ? raw.join(" ") : raw == null ? "" : String(raw);
+          return normalizeEvidenceText(fieldText).includes(normalizeEvidenceText(evidence.excerpt));
+        });
+        return matches.length === 1 ? { ...evidence, field: matches[0] } : evidence;
+      }),
+    })),
+  };
 }
