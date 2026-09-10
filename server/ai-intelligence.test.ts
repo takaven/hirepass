@@ -3,49 +3,24 @@ import { describe, it } from "node:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import PDFDocument from "pdfkit";
 import { deriveReviewBand, validateCriterionSafety } from "./ai/criteria";
 import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput } from "./ai/review-schema";
 import { extractPdfText } from "./ai/extraction";
 
-function textPdf(text: string) {
-  const objects = [
-    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-  ];
-  const stream = `BT\n/F1 18 Tf\n72 720 Td\n(${text.replace(/[()\\]/g, "")}) Tj\nET`;
-  objects.push(`5 0 obj\n<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream\nendobj\n`);
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const object of objects) {
-    offsets.push(Buffer.byteLength(pdf));
-    pdf += object;
-  }
-  const xrefOffset = Buffer.byteLength(pdf);
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
+function generatedPdf(text?: string) {
+  return new Promise<Buffer>((resolve) => {
+    const doc = new PDFDocument({ size: "LETTER", margin: 72 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    if (text) doc.fontSize(14).text(text);
+    doc.end();
+  });
 }
 
-function noTextPdf() {
-  const objects = [
-    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
-    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
-  ];
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const object of objects) {
-    offsets.push(Buffer.byteLength(pdf));
-    pdf += object;
-  }
-  const xrefOffset = Buffer.byteLength(pdf);
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
+function emptyPdf() {
+  return Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\nxref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \ntrailer\n<< /Root 1 0 R /Size 3 >>\nstartxref\n113\n%%EOF\n", "latin1");
 }
 
 describe("AI intelligence Slice A rules", () => {
@@ -163,8 +138,8 @@ describe("AI intelligence Slice A rules", () => {
     process.env.HIREPASS_UPLOAD_DIR = root;
     try {
       await mkdir(path.join(root, "1"), { recursive: true });
-      await writeFile(path.join(root, "1", "text.pdf"), textPdf("HirePass real PDF extraction proof"));
-      await writeFile(path.join(root, "1", "blank.pdf"), noTextPdf());
+      await writeFile(path.join(root, "1", "text.pdf"), await generatedPdf("HirePass real PDF extraction proof"));
+      await writeFile(path.join(root, "1", "blank.pdf"), emptyPdf());
       await writeFile(path.join(root, "1", "broken.pdf"), Buffer.from("%PDF-not-valid%%EOF"));
       const extracted = await extractPdfText("1/text.pdf");
       assert.equal(extracted.status, "completed");
