@@ -1065,19 +1065,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async enqueueEmail(email: InsertEmailOutbox): Promise<{ created: boolean; email: EmailOutbox }> {
-    const existing = await db.select().from(emailOutbox).where(eq(emailOutbox.eventKey, email.eventKey)).limit(1);
-    if (existing[0]) return { created: false, email: existing[0] };
-    const [created] = await db.insert(emailOutbox).values(email).returning();
-    return { created: true, email: created };
+    const [created] = await db.insert(emailOutbox).values(email).onConflictDoNothing({ target: emailOutbox.eventKey }).returning();
+    if (created) return { created: true, email: created };
+    const [existing] = await db.select().from(emailOutbox).where(eq(emailOutbox.eventKey, email.eventKey)).limit(1);
+    if (!existing) throw new Error("Email event conflict could not be resolved");
+    return { created: false, email: existing };
   }
 
   async claimPendingEmails(limit: number): Promise<EmailOutbox[]> {
     return db.transaction(async (tx) => {
       const claimable = await tx.select({ id: emailOutbox.id }).from(emailOutbox)
         .where(and(
-          eq(emailOutbox.status, "pending"),
           sql`${emailOutbox.attemptCount} < 3`,
-          sql`${emailOutbox.nextAttemptAt} <= now()`,
+          or(
+            and(eq(emailOutbox.status, "pending"), sql`${emailOutbox.nextAttemptAt} <= now()`),
+            and(eq(emailOutbox.status, "sending"), sql`${emailOutbox.updatedAt} < now() - interval '10 minutes'`),
+          ),
         ))
         .orderBy(asc(emailOutbox.createdAt))
         .limit(limit)

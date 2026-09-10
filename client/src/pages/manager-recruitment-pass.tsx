@@ -288,54 +288,42 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className={`border ${stateStyles[managerPassState.actionState]} bg-slate-900`}>
             <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                    <span className="inline-flex items-center gap-1">
-                      <Briefcase className="h-4 w-4" />
-                      {pass.department || "Hiring request"}
-                    </span>
-                    {manager?.name && (
-                      <span className="inline-flex items-center gap-1">
-                        <UserCheck className="h-4 w-4" />
-                        {manager.name}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-2xl font-semibold text-white sm:text-3xl">{managerPassState.headline}</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">{managerPassState.summary}</p>
-                </div>
-                <div className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm">
-                  <p className="text-slate-500">Waiting on</p>
-                  <p className="font-medium text-white">{managerPassState.waitingOn}</p>
-                </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                <span className="inline-flex items-center gap-1">
+                  <Briefcase className="h-4 w-4" />
+                  {pass.department || "Hiring request"}
+                </span>
+                {manager?.name && (
+                  <span className="inline-flex items-center gap-1">
+                    <UserCheck className="h-4 w-4" />
+                    {manager.name}
+                  </span>
+                )}
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
-                {[
-                  ["Now", managerPassState.headline],
-                  ["Your action", managerPassState.nextDecision.label],
-                  ["Waiting on", managerPassState.waitingOn],
-                  ["Next", managerPassState.next],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-1 text-sm font-medium text-white">{value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Required decision</p>
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-4">
+                <p className="text-xs uppercase tracking-wide text-amber-200">What needs your input?</p>
                 <div className="mt-2 space-y-3">
                   <div>
                     <h3 className="text-lg font-semibold text-white">{managerPassState.nextDecision.label}</h3>
-                    <p className="mt-1 text-sm text-slate-400">{managerPassState.nextDecision.description}</p>
+                    <p className="mt-1 text-sm text-slate-300">{managerPassState.nextDecision.description}</p>
                   </div>
                   {actionButton}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Candidate / vacancy context</p>
+                  <p className="mt-1 text-sm font-medium text-white">{managerPassState.headline}</p>
+                  <p className="mt-1 text-xs text-slate-400">{managerPassState.summary}</p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Next</p>
+                  <p className="mt-1 text-sm font-medium text-white">{managerPassState.next}</p>
                 </div>
               </div>
             </CardContent>
@@ -344,7 +332,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
           <div className="space-y-5">
             <Card className="border-slate-800 bg-slate-900/80">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Pass state</CardTitle>
+                <CardTitle className="text-base text-white">Relevant evidence</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-slate-300">
                 <div className="flex items-start gap-3">

@@ -60,15 +60,17 @@ export async function queueLibraryMatchReview(input: { passId: number; candidate
   if (attached) return { queued: false, reason: "already_attached" };
   const position = input.positionId ? await storage.getPassPosition(input.positionId) : null;
   if (input.positionId && !position) return { queued: false, reason: "position_not_found" };
+  if (position && position.passId !== pass.id) return { queued: false, reason: "position_not_found" };
   const criteriaVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
   const confirmedAt = position ? position.aiCriteriaConfirmedAt : pass.aiCriteriaConfirmedAt;
   if (!confirmedAt || criteriaVersion <= 0) return { queued: false, reason: "criteria_not_confirmed" };
   const criteria = await storage.getAiCriteria(pass.id, input.positionId ?? null);
   if (!criteria.length) return { queued: false, reason: "criteria_missing" };
   const docs = await storage.getDocumentsByCandidate(candidate.id);
-  const document = docs.find((doc) => doc.docType === "cv" && doc.filePath === candidate.cvFilePath && doc.filePath) ??
-    docs.find((doc) => doc.docType === "cv" && doc.filePath);
-  if (!document?.filePath) return { queued: false, reason: "document_missing" };
+  const document = candidate.cvFilePath
+    ? docs.find((doc) => doc.docType === "cv" && doc.filePath === candidate.cvFilePath && doc.filePath)
+    : null;
+  if (!document?.filePath) return { queued: false, reason: "current_cv_unavailable" };
   const queued = await storage.createAiReviewIfCurrentMissing({
     reviewType: "library_match",
     passId: pass.id,

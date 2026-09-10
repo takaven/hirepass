@@ -118,7 +118,7 @@ Do not use AI output as an automatic reject/select decision. Hiring decisions re
 
 ## Transactional Email
 
-Transactional email is a launch capability for meaningful human updates only: application/CV receipt, Candidate Pass issue/reissue and Stakeholder Pass issue/reissue. Configure it at deployment level with `HIREPASS_EMAIL_ENABLED=true`, `HIREPASS_EMAIL_FROM`, `HIREPASS_SMTP_HOST`, `HIREPASS_SMTP_PORT`, optional `HIREPASS_SMTP_SECURE`, `HIREPASS_SMTP_USER` and `HIREPASS_SMTP_PASSWORD`. Delivery uses a small database outbox with bounded retry. Email failure must not roll back hiring workflow changes.
+Transactional email is a launch capability for meaningful human updates only: application/CV receipt, Candidate Pass issue/reissue, Stakeholder Pass issue/reissue, interview scheduling or material changes, document requests and offer availability/updates. Configure it at deployment level with `HIREPASS_EMAIL_ENABLED=true`, `HIREPASS_PUBLIC_BASE_URL`, `HIREPASS_EMAIL_FROM`, `HIREPASS_SMTP_HOST`, `HIREPASS_SMTP_PORT`, optional `HIREPASS_SMTP_SECURE`, `HIREPASS_SMTP_USER` and `HIREPASS_SMTP_PASSWORD`. `HIREPASS_PUBLIC_BASE_URL` must be the public HTTPS application origin so Pass emails contain usable absolute links. Delivery uses a small database outbox with bounded retry and abandoned-send recovery. Email failure must not roll back hiring workflow changes.
 
 ## Mandatory Pre-Data Security And Privacy Gate
 

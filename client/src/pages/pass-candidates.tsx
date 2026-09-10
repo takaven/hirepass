@@ -168,13 +168,25 @@ export default function PassCandidates() {
     queryKey: ["/api/passes", passId, "positions"],
     enabled: !!passId,
   });
+  const libraryTargetPositionId = filterPositionId !== "all" && filterPositionId !== "unassigned"
+    ? filterPositionId
+    : positions?.length === 1
+      ? String(positions[0].id)
+      : null;
   const { data: aiReviews } = useQuery<AiReview[]>({
     queryKey: [`/api/intelligence/passes/${passId}/reviews`],
     enabled: !!passId,
   });
   const { data: libraryMatches } = useQuery<any[]>({
-    queryKey: [`/api/intelligence/passes/${passId}/library-matches`],
+    queryKey: [`/api/intelligence/passes/${passId}/library-matches`, libraryTargetPositionId],
     enabled: !!passId,
+    queryFn: async () => {
+      const search = libraryTargetPositionId ? `?positionId=${libraryTargetPositionId}` : "";
+      const response = await fetch(`/api/intelligence/passes/${passId}/library-matches${search}`);
+      if (!response.ok) throw new Error("Unable to load candidate matches");
+      return response.json();
+    },
+    refetchInterval: (query) => query.state.data?.some((match: any) => ["pending", "processing"].includes(match.status)) ? 3000 : false,
   });
   const reviewByApplication = useMemo(() => {
     const map = new Map<number, AiReview>();
@@ -221,13 +233,13 @@ export default function PassCandidates() {
 
   const findExistingMutation = useMutation({
     mutationFn: async () => apiRequest("POST", `/api/intelligence/passes/${passId}/library-matches`, {
-      positionId: filterPositionId !== "all" && filterPositionId !== "unassigned" ? Number(filterPositionId) : undefined,
+      positionId: libraryTargetPositionId ? Number(libraryTargetPositionId) : undefined,
     }),
     onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/intelligence/passes/${passId}/library-matches`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/intelligence/passes/${passId}/library-matches`, libraryTargetPositionId] });
       toast({ title: "Finding existing candidates" });
     },
-    onError: () => toast({ title: "AI matching unavailable. Retry.", variant: "destructive" }),
+    onError: () => toast({ title: positions && positions.length > 1 && !libraryTargetPositionId ? "Choose one position first." : "AI matching unavailable. Retry.", variant: "destructive" }),
   });
 
   const compareMutation = useMutation({
@@ -512,11 +524,11 @@ export default function PassCandidates() {
             variant="outline" 
             className="rounded-xl gap-2"
             onClick={() => findExistingMutation.mutate()}
-            disabled={findExistingMutation.isPending}
+            disabled={findExistingMutation.isPending || Boolean(positions && positions.length > 1 && !libraryTargetPositionId)}
             data-testid="button-find-existing-candidates"
           >
             {findExistingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" strokeWidth={2} />}
-            Find existing candidates
+            {positions && positions.length > 1 && !libraryTargetPositionId ? "Choose a position to match" : "Find existing candidates"}
           </Button>
           <Button 
             variant="outline" 
@@ -781,7 +793,10 @@ export default function PassCandidates() {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold">Existing candidate matches</h3>
-              <p className="text-xs text-muted-foreground">HirePass checked the Candidate Library. Add someone only if you want them considered for this vacancy.</p>
+              <p className="text-xs text-muted-foreground">
+                HirePass checked the Candidate Library{libraryTargetPositionId ? ` for ${positionMap.get(Number(libraryTargetPositionId))?.positionTitle || "this role"}` : ""}.
+                Add someone only if you want them considered for this vacancy.
+              </p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -792,7 +807,7 @@ export default function PassCandidates() {
                     <p className="font-medium">{match.candidate?.name}</p>
                     <p className="text-xs text-muted-foreground">{match.candidate?.currentTitle || "Candidate Library profile"}</p>
                   </div>
-                  <Badge variant="outline">{match.status === "completed" ? reviewLabel(match.passCandidateId || -1).replace("Waiting for criteria", match.reviewBand?.replace(/_/g, " ") || "Reviewed") : match.status}</Badge>
+                  <Badge variant="outline">{match.status === "completed" ? (match.reviewBand || "reviewed").replace(/_/g, " ") : match.status}</Badge>
                 </div>
                 <Button className="mt-3 w-full rounded-xl" variant="outline" size="sm" onClick={() => {
                   setSelectedCandidateId(String(match.candidate?.id || ""));

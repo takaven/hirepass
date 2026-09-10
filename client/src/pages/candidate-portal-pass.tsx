@@ -271,7 +271,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
         document.getElementById("pass-offer")?.scrollIntoView({ behavior: "smooth", block: "start" });
         break;
       default:
-        document.getElementById("pass-latest")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
@@ -295,59 +295,46 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className={`border ${stateStyles[passState.actionState]} bg-slate-900`}>
             <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                    <span className="inline-flex items-center gap-1">
-                      <User className="h-4 w-4" />
-                      {candidate.name}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Building2 className="h-4 w-4" />
-                      {pass.department || "Hiring team"}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-semibold text-white sm:text-3xl">{passState.headline}</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">{passState.summary}</p>
-                </div>
-                <div className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm">
-                  <p className="text-slate-500">Waiting on</p>
-                  <p className="font-medium text-white">{passState.waitingOn}</p>
-                </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+                <span className="inline-flex items-center gap-1">
+                  <User className="h-4 w-4" />
+                  {candidate.name}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Building2 className="h-4 w-4" />
+                  {pass.department || "Hiring team"}
+                </span>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-4">
-                {[
-                  ["Now", passState.now],
-                  ["Your action", passState.yourAction],
-                  ["Waiting on", passState.waitingOn],
-                  ["Next", passState.next],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-1 text-sm font-medium text-white">{value}</p>
+              <div className="grid gap-3">
+                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Current stage</p>
+                  <h2 className="mt-1 text-2xl font-semibold text-white sm:text-3xl">{passState.hiringStage}</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{passState.summary}</p>
+                </div>
+                <div className="rounded-lg border border-blue-400/40 bg-blue-400/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-blue-200">Your action</p>
+                  <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{passState.nextAction.label}</h3>
+                      <p className="mt-1 text-sm text-slate-300">{passState.nextAction.description}</p>
+                    </div>
+                    <Button
+                      className="min-h-11 shrink-0 bg-blue-500 hover:bg-blue-600"
+                      onClick={runPrimaryAction}
+                      disabled={passState.nextAction.kind === "NONE" && passState.actionState === "COMPLETED"}
+                      data-testid="candidate-pass-primary-action"
+                    >
+                      {passState.nextAction.label}
+                    </Button>
                   </div>
-                ))}
-              </div>
-
-              <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Dominant next action</p>
-                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">{passState.nextAction.label}</h3>
-                    <p className="mt-1 text-sm text-slate-400">{passState.nextAction.description}</p>
-                  </div>
-                  <Button
-                    className="min-h-11 shrink-0 bg-blue-500 hover:bg-blue-600"
-                    onClick={runPrimaryAction}
-                    disabled={passState.nextAction.kind === "NONE" && passState.actionState === "COMPLETED"}
-                    data-testid="candidate-pass-primary-action"
-                  >
-                    {passState.nextAction.label}
-                  </Button>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Next</p>
+                  <p className="mt-1 text-sm font-medium text-white">{passState.next}</p>
                 </div>
               </div>
             </CardContent>
@@ -355,34 +342,23 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
 
           <div className="space-y-5">
             <PassJourney state={passState} />
-            <Card id="pass-latest" className="border-slate-800 bg-slate-900/80">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Latest update</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-slate-300">
-                <p>{passState.latestUpdate}</p>
-                {passState.passHandoff && (
-                  <p className="rounded-md border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-blue-100">{passState.passHandoff}</p>
-                )}
-                <p className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-slate-200">{passState.expectedMovement}</p>
-              </CardContent>
-            </Card>
+            {passState.actionState === "WAITING" && (
+              <Card className="border-sky-500/40 bg-sky-500/10">
+                <CardContent className="flex items-start gap-4 p-5">
+                  <Clock className="mt-1 h-6 w-6 shrink-0 text-sky-200" />
+                  <div>
+                    <h3 className="font-semibold text-white">You're all set</h3>
+                    <p className="mt-1 text-sm leading-6 text-sky-100/80">
+                      This Pass will show a clear action when the hiring team needs something from you.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </section>
 
-        {passState.actionState === "WAITING" && (
-          <Card className="border-sky-500/40 bg-sky-500/10">
-            <CardContent className="flex items-start gap-4 p-5">
-              <Clock className="mt-1 h-6 w-6 shrink-0 text-sky-200" />
-              <div>
-                <h3 className="font-semibold text-white">You're all set</h3>
-                <p className="mt-1 text-sm leading-6 text-sky-100/80">
-                  This Pass will show a clear action when the hiring team needs something from you. Until then, you do not need to chase the next step.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <h2 className="text-lg font-semibold text-white">Your journey</h2>
 
         <section className="grid gap-5 lg:grid-cols-2">
           {(interviewSlots.length > 0 || interviews.length > 0) && (

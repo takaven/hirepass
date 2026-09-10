@@ -12,7 +12,9 @@ export type EmailIntent = {
 
 export async function enqueueEmail(intent: EmailIntent) {
   const config = getEmailConfig();
-  if (!config.enabled || !intent.to) return { queued: false, reason: config.enabled ? "missing_recipient" : "email_disabled" };
+  if (!config.enabled || !intent.to || !config.configured) {
+    return { queued: false, reason: !config.enabled ? "email_disabled" : !intent.to ? "missing_recipient" : "email_unconfigured" };
+  }
   await storage.enqueueEmail({
     eventKey: intent.eventKey,
     recipientEmail: intent.to,
@@ -84,4 +86,3 @@ export function startEmailWorker() {
   const interval = setInterval(() => wakeEmailWorker(), 60_000);
   interval.unref?.();
 }
-

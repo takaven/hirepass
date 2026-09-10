@@ -46,7 +46,8 @@ import { criterionInputSchema, validateCriterionSafety } from "./ai/criteria";
 import { suggestCriteriaWithAnthropic, suggestInterviewQuestionsWithAnthropic } from "./ai/provider";
 import { processPendingAiReviews, queueLibraryMatchReview, queueReviewForApplication } from "./ai/review";
 import { wakeAiReviewWorker } from "./ai/worker";
-import { enqueueEmail } from "./email/outbox";
+import { enqueueEmail, type EmailIntent } from "./email/outbox";
+import { getEmailConfig, publicAppUrl } from "./email/config";
 
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
@@ -58,6 +59,51 @@ const publicPrivacyConfig = () => ({
 });
 
 const anthropic = new Anthropic();
+
+async function enqueueEmailSafely(intent: EmailIntent) {
+  try {
+    return await enqueueEmail(intent);
+  } catch (error) {
+    console.warn("Email enqueue failed after hiring action", { reason: error instanceof Error ? error.message : "unknown" });
+    return { queued: false, reason: "email_enqueue_failed" };
+  }
+}
+
+async function candidatePassUrlForApplication(passCandidateId: number): Promise<string | null> {
+  const links = await storage.getCandidateLinksByPassCandidate(passCandidateId);
+  const active = links.find((link: any) => link.isActive && (!link.expiresAt || new Date(link.expiresAt) > new Date()));
+  return active ? publicAppUrl(`/candidate-pass/${active.token}`) : null;
+}
+
+async function enqueueCandidateActionEmail(input: {
+  passCandidateId: number;
+  eventKey: string;
+  subject: string;
+  body: string;
+}) {
+  try {
+    const config = getEmailConfig();
+    if (!config.enabled) return { queued: false, reason: "email_disabled" };
+    if (!config.configured) return { queued: false, reason: "email_unconfigured" };
+    const passCandidate = await storage.getPassCandidateById(input.passCandidateId);
+    if (!passCandidate) return { queued: false, reason: "application_missing" };
+    const [candidate, url] = await Promise.all([
+      storage.getCandidate(passCandidate.candidateId),
+      candidatePassUrlForApplication(input.passCandidateId),
+    ]);
+    if (!candidate?.email || !url) return { queued: false, reason: url ? "missing_recipient" : "candidate_pass_unavailable" };
+    return enqueueEmailSafely({
+      eventKey: input.eventKey,
+      to: candidate.email,
+      recipientName: candidate.name,
+      subject: input.subject,
+      bodyText: `${input.body}\n\nOpen your Candidate Pass: ${url}`,
+    });
+  } catch (error) {
+    console.warn("Candidate action email enqueue skipped", { reason: error instanceof Error ? error.message : "unknown" });
+    return { queued: false, reason: "email_enqueue_failed" };
+  }
+}
 
 function interviewEndTime(startTime: string, duration: number): string {
   const match = /^(\d{2}):(\d{2})$/.exec(startTime);
@@ -876,7 +922,19 @@ export async function registerRoutes(
   app.get("/api/intelligence/passes/:passId/library-matches", async (req, res) => {
     const passId = parsePositiveId(req.params.passId);
     if (!passId) return res.status(400).json({ error: "Valid vacancy ID is required" });
-    const reviews = (await storage.getAiReviewsByPass(passId)).filter((review) => review.reviewType === "library_match");
+    const positionId = req.query.positionId ? parsePositiveId(String(req.query.positionId)) : null;
+    if (req.query.positionId && !positionId) return res.status(400).json({ error: "Valid position ID is required" });
+    const pass = await storage.getPass(passId);
+    if (!pass) return res.status(404).json({ error: "Vacancy not found" });
+    const position = positionId ? await storage.getPassPosition(positionId) : null;
+    if (positionId && position?.passId !== passId) return res.status(404).json({ error: "Position not found for this vacancy" });
+    const currentVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
+    const reviews = (await storage.getAiReviewsByPass(passId)).filter((review) =>
+      review.reviewType === "library_match" &&
+      (positionId ? review.positionId === positionId : review.positionId === null) &&
+      review.criteriaVersion === currentVersion &&
+      ["pending", "processing", "completed", "failed"].includes(review.status)
+    );
     const enriched = await Promise.all(reviews.map(async (review) => ({
       ...aiReviewSummary(review),
       reviewType: review.reviewType,
@@ -889,6 +947,16 @@ export async function registerRoutes(
     const passId = parsePositiveId(req.params.passId);
     if (!passId) return res.status(400).json({ error: "Valid vacancy ID is required" });
     const positionId = req.body?.positionId ? parsePositiveId(String(req.body.positionId)) : null;
+    const pass = await storage.getPass(passId);
+    if (!pass) return res.status(404).json({ error: "Vacancy not found" });
+    const positions = await storage.getPassPositions(passId);
+    if (positionId) {
+      const position = positions.find((item) => item.id === positionId);
+      if (!position) return res.status(404).json({ error: "Position not found for this vacancy" });
+    } else if (positions.length > 1) {
+      return res.status(409).json({ error: "Choose one position before finding existing candidates" });
+    }
+    const targetPositionId = positionId ?? (positions.length === 1 ? positions[0].id : null);
     const limit = Math.max(1, Math.min(Number(req.body?.limit || getAiConfig().maxBatch), getAiConfig().maxBatch));
     const allCandidates = await storage.getCandidates();
     const existing = await storage.getPassCandidates(passId);
@@ -896,7 +964,7 @@ export async function registerRoutes(
     const eligible = allCandidates.filter((candidate) => !candidate.isAnonymized && candidate.cvFilePath && !attached.has(candidate.id)).slice(0, limit);
     let queued = 0;
     for (const candidate of eligible) {
-      const result = await queueLibraryMatchReview({ passId, candidateId: candidate.id, positionId });
+      const result = await queueLibraryMatchReview({ passId, candidateId: candidate.id, positionId: targetPositionId });
       if (result.queued) queued += 1;
     }
     if (queued) wakeAiReviewWorker();
@@ -905,11 +973,28 @@ export async function registerRoutes(
 
   app.post("/api/intelligence/passes/:passId/compare", async (req, res) => {
     const passId = parsePositiveId(req.params.passId);
+    if (!passId) return res.status(400).json({ error: "Valid vacancy ID is required" });
     const ids = z.array(z.number().int().positive()).min(2).max(4).parse(req.body?.passCandidateIds);
     const applications = await Promise.all(ids.map((id) => storage.getPassCandidateById(id)));
     if (applications.some((application) => !application || application.passId !== passId)) return res.status(400).json({ error: "Candidates must belong to this vacancy" });
+    const positionIds = new Set(applications.map((application) => application?.positionId ?? null));
+    if (positionIds.size !== 1) return res.status(409).json({ error: "Comparison requires candidates reviewed for the same role target" });
+    const targetPositionId = applications[0]?.positionId ?? null;
+    const [pass, position] = await Promise.all([
+      storage.getPass(passId),
+      targetPositionId !== null ? storage.getPassPosition(targetPositionId) : Promise.resolve(null),
+    ]);
+    if (!pass || (targetPositionId && position?.passId !== passId)) return res.status(404).json({ error: "Review target not found" });
+    const currentCriteriaVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
     const reviews = await Promise.all(ids.map((id) => storage.getLatestAiReview(id)));
-    if (reviews.some((review) => !review || review.status !== "completed" || !review.result)) return res.status(409).json({ error: "Comparison needs completed AI reviews for each selected candidate" });
+    if (reviews.some((review) =>
+      !review ||
+      review.status !== "completed" ||
+      !review.result ||
+      review.passId !== passId ||
+      (review.positionId ?? null) !== targetPositionId ||
+      review.criteriaVersion !== currentCriteriaVersion
+    )) return res.status(409).json({ error: "Comparison needs current completed AI reviews for the same role target" });
     const candidates = await Promise.all(applications.map(async (application) => ({
       ...application,
       candidate: application ? await storage.getCandidate(application.candidateId) : null,
@@ -1380,7 +1465,7 @@ export async function registerRoutes(
     try {
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion });
-      await enqueueEmail({
+      await enqueueEmailSafely({
         eventKey: `talent-pool-received:${result.candidateId}`,
         to: validated.email,
         recipientName: validated.name,
@@ -1404,7 +1489,7 @@ export async function registerRoutes(
         }
       }
       const pass = await storage.getPass(Number(req.params.id));
-      await enqueueEmail({
+      await enqueueEmailSafely({
         eventKey: `application-received:${result.applicationId || result.candidateId}:${result.duplicateApplication ? "duplicate" : "new"}`,
         to: validated.email,
         recipientName: validated.name,
@@ -1436,7 +1521,7 @@ export async function registerRoutes(
         }
       }
       const pass = await storage.getPass(passId);
-      await enqueueEmail({
+      await enqueueEmailSafely({
         eventKey: `application-received:${result.applicationId || result.candidateId}:${result.duplicateApplication ? "duplicate" : "new"}`,
         to: validated.email,
         recipientName: validated.name,
@@ -1497,6 +1582,12 @@ export async function registerRoutes(
       const duration = z.coerce.number().int().min(15).max(240).parse(req.body.duration);
       const validated = insertInterviewSchema.parse({ ...req.body, passId, passCandidateId, interviewerId: interviewer.id, duration, endTime: interviewEndTime(req.body.startTime, duration) });
       const interview = await storage.createInterviewAndAdvanceCandidate(validated);
+      await enqueueCandidateActionEmail({
+        passCandidateId,
+        eventKey: `candidate-interview-scheduled:${interview.id}`,
+        subject: `Interview scheduled: ${pass.positionTitle}`,
+        body: `Your interview details have been scheduled for ${pass.positionTitle}.`,
+      });
       res.status(201).json(interview);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1527,6 +1618,14 @@ export async function registerRoutes(
       const interview = isReschedule ? await storage.rescheduleInterview(existing.id, changes) : await storage.updateInterview(existing.id, changes);
       if (!interview) {
         return res.status(404).json({ error: "Interview not found" });
+      }
+      if (isReschedule) {
+        await enqueueCandidateActionEmail({
+          passCandidateId: interview.passCandidateId,
+          eventKey: `candidate-interview-updated:${interview.id}:${new Date(interview.updatedAt || Date.now()).getTime()}`,
+          subject: "Interview details updated",
+          body: "Your interview details have been updated.",
+        });
       }
       res.json(interview);
     } catch (error) {
@@ -1610,6 +1709,14 @@ export async function registerRoutes(
     try {
       const validated = insertOfferSchema.parse(req.body);
       const offer = await storage.createOffer(validated);
+      if (offer.passCandidateId && offer.status && ["pending", "draft"].includes(offer.status)) {
+        await enqueueCandidateActionEmail({
+          passCandidateId: offer.passCandidateId,
+          eventKey: `candidate-offer-made:${offer.id}`,
+          subject: "Offer available",
+          body: "An offer is available for your review.",
+        });
+      }
       res.status(201).json(offer);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1625,6 +1732,14 @@ export async function registerRoutes(
       const offer = await storage.updateOffer(parseInt(req.params.id), req.body);
       if (!offer) {
         return res.status(404).json({ error: "Offer not found" });
+      }
+      if (offer.passCandidateId && offer.status && ["pending", "negotiating"].includes(offer.status)) {
+        await enqueueCandidateActionEmail({
+          passCandidateId: offer.passCandidateId,
+          eventKey: `candidate-offer-updated:${offer.id}:${new Date(offer.updatedAt || Date.now()).getTime()}`,
+          subject: "Offer updated",
+          body: "Your offer details have been updated.",
+        });
       }
       res.json(offer);
     } catch (error) {
@@ -1712,12 +1827,12 @@ export async function registerRoutes(
         expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry()
       });
       const stakeholder = await storage.getManager(Number(resolvedManagerId));
-      await enqueueEmail({
+      await enqueueEmailSafely({
         eventKey: `stakeholder-pass-issued:${shareLink.id}`,
         to: stakeholder?.email,
         recipientName: stakeholder?.name,
         subject: `Stakeholder Pass: ${pass.positionTitle}`,
-        bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: /manager-pass/${shareLink.token}`,
+        bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(`/manager-pass/${shareLink.token}`) || "Ask the hiring team for your Stakeholder Pass link."}`,
       });
       res.status(201).json(shareLink);
     } catch (error) {
@@ -1772,12 +1887,12 @@ export async function registerRoutes(
       });
       const candidate = await storage.getCandidate(passCandidate.candidateId);
       const pass = await storage.getPass(passCandidate.passId);
-      await enqueueEmail({
+      await enqueueEmailSafely({
         eventKey: `candidate-pass-issued:${candidateLink.id}`,
         to: candidate?.email,
         recipientName: candidate?.name,
         subject: `Candidate Pass${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
-        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: /candidate-pass/${candidateLink.token}`,
+        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${candidateLink.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
       });
       
       res.status(201).json(candidateLink);
@@ -2326,6 +2441,12 @@ export async function registerRoutes(
           details: { slotId: slot.id },
         });
       }
+      await enqueueCandidateActionEmail({
+        passCandidateId: candidateLink.passCandidateId,
+        eventKey: `candidate-interview-booked:${slot.id}:${candidateLink.passCandidateId}`,
+        subject: "Interview confirmed",
+        body: "Your interview time has been confirmed.",
+      });
       
       res.json({ message: "Interview slot booked", slot });
     } catch (error) {
@@ -2620,6 +2741,12 @@ export async function registerRoutes(
         status: 'pending',
         dueDate: dueDate ? new Date(dueDate) : undefined
       });
+      await enqueueCandidateActionEmail({
+        passCandidateId: parseInt(req.params.id),
+        eventKey: `candidate-document-requested:${document.id}`,
+        subject: "Document requested",
+        body: `The hiring team has requested ${label || docType || "a document"}.`,
+      });
       
       res.status(201).json(document);
     } catch (error) {
@@ -2667,6 +2794,16 @@ export async function registerRoutes(
         canTakeAssessment: true,
         expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry(),
         isActive: true
+      });
+      const passCandidate = await storage.getPassCandidateById(passCandidateId);
+      const candidate = passCandidate ? await storage.getCandidate(passCandidate.candidateId) : undefined;
+      const pass = passCandidate ? await storage.getPass(passCandidate.passId) : undefined;
+      await enqueueEmailSafely({
+        eventKey: `candidate-pass-reissued:${link.id}`,
+        to: candidate?.email,
+        recipientName: candidate?.name,
+        subject: `Candidate Pass${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
+        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${link.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
       });
       
       res.status(201).json(link);
