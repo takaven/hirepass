@@ -39,7 +39,7 @@ Optional:
 
 Do not use `HIREPASS_ADMIN_PASSWORD` in production. It is available for local or disposable development only.
 
-Legacy `/api/ai/*` routes and onboarding-token routes are disabled in production and are not part of the current production offer. The supported AI-assisted review add-on uses `/api/intelligence/*`, requires explicit `HIREPASS_AI_ENABLED=true`, `ANTHROPIC_API_KEY`, provider/privacy approval and release verification. Core HirePass must continue operating when AI is disabled or unavailable.
+Legacy `/api/ai/*` routes and onboarding-token routes are disabled in production and are not part of the current production offer. The supported AI-assisted review launch surface uses `/api/intelligence/*`, requires explicit `HIREPASS_AI_ENABLED=true`, `ANTHROPIC_API_KEY`, provider/privacy approval and release verification. Core HirePass must continue operating when AI is disabled or unavailable.
 
 ## Database
 
@@ -88,9 +88,9 @@ For a standard setup, agree the starting hiring workflow and configure only the 
 
 Complex workflow tailoring, candidate/data migration, integrations, custom reporting or product changes are separately scoped work.
 
-Do not represent arbitrary workflow design, outbound email/reminders, candidate comparison, talent-pool matching, a recruiting assistant or multiple named internal accounts as configuration that exists. Bounded stages, general CV submission and optional evidence-backed vacancy-application AI review are current capabilities; confirm the exact release behavior against the current source.
+Do not represent arbitrary workflow design, outbound email/reminders, candidate comparison, talent-pool matching, a recruiting assistant or multiple named internal accounts as configuration that exists. Bounded stages, general CV submission and evidence-backed vacancy-application AI review are current capabilities; confirm the exact release behavior against the current source.
 
-## Optional AI-Assisted Review
+## AI-Assisted Review
 
 Leave AI disabled unless the customer has approved provider use, privacy wording and operational handling for candidate CV processing.
 

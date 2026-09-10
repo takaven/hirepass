@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { extractPdfText, AI_EXTRACTION_VERSION } from "./extraction";
 import { AI_PROMPT_VERSION, AI_SCHEMA_VERSION, AI_REVIEW_RULE_VERSION, getAiConfig } from "./config";
 import { deriveReviewBand, normalizeCriteriaForSnapshot } from "./criteria";
-import { candidateReviewResultSchema, validateEvidence } from "./review-schema";
+import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput, type CandidateReviewResult } from "./review-schema";
 import { reviewCandidateWithAnthropic, type AiReviewRequest } from "./provider";
 
 export async function resolveReviewDocument(passCandidate: PassCandidate, candidate: Candidate): Promise<Document | null> {
@@ -15,6 +15,9 @@ export async function resolveReviewDocument(passCandidate: PassCandidate, candid
 }
 
 export async function queueReviewForApplication(passCandidateId: number, force = false) {
+  const config = getAiConfig();
+  if (!config.enabled) return { queued: false, reason: "ai_disabled" };
+  if (!config.configured) return { queued: false, reason: "ai_unavailable" };
   const passCandidate = await storage.getPassCandidate(passCandidateId);
   if (!passCandidate) return { queued: false, reason: "application_not_found" };
   const pass = await storage.getPass(passCandidate.passId);
@@ -29,12 +32,7 @@ export async function queueReviewForApplication(passCandidateId: number, force =
   if (!criteria.length) return { queued: false, reason: "criteria_missing" };
   const document = await resolveReviewDocument(passCandidate, candidate);
   if (!document?.filePath) return { queued: false, reason: "document_missing" };
-  const latest = await storage.getLatestAiReview(passCandidate.id);
-  if (!force && latest && ["pending", "processing", "completed"].includes(latest.status) && latest.documentId === document.id && latest.criteriaVersion === criteriaVersion && latest.promptVersion === AI_PROMPT_VERSION && latest.schemaVersion === AI_SCHEMA_VERSION && latest.reviewRuleVersion === AI_REVIEW_RULE_VERSION) {
-    return { queued: false, reason: "current_review_exists", review: latest };
-  }
-  if (latest?.status === "completed") await storage.updateAiReview(latest.id, { status: "stale", staleReason: "new_review_queued" });
-  const review = await storage.createAiReview({
+  const queued = await storage.createAiReviewIfCurrentMissing({
     reviewType: "application",
     passId: pass.id,
     positionId: passCandidate.positionId ?? null,
@@ -47,8 +45,8 @@ export async function queueReviewForApplication(passCandidateId: number, force =
     promptVersion: AI_PROMPT_VERSION,
     schemaVersion: AI_SCHEMA_VERSION,
     reviewRuleVersion: AI_REVIEW_RULE_VERSION,
-  });
-  return { queued: true, review };
+  }, force);
+  return queued.created ? { queued: true, review: queued.review } : { queued: false, reason: "current_review_exists", review: queued.review };
 }
 
 async function ensureExtractedText(document: Document) {
@@ -65,6 +63,44 @@ async function ensureExtractedText(document: Document) {
   return updated ?? document;
 }
 
+export function buildAiReviewRequest(input: {
+  review: AiCandidateReview;
+  pass: Pass;
+  position?: any | null;
+  candidate: Candidate;
+  documentId: number;
+  cvText: string;
+}): AiReviewRequest {
+  const profileEvidence = {
+    currentTitle: input.candidate.currentTitle,
+    currentCompany: input.candidate.currentCompany,
+    experienceYears: input.candidate.experienceYears,
+    skills: input.candidate.skills,
+  };
+  return {
+    criteria: (input.review.criteriaSnapshot as any[]).map((criterion) => ({
+      id: criterion.id,
+      title: criterion.title,
+      evaluationInstruction: criterion.evaluationInstruction,
+      importance: criterion.importance,
+    })),
+    vacancy: {
+      title: input.position?.positionTitle || input.pass.positionTitle,
+      department: input.pass.department,
+      location: input.pass.location,
+      employmentType: input.pass.employmentType,
+      experienceMin: input.position?.experienceMin ?? input.pass.experienceMin,
+      experienceMax: input.position?.experienceMax ?? input.pass.experienceMax,
+      requirements: input.position?.requirements,
+      qualifications: input.position?.qualifications,
+      jobDescription: input.position?.jobDescriptionFinal || input.pass.jobDescriptionFinal || input.pass.jobDescriptionDraft,
+    },
+    candidate: profileEvidence,
+    documentId: input.documentId,
+    cvText: input.cvText,
+  };
+}
+
 export async function processAiReview(review: AiCandidateReview) {
   const started = Date.now();
   try {
@@ -73,6 +109,13 @@ export async function processAiReview(review: AiCandidateReview) {
     const passCandidate = review.passCandidateId ? await storage.getPassCandidate(review.passCandidateId) : null;
     const document = review.documentId ? await storage.getDocument(review.documentId) : null;
     if (!pass || !candidate || !passCandidate || !document) throw new Error("review_target_missing");
+    const position = review.positionId ? await storage.getPassPosition(review.positionId) : null;
+    const currentVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
+    const currentConfirmedAt = position ? position.aiCriteriaConfirmedAt : pass.aiCriteriaConfirmedAt;
+    if (!currentConfirmedAt || currentVersion !== review.criteriaVersion) {
+      await storage.updateAiReview(review.id, { status: "stale", staleReason: "criteria_changed", completedAt: new Date() });
+      return;
+    }
     const extracted = await ensureExtractedText(document);
     if (extracted.extractionStatus !== "completed" || !extracted.extractedText) {
       const result = candidateReviewResultSchema.parse({
@@ -100,34 +143,24 @@ export async function processAiReview(review: AiCandidateReview) {
       });
       return;
     }
-    const request: AiReviewRequest = {
-      criteria: (review.criteriaSnapshot as any[]).map((criterion) => ({
-        id: criterion.id,
-        title: criterion.title,
-        evaluationInstruction: criterion.evaluationInstruction,
-        importance: criterion.importance,
-      })),
-      vacancy: {
-        title: pass.positionTitle,
-        department: pass.department,
-        location: pass.location,
-        employmentType: pass.employmentType,
-        experienceMin: pass.experienceMin,
-        experienceMax: pass.experienceMax,
-        jobDescription: pass.jobDescriptionFinal || pass.jobDescriptionDraft,
-      },
-      candidate: {
-        name: candidate.name,
-        currentTitle: candidate.currentTitle,
-        currentCompany: candidate.currentCompany,
-        experienceYears: candidate.experienceYears,
-        skills: candidate.skills,
-      },
-      documentId: document.id,
-      cvText: extracted.extractedText,
-    };
-    const ai = await reviewCandidateWithAnthropic(request);
-    if (!validateEvidence(ai.result, document.id, extracted.extractedText)) throw new Error("evidence_validation_failed");
+    const request = buildAiReviewRequest({ review, pass, position, candidate, documentId: document.id, cvText: extracted.extractedText });
+    const profileEvidence = request.candidate;
+    const ai = await reviewCandidateWithRepair(request, review.criteriaSnapshot as any[]);
+    if (!validateReviewResult(ai.result, review.criteriaSnapshot as any[], document.id, extracted.extractedText, profileEvidence)) throw new Error("ai_output_invalid");
+    const refreshedPass = await storage.getPass(review.passId);
+    const refreshedPosition = review.positionId ? await storage.getPassPosition(review.positionId) : null;
+    const refreshedVersion = refreshedPosition ? refreshedPosition.aiCriteriaVersion : refreshedPass?.aiCriteriaVersion;
+    const latest = await storage.getLatestAiReview(passCandidate.id);
+    const stillCurrent = latest?.id === review.id &&
+      latest.documentId === document.id &&
+      latest.criteriaVersion === refreshedVersion &&
+      latest.promptVersion === AI_PROMPT_VERSION &&
+      latest.schemaVersion === AI_SCHEMA_VERSION &&
+      latest.reviewRuleVersion === AI_REVIEW_RULE_VERSION;
+    if (!stillCurrent) {
+      await storage.updateAiReview(review.id, { status: "stale", staleReason: "superseded_before_completion", completedAt: new Date() });
+      return;
+    }
     const band = deriveReviewBand(ai.result.criteria.map((criterion) => {
       const source = (review.criteriaSnapshot as any[]).find((item) => item.id === criterion.criterionId);
       return { importance: source?.importance || "required", status: criterion.status };
@@ -147,7 +180,7 @@ export async function processAiReview(review: AiCandidateReview) {
   } catch (error) {
     await storage.updateAiReview(review.id, {
       status: "failed",
-      safeErrorCode: error instanceof Error ? error.message.slice(0, 100) : "review_failed",
+      safeErrorCode: safeAiErrorCode(error),
       latencyMs: Date.now() - started,
       completedAt: new Date(),
     });
@@ -161,4 +194,35 @@ export async function processPendingAiReviews() {
   const reviews = await storage.claimPendingAiReviews(Math.min(config.maxBatch, 2), workerId);
   for (const review of reviews) await processAiReview(review);
   return { processed: reviews.length };
+}
+
+export function validateReviewResult(result: CandidateReviewResult, criteriaSnapshot: Array<{ id: number; importance?: string }>, documentId: number, cvText: string, profile: Record<string, unknown>) {
+  return validateCriterionCoverage(result, criteriaSnapshot) &&
+    validateEvidence(result, documentId, cvText, profile) &&
+    validateProtectedOutput(result);
+}
+
+async function reviewCandidateWithRepair(request: AiReviewRequest, criteriaSnapshot: Array<{ id: number; importance?: string }>) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const ai = await reviewCandidateWithAnthropic(request);
+      const parsed = candidateReviewResultSchema.parse(ai.result);
+      if (!validateCriterionCoverage(parsed, criteriaSnapshot) || !validateProtectedOutput(parsed)) throw new Error("ai_output_invalid");
+      return { ...ai, result: parsed };
+    } catch (error) {
+      lastError = error;
+      if (safeAiErrorCode(error) === "ai_not_configured") break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("ai_output_invalid");
+}
+
+export function safeAiErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("timeout")) return "ai_timeout";
+  if (message.includes("rate")) return "ai_rate_limited";
+  if (message.includes("configured")) return "ai_not_configured";
+  if (message.includes("validation") || message.includes("malformed") || message.includes("invalid") || message.includes("evidence")) return "ai_output_invalid";
+  return "ai_provider_unavailable";
 }

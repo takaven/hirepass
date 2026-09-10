@@ -23,6 +23,7 @@ export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: numb
   const targetPositionId = positionId === "pass" ? undefined : Number(positionId);
   const queryKey = targetPositionId ? `/api/intelligence/passes/${passId}/criteria?positionId=${targetPositionId}` : `/api/intelligence/passes/${passId}/criteria`;
   const { data } = useQuery<{ criteria: Criterion[]; version: number; confirmedAt?: string | null }>({ queryKey: [queryKey] });
+  const { data: aiStatus } = useQuery<{ state: string; enabled: boolean; configured: boolean }>({ queryKey: ["/api/intelligence/status"] });
   const [draft, setDraft] = useState<Criterion[]>([]);
   const criteria = draft.length ? draft : data?.criteria ?? [];
 
@@ -77,8 +78,11 @@ export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: numb
     </div>
     <div className="flex flex-wrap gap-2">
       <Button type="button" variant="outline" onClick={() => setDraft([...criteria, { title: "", evaluationInstruction: "", importance: "required", source: "manual", sortOrder: criteria.length, isActive: true }])}>Add criterion</Button>
-      <Button type="button" variant="outline" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending}>Generate suggestions</Button>
+      <Button type="button" variant="outline" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !aiStatus?.configured}>Generate suggestions</Button>
       <Button type="button" onClick={() => confirmMutation.mutate()} disabled={!criteria.length || confirmMutation.isPending}>Confirm criteria</Button>
     </div>
+    {!aiStatus?.configured && (
+      <p className="text-xs text-muted-foreground">AI suggestions and automatic review are not configured for this deployment. You can still add criteria manually.</p>
+    )}
   </section>;
 }

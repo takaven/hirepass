@@ -81,8 +81,28 @@ interface PassCandidate {
 interface AiReview {
   id: number;
   passCandidateId: number | null;
+  positionId?: number | null;
+  criteriaVersion?: number;
   status: string;
   reviewBand: string | null;
+  staleReason?: string | null;
+  safeErrorCode?: string | null;
+  completedAt?: string | null;
+  documentId?: number | null;
+  result?: {
+    criteria?: Array<{
+      criterionId: number;
+      status: string;
+      evidence: Array<{ source: "cv" | "profile"; field?: string; excerpt: string }>;
+      rationale: string;
+      gaps: string[];
+    }>;
+    strengths?: string[];
+    materialGaps?: string[];
+    clarificationQuestions?: string[];
+    summary?: string;
+  } | null;
+  criteriaSnapshot?: Array<{ id: number; title: string; importance: string }>;
 }
 
 type PipelineData = Record<string, PassCandidate[]>;
@@ -171,6 +191,25 @@ export default function PassCandidates() {
       default: return "AI review complete";
     }
   };
+
+  const { data: detailReview } = useQuery<AiReview>({
+    queryKey: [`/api/intelligence/applications/${detailCandidate?.id}/review`],
+    enabled: !!detailCandidate?.id,
+  });
+
+  const retryAiReviewMutation = useMutation({
+    mutationFn: async (passCandidateId: number) => {
+      await apiRequest("POST", `/api/intelligence/applications/${passCandidateId}/review`, { force: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/intelligence/passes/${passId}/reviews`] });
+      if (detailCandidate?.id) queryClient.invalidateQueries({ queryKey: [`/api/intelligence/applications/${detailCandidate.id}/review`] });
+      toast({ title: "AI review queued" });
+    },
+    onError: () => {
+      toast({ title: "AI review unavailable. Retry.", variant: "destructive" });
+    },
+  });
 
   const { data: allCandidates } = useQuery<Candidate[]>({
     queryKey: ["/api/candidates"],
@@ -752,6 +791,81 @@ export default function PassCandidates() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4" data-testid="ai-review-detail">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-medium">AI-assisted review</h4>
+                      <p className="text-xs text-muted-foreground">Human decision required.</p>
+                    </div>
+                    <Badge variant="outline">{detailReview ? reviewLabel(detailCandidate.id) : "Waiting for criteria"}</Badge>
+                  </div>
+                  {detailReview?.positionId && positionMap.get(detailReview.positionId) && (
+                    <p className="text-xs text-muted-foreground">Reviewed for {positionMap.get(detailReview.positionId)?.positionTitle}</p>
+                  )}
+                  {detailReview?.completedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Source document #{detailReview.documentId} · completed {format(new Date(detailReview.completedAt), "MMM d, yyyy")}
+                    </p>
+                  )}
+                  {detailReview?.status === "completed" && detailReview.result ? (
+                    <div className="space-y-4">
+                      {detailReview.result.summary && <p className="text-sm">{detailReview.result.summary}</p>}
+                      <div className="space-y-3">
+                        {(detailReview.result.criteria || []).map((criterion) => {
+                          const source = detailReview.criteriaSnapshot?.find((item) => item.id === criterion.criterionId);
+                          return (
+                            <div key={criterion.criterionId} className="rounded-xl border border-border/50 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium">{source?.title || `Criterion ${criterion.criterionId}`}</span>
+                                <Badge variant="secondary">{criterion.status.replace(/_/g, " ")}</Badge>
+                              </div>
+                              <p className="mt-2 text-xs text-muted-foreground">{criterion.rationale}</p>
+                              {criterion.evidence?.slice(0, 2).map((evidence, index) => (
+                                <blockquote key={index} className="mt-2 border-l-2 border-primary/40 pl-3 text-xs">
+                                  {evidence.excerpt}
+                                </blockquote>
+                              ))}
+                              {criterion.gaps?.length > 0 && (
+                                <p className="mt-2 text-xs text-muted-foreground">Gap: {criterion.gaps.join("; ")}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {detailReview.result.strengths?.length ? (
+                        <p className="text-xs"><span className="font-medium">Strengths:</span> {detailReview.result.strengths.join("; ")}</p>
+                      ) : null}
+                      {detailReview.result.materialGaps?.length ? (
+                        <p className="text-xs"><span className="font-medium">Material gaps:</span> {detailReview.result.materialGaps.join("; ")}</p>
+                      ) : null}
+                      {detailReview.result.clarificationQuestions?.length ? (
+                        <p className="text-xs"><span className="font-medium">Clarify:</span> {detailReview.result.clarificationQuestions.join("; ")}</p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        {detailReview?.status === "failed" ? "AI review unavailable. Retry." :
+                          detailReview?.status === "stale" ? "This review is stale after a criteria or CV change." :
+                          detailReview?.status === "pending" ? "AI review is queued." :
+                          detailReview?.status === "processing" ? "AI review is in progress." :
+                          "Confirm a small set of criteria once to enable automatic review for applications."}
+                      </p>
+                      {(detailReview?.status === "failed" || detailReview?.status === "stale") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl"
+                          onClick={() => retryAiReviewMutation.mutate(detailCandidate.id)}
+                          disabled={retryAiReviewMutation.isPending}
+                        >
+                          {detailReview.status === "stale" ? "Update AI review" : "Retry AI review"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3">

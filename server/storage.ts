@@ -92,10 +92,12 @@ export interface IStorage {
   // AI Intelligence
   getAiCriteria(passId: number, positionId: number | null): Promise<AiReviewCriterion[]>;
   replaceAiCriteria(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[]): Promise<AiReviewCriterion[]>;
+  replaceAiCriteriaAndConfirm(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[], staleReason: string): Promise<{ criteria: AiReviewCriterion[]; version: number; confirmedAt: Date }>;
   markAiReviewsStale(passId: number, positionId: number | null, reason: string): Promise<void>;
   getLatestAiReview(passCandidateId: number): Promise<AiCandidateReview | undefined>;
   getAiReviewsByPass(passId: number): Promise<AiCandidateReview[]>;
   createAiReview(data: InsertAiCandidateReview): Promise<AiCandidateReview>;
+  createAiReviewIfCurrentMissing(data: InsertAiCandidateReview, force?: boolean): Promise<{ created: boolean; review: AiCandidateReview }>;
   updateAiReview(id: number, data: Partial<InsertAiCandidateReview>): Promise<AiCandidateReview | undefined>;
   claimPendingAiReviews(limit: number, workerId: string): Promise<AiCandidateReview[]>;
 
@@ -556,6 +558,40 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async replaceAiCriteriaAndConfirm(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[], staleReason: string): Promise<{ criteria: AiReviewCriterion[]; version: number; confirmedAt: Date }> {
+    return db.transaction(async (tx: any) => {
+      const confirmedAt = new Date();
+      await tx.update(aiReviewCriteria)
+        .set({ isActive: false, updatedAt: confirmedAt })
+        .where(and(
+          eq(aiReviewCriteria.passId, passId),
+          positionId === null ? isNull(aiReviewCriteria.positionId) : eq(aiReviewCriteria.positionId, positionId),
+        ));
+      const inserted = criteria.length ? await tx.insert(aiReviewCriteria).values(criteria).returning() : [];
+      let target: { version: number } | undefined;
+      if (positionId) {
+        [target] = await tx.update(passPositions)
+          .set({ aiCriteriaVersion: sql`${passPositions.aiCriteriaVersion} + 1`, aiCriteriaConfirmedAt: confirmedAt, updatedAt: confirmedAt })
+          .where(and(eq(passPositions.id, positionId), eq(passPositions.passId, passId)))
+          .returning({ version: passPositions.aiCriteriaVersion });
+      } else {
+        [target] = await tx.update(passes)
+          .set({ aiCriteriaVersion: sql`${passes.aiCriteriaVersion} + 1`, aiCriteriaConfirmedAt: confirmedAt, updatedAt: confirmedAt })
+          .where(eq(passes.id, passId))
+          .returning({ version: passes.aiCriteriaVersion });
+      }
+      if (!target?.version) throw new Error("AI criteria target was not available for confirmation");
+      await tx.update(aiCandidateReviews)
+        .set({ status: "stale", staleReason, updatedAt: confirmedAt })
+        .where(and(
+          eq(aiCandidateReviews.passId, passId),
+          positionId === null ? isNull(aiCandidateReviews.positionId) : eq(aiCandidateReviews.positionId, positionId),
+          eq(aiCandidateReviews.status, "completed"),
+        ));
+      return { criteria: inserted, version: target.version, confirmedAt };
+    });
+  }
+
   async markAiReviewsStale(passId: number, positionId: number | null, reason: string): Promise<void> {
     await db.update(aiCandidateReviews)
       .set({ status: "stale", staleReason: reason, updatedAt: new Date() })
@@ -585,6 +621,31 @@ export class DatabaseStorage implements IStorage {
     return review;
   }
 
+  async createAiReviewIfCurrentMissing(data: InsertAiCandidateReview, force = false): Promise<{ created: boolean; review: AiCandidateReview }> {
+    return db.transaction(async (tx: any) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${data.passCandidateId ?? 0}, ${data.documentId ?? 0})`);
+      const [latest] = await tx.select().from(aiCandidateReviews)
+        .where(eq(aiCandidateReviews.passCandidateId, data.passCandidateId!))
+        .orderBy(desc(aiCandidateReviews.createdAt))
+        .limit(1);
+      const sameCurrent = latest &&
+        ["pending", "processing", "completed"].includes(latest.status) &&
+        latest.documentId === data.documentId &&
+        latest.criteriaVersion === data.criteriaVersion &&
+        latest.promptVersion === data.promptVersion &&
+        latest.schemaVersion === data.schemaVersion &&
+        latest.reviewRuleVersion === data.reviewRuleVersion;
+      if (!force && sameCurrent) return { created: false, review: latest };
+      if (latest?.status === "completed") {
+        await tx.update(aiCandidateReviews)
+          .set({ status: "stale", staleReason: "new_review_queued", updatedAt: new Date() })
+          .where(eq(aiCandidateReviews.id, latest.id));
+      }
+      const [review] = await tx.insert(aiCandidateReviews).values(data).returning();
+      return { created: true, review };
+    });
+  }
+
   async updateAiReview(id: number, data: Partial<InsertAiCandidateReview>): Promise<AiCandidateReview | undefined> {
     const [review] = await db.update(aiCandidateReviews)
       .set({ ...data, updatedAt: new Date() })
@@ -596,10 +657,10 @@ export class DatabaseStorage implements IStorage {
   async claimPendingAiReviews(limit: number, workerId: string): Promise<AiCandidateReview[]> {
     return db.transaction(async (tx) => {
       const claimable = await tx.select({ id: aiCandidateReviews.id }).from(aiCandidateReviews)
-        .where(or(
-          eq(aiCandidateReviews.status, "pending"),
-          and(eq(aiCandidateReviews.status, "processing"), sql`${aiCandidateReviews.startedAt} < now() - interval '10 minutes'`),
-        ))
+          .where(or(
+            and(eq(aiCandidateReviews.status, "pending"), sql`${aiCandidateReviews.attemptCount} < 3`),
+            and(eq(aiCandidateReviews.status, "processing"), sql`${aiCandidateReviews.startedAt} < now() - interval '10 minutes'`, sql`${aiCandidateReviews.attemptCount} < 3`),
+          ))
         .orderBy(asc(aiCandidateReviews.createdAt))
         .limit(limit)
         .for("update", { skipLocked: true });

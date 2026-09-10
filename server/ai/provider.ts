@@ -53,9 +53,8 @@ function toolSchema() {
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    source: { type: "string", enum: ["cv", "profile", "application"] },
+                    source: { type: "string", enum: ["cv", "profile"] },
                     documentId: { type: "number" },
-                    pageNumber: { type: "number" },
                     field: { type: "string" },
                     excerpt: { type: "string" },
                   },
@@ -176,7 +175,7 @@ CV text:
 ${input.cvText}
 </candidate_cv_data>
 
-Use the record_candidate_review tool. For CV evidence, include documentId and short exact excerpts. If a fact is absent, use not_evidenced, not not_met. Use not_met only when evidence positively contradicts the criterion.`
+Use the record_candidate_review tool. For CV evidence, include documentId and short exact excerpts. For profile evidence, use only fields supplied in Candidate profile/application. If a fact is absent, use not_evidenced, not not_met. Use not_met only when evidence positively contradicts the criterion. Do not use not_applicable for required criteria.`
       }],
       tools: [toolSchema() as any],
       tool_choice: { type: "tool", name: "record_candidate_review" },

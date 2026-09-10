@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { configureInternalAuth } from "./auth";
 import { safeApiRequestLogger } from "./request-logging";
 import { persistentRateLimit, validateRateLimitConfig } from "./rate-limit";
+import { startAiReviewWorker } from "./ai/worker";
 
 const app = express();
 const httpServer = createServer(app);
@@ -52,6 +53,7 @@ app.use(safeApiRequestLogger((message) => log(message)));
 (async () => {
   configureInternalAuth(app);
   await registerRoutes(httpServer, app);
+  startAiReviewWorker();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

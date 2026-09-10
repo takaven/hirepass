@@ -45,6 +45,7 @@ import { aiStatus, getAiConfig } from "./ai/config";
 import { criterionInputSchema, validateCriterionSafety } from "./ai/criteria";
 import { suggestCriteriaWithAnthropic } from "./ai/provider";
 import { processPendingAiReviews, queueReviewForApplication } from "./ai/review";
+import { wakeAiReviewWorker } from "./ai/worker";
 
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
@@ -730,8 +731,27 @@ export async function registerRoutes(
       const result = await queueReviewForApplication(candidate.id, true);
       if (result.queued) queued += 1;
     }
-    processPendingAiReviews().catch(() => undefined);
+    wakeAiReviewWorker();
     return { queued, eligible: activeCandidates.length, remaining: Math.max(0, activeCandidates.length - limit) };
+  }
+
+  function aiReviewSummary(review: any) {
+    return {
+      id: review.id,
+      passId: review.passId,
+      positionId: review.positionId,
+      passCandidateId: review.passCandidateId,
+      documentId: review.documentId,
+      criteriaVersion: review.criteriaVersion,
+      status: review.status,
+      reviewBand: review.reviewBand,
+      staleReason: review.staleReason,
+      safeErrorCode: review.safeErrorCode,
+      createdAt: review.createdAt,
+      startedAt: review.startedAt,
+      completedAt: review.completedAt,
+      updatedAt: review.updatedAt,
+    };
   }
 
   app.get("/api/intelligence/status", (_req, res) => {
@@ -801,16 +821,14 @@ export async function registerRoutes(
         const unsafe = validateCriterionSafety(criterion);
         if (unsafe) return res.status(400).json({ error: unsafe, criterion: criterion.title });
       }
-      await storage.replaceAiCriteria(passId, positionId, input.criteria.map((criterion, index) => ({
+      const confirmed = await storage.replaceAiCriteriaAndConfirm(passId, positionId, input.criteria.map((criterion, index) => ({
         ...criterion,
         passId,
         positionId,
         sortOrder: criterion.sortOrder ?? index,
-      })));
-      const version = await storage.confirmPassCriteriaTarget(passId, positionId);
-      await storage.markAiReviewsStale(passId, positionId, "criteria_changed");
+      })), "criteria_changed");
       const queue = await queueTargetApplications(passId, positionId);
-      res.json({ confirmed: true, version, ...queue });
+      res.json({ confirmed: true, version: confirmed.version, ...queue });
     } catch (error) {
       if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
       res.status(500).json({ error: "Failed to confirm AI review criteria" });
@@ -820,7 +838,8 @@ export async function registerRoutes(
   app.get("/api/intelligence/passes/:passId/reviews", async (req, res) => {
     const passId = parsePositiveId(req.params.passId);
     if (!passId) return res.status(400).json({ error: "Valid pass ID is required" });
-    res.json(await storage.getAiReviewsByPass(passId));
+    const reviews = await storage.getAiReviewsByPass(passId);
+    res.json(reviews.map(aiReviewSummary));
   });
 
   app.get("/api/intelligence/applications/:passCandidateId/review", async (req, res) => {
@@ -835,7 +854,7 @@ export async function registerRoutes(
     if (!passCandidateId) return res.status(400).json({ error: "Valid application ID is required" });
     const result = await queueReviewForApplication(passCandidateId, Boolean(req.body?.force));
     if (!result.queued) return res.status(409).json(result);
-    processPendingAiReviews().catch(() => undefined);
+    wakeAiReviewWorker();
     res.status(202).json(result);
   });
 
@@ -1024,9 +1043,12 @@ export async function registerRoutes(
         passId: parseInt(req.params.passId)
       });
       const passCandidate = await storage.addCandidateToPass(validated);
-      queueReviewForApplication(passCandidate.id).then((result) => {
-        if (result.queued) processPendingAiReviews().catch(() => undefined);
-      }).catch(() => undefined);
+      try {
+        const queued = await queueReviewForApplication(passCandidate.id);
+        if (queued.queued) wakeAiReviewWorker();
+      } catch (queueError) {
+        console.error("AI review enqueue failed after candidate assignment:", queueError);
+      }
       res.status(201).json(passCandidate);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1293,9 +1315,12 @@ export async function registerRoutes(
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId: Number(req.params.id) });
       if (result.applicationId && !result.duplicateApplication) {
-        queueReviewForApplication(result.applicationId).then((queued) => {
-          if (queued.queued) processPendingAiReviews().catch(() => undefined);
-        }).catch(() => undefined);
+        try {
+          const queued = await queueReviewForApplication(result.applicationId);
+          if (queued.queued) wakeAiReviewWorker();
+        } catch (queueError) {
+          console.error("AI review enqueue failed after public application:", queueError);
+        }
       }
       res.status(result.duplicateApplication ? 200 : 201).json({
         success: true,
@@ -1312,9 +1337,12 @@ export async function registerRoutes(
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId });
       if (result.applicationId && !result.duplicateApplication) {
-        queueReviewForApplication(result.applicationId).then((queued) => {
-          if (queued.queued) processPendingAiReviews().catch(() => undefined);
-        }).catch(() => undefined);
+        try {
+          const queued = await queueReviewForApplication(result.applicationId);
+          if (queued.queued) wakeAiReviewWorker();
+        } catch (queueError) {
+          console.error("AI review enqueue failed after public application:", queueError);
+        }
       }
       res.status(result.duplicateApplication ? 200 : 201).json({ success: true, ...result });
     } catch (error) { return sendPublicIntakeError(error, res); }

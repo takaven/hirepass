@@ -64,7 +64,7 @@ The hiring vocabulary is deliberately bounded. Each vacancy enables an ordered s
 
 ### AI-Assisted CV Review
 
-AI-assisted CV review is an optional HirePass capability for vacancy-linked applications. It should reduce repetitive review work and help a human prioritise candidates.
+AI-assisted CV review is a HirePass launch capability for vacancy-linked applications. It should reduce repetitive review work and help a human prioritise candidates while the core hiring workflow remains usable if AI is disabled or temporarily unavailable.
 
 The launch-safe output should favour explainable evidence over a falsely precise universal ranking. It may include:
 
@@ -76,7 +76,7 @@ The launch-safe output should favour explainable evidence over a falsely precise
 
 AI is decision support. It must not automatically reject, select or silently disadvantage a candidate. An authorised person remains accountable for shortlist, rejection and selection. The system preserves confirmed criteria, analysis, model/configuration provenance, source-document provenance and the human decision needed for audit.
 
-The repository contains legacy AI routes and scoring fields, but those routes are disabled in production and are not the launch AI surface. The supported AI add-on starts with criteria confirmation, PDF text extraction, queued vacancy-application review and evidence-backed candidate review bands. It does not provide automatic rejection, candidate comparison, talent-pool matching or a general recruiting assistant.
+The repository contains legacy AI routes and scoring fields, but those routes are disabled in production and are not the launch AI surface. The supported launch AI surface starts with criteria confirmation, PDF text extraction, queued vacancy-application review and evidence-backed candidate review bands. It does not provide automatic rejection, candidate comparison, talent-pool matching or a general recruiting assistant.
 
 ### Interviews And Decisions
 
@@ -121,7 +121,7 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | Messages and documents | Partial | In-product flows exist; outbound delivery and some review/configuration do not. |
 | Interviews and decisions | Exists for launch core | Availability, primary interviewer, candidate slot booking, rescheduling, recommendation/notes and final decisions use existing Pass structures. Calendar and sophisticated scheduling remain deferred. |
 | Assessments and offers | Partial | Data/routes exist; production workflows are not uniformly complete. |
-| AI-assisted CV review | Exists as optional Slice A add-on foundation | Supports confirmed criteria, queued vacancy-application review, evidence-backed outputs and stale-review handling when enabled/configured. Candidate comparison, talent-pool matching and assistant features remain out of scope. |
+| AI-assisted CV review | Exists as Slice A launch foundation | Supports confirmed criteria, queued vacancy-application review, evidence-backed outputs and stale-review handling when enabled/configured. Candidate comparison, talent-pool matching and assistant features remain out of scope. |
 | Multiple internal responsibilities | Exists for launch core | One `owner_admin` controls named stakeholders and scoped Pass links; stakeholder records independently declare Hiring Manager and interviewer eligibility. |
 | Branding/company configuration | Exists at deployment level | Company name, optional location/contact and privacy notice identity come from the isolated deployment environment; the Settings page is deliberately read-only. |
 | Notifications | Partial | In-app records exist; email, reminders and recipient mapping are incomplete. |
