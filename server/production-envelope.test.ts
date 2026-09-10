@@ -582,7 +582,16 @@ describe("HirePass production envelope", () => {
     assert.match(appSource, /<PublicPrivacy \/>/);
     assert.match(privacySource, /Recruitment Privacy Notice/);
     assert.match(privacySource, /companyName/);
+    assert.match(privacySource, /AI analyses\. Humans decide\./);
+    assert.match(privacySource, /This notice does not promise a fixed retention period/);
+    assert.match(privacySource, /Mauritius Data Protection Act 2017/);
     assert.doesNotMatch(privacySource, /ARIE Finance/);
+
+    const publicApplySource = await readFile(path.join(process.cwd(), "client/src/pages/public-apply.tsx"), "utf8");
+    assert.match(publicApplySource, /I have read the \{privacyLink\} and understand how \{config\.companyName\} will use my personal information in connection with my application/);
+    assert.match(publicApplySource, /recruitment decisions are made by authorised people and are not made solely by AI/);
+    assert.match(publicApplySource, /I have read the \{privacyLink\} and agree that \{config\.companyName\} may store my candidate profile in the Candidate Library/);
+    assert.match(publicApplySource, /I can contact \{config\.careersContactEmail \|\| "the hiring organisation"\} if I no longer wish to be considered for future opportunities/);
 
     const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
     assert.match(candidateSource, /Current stage/);
