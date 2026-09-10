@@ -31,6 +31,8 @@ export type InterviewQuestionRequest = {
   review: CandidateReviewResult;
 };
 
+const boundedString = (maxLength: number, minLength = 1) => ({ type: "string", minLength, maxLength });
+
 const interviewQuestionSchema = {
   name: "suggest_interview_questions",
   description: "Suggest a short list of interview questions based on confirmed role criteria and AI review gaps.",
@@ -55,7 +57,7 @@ function client() {
   return new Anthropic({ apiKey: key });
 }
 
-function toolSchema() {
+export function candidateReviewToolSchema() {
   return {
     name: "record_candidate_review",
     description: "Record an evidence-backed candidate review against fixed hiring criteria.",
@@ -65,36 +67,38 @@ function toolSchema() {
       properties: {
         criteria: {
           type: "array",
+          minItems: 1,
           items: {
             type: "object",
             additionalProperties: false,
             properties: {
-              criterionId: { type: "number" },
+              criterionId: { type: "integer", minimum: 1 },
               status: { type: "string", enum: ["met", "partially_met", "not_met", "not_evidenced", "not_applicable"] },
               evidence: {
                 type: "array",
+                maxItems: 5,
                 items: {
                   type: "object",
                   additionalProperties: false,
                   properties: {
                     source: { type: "string", enum: ["cv", "profile"] },
-                    documentId: { type: "number" },
-                    field: { type: "string" },
-                    excerpt: { type: "string" },
+                    documentId: { type: "integer", minimum: 1 },
+                    field: { type: "string", enum: ["currentTitle", "currentCompany", "experienceYears", "skills"] },
+                    excerpt: boundedString(500),
                   },
                   required: ["source", "excerpt"],
                 },
               },
-              rationale: { type: "string" },
-              gaps: { type: "array", items: { type: "string" } },
+              rationale: boundedString(1000),
+              gaps: { type: "array", maxItems: 5, items: boundedString(300) },
             },
             required: ["criterionId", "status", "evidence", "rationale", "gaps"],
           },
         },
-        strengths: { type: "array", items: { type: "string" } },
-        materialGaps: { type: "array", items: { type: "string" } },
-        clarificationQuestions: { type: "array", items: { type: "string" } },
-        summary: { type: "string" },
+        strengths: { type: "array", maxItems: 8, items: boundedString(300) },
+        materialGaps: { type: "array", maxItems: 8, items: boundedString(300) },
+        clarificationQuestions: { type: "array", maxItems: 8, items: boundedString(300) },
+        summary: boundedString(1200),
       },
       required: ["criteria", "strengths", "materialGaps", "clarificationQuestions", "summary"],
     },
@@ -171,7 +175,7 @@ Use the suggest_review_criteria tool. Each suggestion must be concrete, role-rel
   };
 }
 
-export async function reviewCandidateWithAnthropic(input: AiReviewRequest): Promise<AiReviewResponse> {
+export async function reviewCandidateWithAnthropic(input: AiReviewRequest, repairInstruction?: string): Promise<AiReviewResponse> {
   const config = getAiConfig();
   if (!config.configured) throw new Error("ai_not_configured");
   const started = Date.now();
@@ -199,18 +203,19 @@ CV text:
 ${input.cvText}
 </candidate_cv_data>
 
-Use the record_candidate_review tool. For CV evidence, include documentId and short exact excerpts. For profile evidence, use only fields supplied in Candidate profile/application. If a fact is absent, use not_evidenced, not not_met. Use not_met only when evidence positively contradicts the criterion. Do not use not_applicable for required criteria.`
+Use the record_candidate_review tool. For CV evidence, include documentId and short exact excerpts. For profile evidence, include the exact supplied field name and a short exact excerpt from that field only. If a fact is absent, use not_evidenced, not not_met. Use not_met only when evidence positively contradicts the criterion. Do not use not_applicable for required criteria.${repairInstruction ? `\n\nCorrection needed: ${repairInstruction}` : ""}`
       }],
-      tools: [toolSchema() as any],
+      tools: [candidateReviewToolSchema() as any],
       tool_choice: { type: "tool", name: "record_candidate_review" },
     }),
     new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("ai_timeout")), config.timeoutMs)),
   ]);
   const toolUse = message.content.find((block: any) => block.type === "tool_use" && block.name === "record_candidate_review") as any;
   if (!toolUse?.input) throw new Error("malformed_ai_output");
-  const result = candidateReviewResultSchema.parse(toolUse.input);
+  const parsed = candidateReviewResultSchema.safeParse(toolUse.input);
+  if (!parsed.success) throw new Error("schema_invalid");
   return {
-    result,
+    result: parsed.data,
     provider: config.provider,
     model: config.model,
     inputTokens: (message as any).usage?.input_tokens,

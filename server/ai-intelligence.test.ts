@@ -5,8 +5,9 @@ import path from "node:path";
 import os from "node:os";
 import PDFDocument from "pdfkit";
 import { deriveReviewBand, validateCriterionSafety } from "./ai/criteria";
-import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput } from "./ai/review-schema";
+import { candidateReviewResultSchema, resolveProfileEvidenceFields, validateCriterionCoverage, validateEvidence, validateProtectedOutput } from "./ai/review-schema";
 import { extractPdfText } from "./ai/extraction";
+import { candidateReviewToolSchema } from "./ai/provider";
 
 function generatedPdf(text?: string) {
   return new Promise<Buffer>((resolve) => {
@@ -102,6 +103,22 @@ describe("AI intelligence Slice A rules", () => {
     assert.equal(validateEvidence({ ...result, criteria: [{ ...result.criteria[0], evidence: [{ source: "profile" as const, field: "name", excerpt: "Candidate Name" }] }] }, 10, "CV text", { name: "Candidate Name" }), false);
   });
 
+  it("resolves missing profile evidence fields only when the excerpt exactly matches one allowed supplied field", () => {
+    const result = candidateReviewResultSchema.parse({
+      criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "profile", excerpt: "SWIFT payments" }], rationale: "Evidence found.", gaps: [] }],
+      strengths: [],
+      materialGaps: [],
+      clarificationQuestions: [],
+      summary: "Human decision required.",
+    });
+    const resolved = resolveProfileEvidenceFields(result, { skills: "SWIFT payments, reconciliation", currentTitle: "Analyst" });
+    assert.equal(resolved.criteria[0].evidence[0].field, "skills");
+    assert.equal(validateEvidence(resolved, 10, "CV text", { skills: "SWIFT payments, reconciliation", currentTitle: "Analyst" }), true);
+    const unresolved = resolveProfileEvidenceFields(result, { skills: "SWIFT payments", currentTitle: "SWIFT payments" });
+    assert.equal(unresolved.criteria[0].evidence[0].field, undefined);
+    assert.equal(validateEvidence(unresolved, 10, "CV text", { skills: "SWIFT payments", currentTitle: "SWIFT payments" }), false);
+  });
+
   it("rejects protected-characteristic reasoning anywhere in output", () => {
     const result = candidateReviewResultSchema.parse({
       criteria: [{ criterionId: 1, status: "met", evidence: [], rationale: "Candidate is a strong cultural fit.", gaps: [] }],
@@ -150,5 +167,236 @@ describe("AI intelligence Slice A rules", () => {
       process.env.HIREPASS_UPLOAD_DIR = previous;
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("keeps the Anthropic tool contract aligned with the app validator constraints", () => {
+    const schema: any = candidateReviewToolSchema().input_schema;
+    const criterion = schema.properties.criteria.items;
+    const evidence = criterion.properties.evidence;
+    const evidenceItem = evidence.items;
+    assert.equal(schema.properties.criteria.minItems, 1);
+    assert.equal(criterion.properties.criterionId.type, "integer");
+    assert.equal(criterion.properties.criterionId.minimum, 1);
+    assert.equal(evidence.maxItems, 5);
+    assert.equal(evidenceItem.properties.documentId.type, "integer");
+    assert.equal(evidenceItem.properties.documentId.minimum, 1);
+    assert.deepEqual(evidenceItem.properties.field.enum, ["currentTitle", "currentCompany", "experienceYears", "skills"]);
+    assert.equal(evidenceItem.properties.excerpt.maxLength, 500);
+    assert.equal(criterion.properties.rationale.maxLength, 1000);
+    assert.equal(criterion.properties.gaps.maxItems, 5);
+    assert.equal(schema.properties.strengths.maxItems, 8);
+    assert.equal(schema.properties.materialGaps.maxItems, 8);
+    assert.equal(schema.properties.clarificationQuestions.maxItems, 8);
+    assert.equal(schema.properties.summary.maxLength, 1200);
+  });
+
+  it("repairs invalid evidence inside the bounded provider retry loop", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: { skills: "bank reconciliation" },
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation and exception tracking.",
+    };
+    const snapshot = [{ id: 1, importance: "required" }];
+    let calls = 0;
+    const result = await reviewCandidateWithRepair(request, snapshot, async (_input, repairInstruction) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(repairInstruction, undefined);
+        return {
+          provider: "test",
+          model: "test",
+          result: candidateReviewResultSchema.parse({
+            criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 42, excerpt: "fabricated SWIFT certification" }], rationale: "Evidence found.", gaps: [] }],
+            strengths: ["Relevant reconciliation evidence"],
+            materialGaps: [],
+            clarificationQuestions: [],
+            summary: "Human decision required.",
+          }),
+        };
+      }
+      assert.match(repairInstruction || "", /evidence excerpts could not be verified/);
+      return {
+        provider: "test",
+        model: "test",
+        result: candidateReviewResultSchema.parse({
+          criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 42, excerpt: "bank reconciliation and exception tracking" }], rationale: "Evidence found.", gaps: [] }],
+          strengths: ["Relevant reconciliation evidence"],
+          materialGaps: [],
+          clarificationQuestions: [],
+          summary: "Human decision required.",
+        }),
+      };
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.result.criteria[0].status, "met");
+  });
+
+  it("repairs provider-reported schema_invalid inside the bounded retry loop", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation.",
+    };
+    let calls = 0;
+    const result = await reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }], async (_input, repairInstruction) => {
+      calls += 1;
+      if (calls === 1) {
+        assert.equal(repairInstruction, undefined);
+        throw new Error("schema_invalid");
+      }
+      assert.match(repairInstruction || "", /required output contract/);
+      return {
+        provider: "test",
+        model: "test",
+        result: candidateReviewResultSchema.parse({
+          criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 42, excerpt: "bank reconciliation" }], rationale: "Evidence found.", gaps: [] }],
+          strengths: [],
+          materialGaps: [],
+          clarificationQuestions: [],
+          summary: "Human decision required.",
+        }),
+      };
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.result.criteria[0].status, "met");
+  });
+
+  it("fails safely after two provider-reported schema_invalid attempts and does not call a third time", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation.",
+    };
+    let calls = 0;
+    await assert.rejects(
+      reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }], async (_input, repairInstruction) => {
+        calls += 1;
+        if (calls === 2) assert.match(repairInstruction || "", /required output contract/);
+        throw new Error("schema_invalid");
+      }),
+      /schema_invalid/,
+    );
+    assert.equal(calls, 2);
+  });
+
+  it("fails safely after two invalid evidence attempts and does not call a third time", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [{ id: 1, title: "Reconciliation", evaluationInstruction: "Look for reconciliation evidence", importance: "required" }],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Candidate performed bank reconciliation.",
+    };
+    let calls = 0;
+    await assert.rejects(
+      reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }], async () => {
+        calls += 1;
+        return {
+          provider: "test",
+          model: "test",
+          result: candidateReviewResultSchema.parse({
+            criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 42, excerpt: "fabricated operations leadership" }], rationale: "Evidence found.", gaps: [] }],
+            strengths: [],
+            materialGaps: [],
+            clarificationQuestions: [],
+            summary: "Human decision required.",
+          }),
+        };
+      }),
+      /evidence_invalid/,
+    );
+    assert.equal(calls, 2);
+  });
+
+  it("repairs criterion coverage inside the bounded retry loop", async () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const { reviewCandidateWithRepair } = await import("./ai/review");
+    const request: any = {
+      criteria: [
+        { id: 1, title: "Finance operations", evaluationInstruction: "Look for finance operations", importance: "required" },
+        { id: 2, title: "Controls", evaluationInstruction: "Look for controls", importance: "preferred" },
+      ],
+      vacancy: { title: "Operations" },
+      candidate: {},
+      documentId: 42,
+      cvText: "Finance operations and controls.",
+    };
+    let calls = 0;
+    const result = await reviewCandidateWithRepair(request, [{ id: 1, importance: "required" }, { id: 2, importance: "preferred" }], async (_input, repairInstruction) => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          provider: "test",
+          model: "test",
+          result: candidateReviewResultSchema.parse({
+            criteria: [{ criterionId: 1, status: "met", evidence: [], rationale: "Reviewed.", gaps: [] }],
+            strengths: [],
+            materialGaps: [],
+            clarificationQuestions: [],
+            summary: "Human decision required.",
+          }),
+        };
+      }
+      assert.match(repairInstruction || "", /each confirmed criterion exactly once/);
+      return {
+        provider: "test",
+        model: "test",
+        result: candidateReviewResultSchema.parse({
+          criteria: [
+            { criterionId: 1, status: "met", evidence: [], rationale: "Reviewed.", gaps: [] },
+            { criterionId: 2, status: "met", evidence: [], rationale: "Reviewed.", gaps: [] },
+          ],
+          strengths: [],
+          materialGaps: [],
+          clarificationQuestions: [],
+          summary: "Human decision required.",
+        }),
+      };
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.result.criteria.length, 2);
+  });
+
+  it("does not reject protected-characteristic words when they appear only in quoted source evidence", () => {
+    const result = candidateReviewResultSchema.parse({
+      criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 7, excerpt: "Nationality: Mauritian" }], rationale: "Administrative source line reviewed without using it as role evidence.", gaps: [] }],
+      strengths: ["Relevant operations evidence"],
+      materialGaps: [],
+      clarificationQuestions: [],
+      summary: "Human decision required.",
+    });
+    assert.equal(validateProtectedOutput(result), true);
+  });
+
+  it("classifies validation failures without exposing source text", () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    const snapshot = [{ id: 1, importance: "required" }];
+    const valid = candidateReviewResultSchema.parse({
+      criteria: [{ criterionId: 1, status: "met", evidence: [{ source: "cv", documentId: 7, excerpt: "bank reconciliation" }], rationale: "Evidence found.", gaps: [] }],
+      strengths: [],
+      materialGaps: [],
+      clarificationQuestions: [],
+      summary: "Human decision required.",
+    });
+    return import("./ai/review").then(({ aiValidationFailureReason }) => {
+      assert.equal(aiValidationFailureReason(valid, snapshot, 7, "bank reconciliation", {}), null);
+      assert.equal(aiValidationFailureReason({ ...valid, criteria: [{ ...valid.criteria[0], criterionId: 2 }] }, snapshot, 7, "bank reconciliation", {}), "criterion_coverage_invalid");
+      assert.equal(aiValidationFailureReason({ ...valid, criteria: [{ ...valid.criteria[0], evidence: [{ source: "cv", documentId: 7, excerpt: "invented text" }] }] }, snapshot, 7, "bank reconciliation", {}), "evidence_invalid");
+      assert.equal(aiValidationFailureReason({ ...valid, summary: "The candidate's nationality is advantageous." }, snapshot, 7, "bank reconciliation", {}), "protected_output_invalid");
+    });
   });
 });
