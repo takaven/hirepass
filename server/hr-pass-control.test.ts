@@ -986,7 +986,7 @@ describe("HR Pass Control lifecycle routes", () => {
 
       const candidatePayload = await json(await fetch(`${baseUrl}/api/candidate-pass/candidate-token`));
       assert.equal(candidatePayload.passState.actionState, "COMPLETED");
-      assert.equal(candidatePayload.passState.hiringStage, "Handoff");
+      assert.equal(candidatePayload.passState.hiringStage, "Decision");
 
       const hr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
       assert.equal(hr.items[0].waitingOn, "completed");

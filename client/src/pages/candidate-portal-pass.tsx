@@ -26,6 +26,7 @@ import {
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
 import type { CandidatePassActionState, CandidatePassViewState } from "@shared/pass-state";
 import { validateClientUpload } from "@/lib/upload-preflight";
+import { PublicBrand, type PublicConfig } from "./public-apply";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -70,12 +71,12 @@ interface CandidatePortalPassProps {
 }
 
 const stateStyles: Record<CandidatePassActionState, string> = {
-  ACTION_REQUIRED: "border-amber-400 bg-amber-400/10 text-amber-200",
-  WAITING: "border-sky-400 bg-sky-400/10 text-sky-200",
-  UPCOMING: "border-blue-400 bg-blue-400/10 text-blue-200",
-  COMPLETED: "border-emerald-400 bg-emerald-400/10 text-emerald-200",
-  EXPIRED: "border-slate-500 bg-slate-500/10 text-slate-200",
-  REVOKED: "border-red-400 bg-red-400/10 text-red-200",
+  ACTION_REQUIRED: "border-[#01FF22]/70 bg-[#01FF22]/10 text-[#20242B]",
+  WAITING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  UPCOMING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  COMPLETED: "border-[#20242B] bg-[#20242B] text-white",
+  EXPIRED: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  REVOKED: "border-red-300 bg-red-50 text-red-700",
 };
 
 function formatCandidateDate(value: string | Date | null | undefined) {
@@ -112,12 +113,12 @@ function AccessState({ status, message }: { status?: number; message?: string })
     : "This Pass may be invalid, revoked, or no longer available.";
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
-      <Card className="mx-auto max-w-md border-slate-700 bg-slate-900">
+    <div className="min-h-screen bg-[#F4F6F8] px-4 py-10 text-[#20242B]">
+      <Card className="mx-auto max-w-md border-[#D8DEE5] bg-white">
         <CardContent className="pt-8 text-center">
-          <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-slate-400" : "text-red-300"}`} />
-          <h1 className="mb-2 text-xl font-semibold text-white">{title}</h1>
-          <p className="text-sm text-slate-400">{message || body}</p>
+          <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-[#68707D]" : "text-red-600"}`} />
+          <h1 className="mb-2 text-xl font-semibold text-[#20242B]">{title}</h1>
+          <p className="text-sm text-[#68707D]">{message || body}</p>
         </CardContent>
       </Card>
     </div>
@@ -129,26 +130,26 @@ function PassJourney({ state }: { state: CandidatePassViewState }) {
   const progress = Math.max(8, ((currentIndex + 1) / state.journey.length) * 100);
 
   return (
-    <Card className="border-slate-800 bg-slate-900/80">
+    <Card className="border-[#D8DEE5] bg-white">
       <CardContent className="p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-white">Hiring progress</span>
-          <Badge className="bg-slate-800 text-slate-200">{state.hiringStage}</Badge>
+          <span className="text-sm font-medium text-[#20242B]">Your journey</span>
+          <Badge className="bg-[#20242B] text-white">{state.hiringStage}</Badge>
         </div>
-        <Progress value={progress} className="h-2 bg-slate-800" />
-        <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
+        <Progress value={progress} className="h-2 bg-[#E7EBEF]" />
+        <div className="mt-3 grid grid-cols-4 gap-2">
           {state.journey.map((step) => (
             <div key={step.stage} className="min-w-0">
               <div
                 className={`mb-1 h-2 rounded-full ${
                   step.status === "completed"
-                    ? "bg-emerald-400"
+                    ? "bg-[#20242B]"
                     : step.status === "current"
-                    ? "bg-blue-400"
-                    : "bg-slate-700"
+                    ? "bg-[#01FF22]"
+                    : "bg-[#D8DEE5]"
                 }`}
               />
-              <p className={`truncate text-[11px] ${step.status === "upcoming" ? "text-slate-500" : "text-slate-300"}`}>{step.stage}</p>
+              <p className={`truncate text-xs ${step.status === "upcoming" ? "text-[#68707D]" : "text-[#20242B]"}`}>{step.stage}</p>
             </div>
           ))}
         </div>
@@ -173,6 +174,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
     },
   });
+  const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const sendMessageMutation = useMutation({
     mutationFn: (message: string) => apiRequest("POST", `/api/candidate-pass/${token}/messages`, { message }),
@@ -233,10 +235,10 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] px-4 text-[#20242B]">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-300" />
-          <p className="text-sm text-slate-400">Opening your Candidate Pass...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#20242B]" />
+          <p className="text-sm text-[#68707D]">Opening your Candidate Pass...</p>
         </div>
       </div>
     );
@@ -276,18 +278,13 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+    <div className="min-h-screen bg-[#F4F6F8] text-[#20242B]">
+      <header className="sticky top-0 z-40 border-b border-[#D8DEE5] bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <img
-              src="/brand/hirepass-endorsed-dark.svg"
-              alt="HirePass by TAKAVEN"
-              className="h-auto w-24 shrink-0 sm:w-32"
-            />
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Candidate Pass</p>
-              <h1 className="truncate text-base font-semibold text-white">{pass.positionTitle}</h1>
+              <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate Pass</p>
+              <h1 className="truncate text-base font-semibold text-[#20242B]">{pass.positionTitle}</h1>
             </div>
           </div>
           <Badge className={`shrink-0 border ${stateStyles[passState.actionState]}`}>{passState.stateLabel}</Badge>
@@ -295,10 +292,11 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
+        <PublicBrand config={publicConfig} />
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className={`border ${stateStyles[passState.actionState]} bg-slate-900`}>
+          <Card className={`border ${stateStyles[passState.actionState]} bg-white`}>
             <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[#68707D]">
                 <span className="inline-flex items-center gap-1">
                   <User className="h-4 w-4" />
                   {candidate.name}
@@ -310,20 +308,20 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               </div>
 
               <div className="grid gap-3">
-                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Current stage</p>
-                  <h2 className="mt-1 text-2xl font-semibold text-white sm:text-3xl">{passState.hiringStage}</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{passState.summary}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Current stage</p>
+                  <h2 className="mt-1 text-2xl font-semibold text-[#20242B] sm:text-3xl">{passState.hiringStage}</h2>
+                  <p className="mt-2 text-sm leading-6 text-[#42494D]">{passState.summary}</p>
                 </div>
-                <div className="rounded-lg border border-blue-400/40 bg-blue-400/10 p-4">
-                  <p className="text-xs uppercase tracking-wide text-blue-200">Your action</p>
+                <div className="rounded-lg border border-[#01FF22]/60 bg-[#01FF22]/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-[#42494D]">Your action</p>
                   <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">{passState.nextAction.label}</h3>
-                      <p className="mt-1 text-sm text-slate-300">{passState.nextAction.description}</p>
+                      <h3 className="text-lg font-semibold text-[#20242B]">{passState.nextAction.label}</h3>
+                      <p className="mt-1 text-sm text-[#42494D]">{passState.nextAction.description}</p>
                     </div>
                     <Button
-                      className="min-h-11 shrink-0 bg-blue-500 hover:bg-blue-600"
+                      className="min-h-11 shrink-0 bg-[#20242B] text-white hover:bg-[#42494D]"
                       onClick={runPrimaryAction}
                       disabled={passState.nextAction.kind === "NONE" && passState.actionState === "COMPLETED"}
                       data-testid="candidate-pass-primary-action"
@@ -332,9 +330,9 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                     </Button>
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Next</p>
-                  <p className="mt-1 text-sm font-medium text-white">{passState.next}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Next</p>
+                  <p className="mt-1 text-sm font-medium text-[#20242B]">{passState.next}</p>
                 </div>
               </div>
             </CardContent>
@@ -343,12 +341,12 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           <div className="space-y-5">
             <PassJourney state={passState} />
             {passState.actionState === "WAITING" && (
-              <Card className="border-sky-500/40 bg-sky-500/10">
+              <Card className="border-[#D8DEE5] bg-white">
                 <CardContent className="flex items-start gap-4 p-5">
-                  <Clock className="mt-1 h-6 w-6 shrink-0 text-sky-200" />
+                  <Clock className="mt-1 h-6 w-6 shrink-0 text-[#68707D]" />
                   <div>
-                    <h3 className="font-semibold text-white">You're all set</h3>
-                    <p className="mt-1 text-sm leading-6 text-sky-100/80">
+                    <h3 className="font-semibold text-[#20242B]">You're all set</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#42494D]">
                       This Pass will show a clear action when the hiring team needs something from you.
                     </p>
                   </div>
@@ -358,32 +356,32 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           </div>
         </section>
 
-        <h2 className="text-lg font-semibold text-white">Your journey</h2>
+        <h2 className="text-lg font-semibold text-[#20242B]">Your journey</h2>
 
         <section className="grid gap-5 lg:grid-cols-2">
           {(interviewSlots.length > 0 || interviews.length > 0) && (
-            <Card id="pass-interview" className="border-slate-800 bg-slate-900/80">
+            <Card id="pass-interview" className="border-[#D8DEE5] bg-white">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <Calendar className="h-5 w-5 text-blue-300" />
+                <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                  <Calendar className="h-5 w-5 text-[#42494D]" />
                   Interview
                 </CardTitle>
-                <CardDescription className="text-slate-400">Choose a slot or review scheduled details.</CardDescription>
+                <CardDescription className="text-[#68707D]">Choose a slot or review scheduled details.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {interviewSlots.length > 0 && (
-                  <Button className="min-h-11 w-full bg-blue-500 hover:bg-blue-600" onClick={() => setShowSlotDialog(true)} data-testid="btn-select-interview-slot">
+                  <Button className="min-h-11 w-full bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowSlotDialog(true)} data-testid="btn-select-interview-slot">
                     Choose interview slot
                   </Button>
                 )}
                 {interviews.map((interview) => (
-                  <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">{formatCandidateDate(interview.interviewDate)}</p>
-                    <p className="text-sm text-slate-400">
+                  <div key={interview.id} className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                    <p className="font-medium text-[#20242B]">{formatCandidateDate(interview.interviewDate)}</p>
+                    <p className="text-sm text-[#68707D]">
                       {interview.startTime} - {interview.endTime} ({interview.format})
                     </p>
                     {interview.meetingLink && (
-                      <a className="mt-2 inline-block text-sm text-blue-300 underline" href={interview.meetingLink} target="_blank" rel="noreferrer">
+                      <a className="mt-2 inline-block text-sm text-[#20242B] underline" href={interview.meetingLink} target="_blank" rel="noreferrer">
                         Open meeting link
                       </a>
                     )}
@@ -394,36 +392,36 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           )}
 
           {(needsSoftAssessment || needsTechnicalAssessment) && (
-            <Card id="pass-assessments" className="border-slate-800 bg-slate-900/80">
+            <Card id="pass-assessments" className="border-[#D8DEE5] bg-white">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <FileCheck className="h-5 w-5 text-amber-300" />
+                <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                  <FileCheck className="h-5 w-5 text-[#42494D]" />
                   Assessment
                 </CardTitle>
-                <CardDescription className="text-slate-400">Complete the requested assessment, then confirm it here.</CardDescription>
+                <CardDescription className="text-[#68707D]">Complete the requested assessment, then confirm it here.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {needsSoftAssessment && (
-                  <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">Soft skills assessment</p>
+                  <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                    <p className="font-medium text-[#20242B]">Soft skills assessment</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <Button asChild className="bg-amber-500 text-slate-950 hover:bg-amber-400">
+                      <Button asChild className="bg-[#20242B] text-white hover:bg-[#42494D]">
                         <a href={pass.softSkillsAssessmentUrl || "#"} target="_blank" rel="noreferrer">Open assessment</a>
                       </Button>
-                      <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => confirmAssessmentMutation.mutate("softSkills")}>
+                      <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => confirmAssessmentMutation.mutate("softSkills")}>
                         Mark completed
                       </Button>
                     </div>
                   </div>
                 )}
                 {needsTechnicalAssessment && (
-                  <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">Technical assessment</p>
+                  <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                    <p className="font-medium text-[#20242B]">Technical assessment</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <Button asChild className="bg-amber-500 text-slate-950 hover:bg-amber-400">
+                      <Button asChild className="bg-[#20242B] text-white hover:bg-[#42494D]">
                         <a href={pass.technicalAssessmentUrl || "#"} target="_blank" rel="noreferrer">Open assessment</a>
                       </Button>
-                      <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => confirmAssessmentMutation.mutate("technical")}>
+                      <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => confirmAssessmentMutation.mutate("technical")}>
                         Mark completed
                       </Button>
                     </div>
@@ -434,26 +432,26 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           )}
 
           {offer && (
-            <Card id="pass-offer" className="border-slate-800 bg-slate-900/80">
+            <Card id="pass-offer" className="border-[#D8DEE5] bg-white">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <CheckCircle className="h-5 w-5 text-emerald-300" />
+                <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                  <CheckCircle className="h-5 w-5 text-[#42494D]" />
                   Offer
                 </CardTitle>
-                <CardDescription className="text-slate-400">Review and respond to your offer.</CardDescription>
+                <CardDescription className="text-[#68707D]">Review and respond to your offer.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-300">
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3 text-sm text-[#42494D]">
                   {offer.salary && <p>Salary: {offer.salaryCurrency || "AED"} {offer.salary.toLocaleString()}</p>}
                   {offer.startDate && <p>Start date: {offer.startDate}</p>}
                   <p>Status: {offer.status}</p>
                 </div>
                 {offer.status === "pending" && (
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <Button className="bg-emerald-500 hover:bg-emerald-600" onClick={() => respondOfferMutation.mutate({ response: "accept" })}>
+                    <Button className="bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => respondOfferMutation.mutate({ response: "accept" })}>
                       Accept
                     </Button>
-                    <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => setOfferResponseMode("negotiate")}>
+                    <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => setOfferResponseMode("negotiate")}>
                       Discuss
                     </Button>
                     <Button variant="destructive" onClick={() => setOfferResponseMode("decline")}>
@@ -466,10 +464,10 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           )}
 
           <Dialog open={offerResponseMode !== null} onOpenChange={(open) => { if (!open) { setOfferResponseMode(null); setOfferResponseText(""); } }}>
-            <DialogContent className="border-slate-700 bg-slate-900 text-slate-100">
+            <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
               <DialogHeader>
                 <DialogTitle>{offerResponseMode === "negotiate" ? "Discuss this offer" : "Decline this offer"}</DialogTitle>
-                <DialogDescription className="text-slate-400">
+                <DialogDescription className="text-[#68707D]">
                   {offerResponseMode === "negotiate" ? "Write the message you want the hiring team to receive, or continue without a message." : "You may provide a reason, or decline without one."}
                 </DialogDescription>
               </DialogHeader>
@@ -485,26 +483,26 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           </Dialog>
 
           {documents.length > 0 && (
-            <Card id="pass-documents" className="border-slate-800 bg-slate-900/80">
+            <Card id="pass-documents" className="border-[#D8DEE5] bg-white">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <FileText className="h-5 w-5 text-orange-300" />
+                <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                  <FileText className="h-5 w-5 text-[#42494D]" />
                   Documents
                 </CardTitle>
-                <CardDescription className="text-slate-400">Track requested and received hiring documents.</CardDescription>
+                <CardDescription className="text-[#68707D]">Track requested and received hiring documents.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {documents.map((doc) => (
-                    <div key={doc.id} className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div key={doc.id} className="flex flex-col gap-3 rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-white">{doc.label || doc.docType}</p>
-                        {doc.fileName && <p className="truncate text-xs text-slate-500">{doc.fileName}</p>}
+                        <p className="truncate font-medium text-[#20242B]">{doc.label || doc.docType}</p>
+                        {doc.fileName && <p className="truncate text-xs text-[#68707D]">{doc.fileName}</p>}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={doc.status === "approved" ? "default" : doc.status === "rejected" ? "destructive" : "outline"}>{doc.status}</Badge>
                         {doc.status === "pending" && (
-                          <label className="inline-flex min-h-9 cursor-pointer items-center rounded-md bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600">
+                          <label className="inline-flex min-h-9 cursor-pointer items-center rounded-md bg-[#20242B] px-3 py-2 text-sm font-medium text-white hover:bg-[#42494D]">
                             <Upload className="mr-2 h-4 w-4" />
                             Submit file
                             <input
@@ -529,7 +527,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                   ))}
                 </div>
                 {pendingDocs.length > 0 && (
-                  <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
+                  <p className="mt-3 flex items-center gap-2 text-sm text-[#42494D]">
                     <Upload className="h-4 w-4" />
                     Upload PDF, JPG or PNG files up to 10 MB. Your document is stored against this Candidate Pass.
                   </p>
@@ -538,25 +536,25 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
             </Card>
           )}
 
-          <Card id="pass-messages" className="border-slate-800 bg-slate-900/80">
+          <Card id="pass-messages" className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Inbox className="h-5 w-5 text-blue-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <Inbox className="h-5 w-5 text-[#42494D]" />
                 Updates
                 {unreadMessages > 0 && <Badge variant="destructive">{unreadMessages} new</Badge>}
               </CardTitle>
-              <CardDescription className="text-slate-400">Hiring-team updates and candidate replies.</CardDescription>
+              <CardDescription className="text-[#68707D]">Hiring-team updates and candidate replies.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {messages.length === 0 ? (
-                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No messages yet.</p>
+                <p className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4 text-sm text-[#68707D]">No messages yet.</p>
               ) : (
                 <ScrollArea className="h-72 pr-4">
                   <div className="space-y-3">
                     {messages.map((message) => (
-                      <div key={message.id} className={`rounded-lg p-3 ${message.senderType === "hr" ? "mr-8 bg-slate-800" : "ml-8 bg-blue-600"}`}>
-                        <p className="mb-1 text-xs text-slate-400">{message.senderType === "hr" ? message.senderName || "Hiring team" : "You"}</p>
-                        <p className="text-sm text-white">{message.message}</p>
+                      <div key={message.id} className={`rounded-lg p-3 ${message.senderType === "hr" ? "mr-8 bg-[#F4F6F8] text-[#20242B]" : "ml-8 bg-[#20242B] text-white"}`}>
+                        <p className={`mb-1 text-xs ${message.senderType === "hr" ? "text-[#68707D]" : "text-white/70"}`}>{message.senderType === "hr" ? message.senderName || "Hiring team" : "You"}</p>
+                        <p className="text-sm">{message.message}</p>
                       </div>
                     ))}
                   </div>
@@ -567,7 +565,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
                   placeholder="Reply to the hiring team..."
-                  className="min-h-11 resize-none border-slate-700 bg-slate-950 text-white"
+                  className="min-h-11 resize-none border-[#D8DEE5] bg-white text-[#20242B]"
                   data-testid="input-message"
                 />
                 <Button
@@ -584,18 +582,18 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
         </section>
 
         {timeline.length > 0 && (
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <MessageSquare className="h-5 w-5 text-slate-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <MessageSquare className="h-5 w-5 text-[#42494D]" />
                 Journey log
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {timeline.map((event, index) => (
-                <div key={event.id || index} className="border-l border-slate-700 pl-4">
-                  <p className="font-medium text-white">{event.title}</p>
-                  <p className="text-sm text-slate-400">{event.description}</p>
+                <div key={event.id || index} className="border-l border-[#D8DEE5] pl-4">
+                  <p className="font-medium text-[#20242B]">{event.title}</p>
+                  <p className="text-sm text-[#68707D]">{event.description}</p>
                 </div>
               ))}
             </CardContent>
@@ -604,10 +602,10 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       </main>
 
       <Dialog open={showSlotDialog} onOpenChange={setShowSlotDialog}>
-        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+        <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Choose interview slot</DialogTitle>
-            <DialogDescription className="text-slate-400">Pick one available time. Your Pass updates after confirmation.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Pick one available time. Your Pass updates after confirmation.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-80 pr-2">
             <div className="space-y-2">
@@ -617,12 +615,12 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                   type="button"
                   onClick={() => setSelectedSlotId(slot.id)}
                   className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                    selectedSlotId === slot.id ? "border-blue-400 bg-blue-500/20" : "border-slate-700 bg-slate-950 hover:border-blue-500"
+                    selectedSlotId === slot.id ? "border-[#01FF22] bg-[#01FF22]/10" : "border-[#D8DEE5] bg-[#F4F6F8] hover:border-[#42494D]"
                   }`}
                   data-testid={`slot-${slot.id}`}
                 >
-                  <p className="font-medium text-white">{slot.slotDate}</p>
-                  <p className="text-sm text-slate-400">
+                  <p className="font-medium text-[#20242B]">{slot.slotDate}</p>
+                  <p className="text-sm text-[#68707D]">
                     {slot.startTime} - {slot.endTime} ({slot.format})
                   </p>
                 </button>
@@ -630,7 +628,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
             </div>
           </ScrollArea>
           <DialogFooter>
-            <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => setShowSlotDialog(false)}>
+            <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => setShowSlotDialog(false)}>
               Cancel
             </Button>
             <Button

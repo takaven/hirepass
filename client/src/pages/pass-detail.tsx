@@ -56,11 +56,11 @@ interface PassCandidate {
 const statusPipeline = [
   { value: "new", label: "Applied", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
   { value: "screening", label: "Review", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
-  { value: "shortlisted", label: "Shortlisted", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
+  { value: "shortlisted", label: "Review", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
   { value: "interview", label: "Interview", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
-  { value: "offer", label: "Offer", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
+  { value: "offer", label: "Decision", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
   { value: "hired", label: "Hired", color: "bg-green-500 text-white" },
-  { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" },
+  { value: "rejected", label: "Not selected", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" },
 ];
 
 function CandidateStatusBadge({ status }: { status: string }) {
@@ -75,11 +75,12 @@ function CandidateStatusBadge({ status }: { status: string }) {
 export default function PassDetail() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/passes/:id");
+  const [, vacancyParams] = useRoute("/vacancies/:id");
   const { toast } = useToast();
   const [addCandidateOpen, setAddCandidateOpen] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
 
-  const passId = params?.id;
+  const passId = vacancyParams?.id || params?.id;
 
   const { data: pass, isLoading: passLoading } = useQuery<Pass>({
     queryKey: ["/api/passes", passId],
@@ -105,7 +106,7 @@ export default function PassDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates"] });
-      toast({ title: "Candidate added to pass" });
+      toast({ title: "Candidate added to vacancy" });
       setAddCandidateOpen(false);
       setSelectedCandidateId("");
     },
@@ -157,7 +158,7 @@ export default function PassDetail() {
       <GlassCard className="p-12 text-center">
         <FileText className="w-16 h-16 mx-auto text-primary/30" strokeWidth={1} />
         <h3 className="mt-4 text-lg font-medium">Vacancy not found</h3>
-        <Link href="/passes">
+        <Link href="/vacancies">
           <Button variant="outline" className="mt-4 rounded-xl">
             Back to Vacancies
           </Button>
@@ -170,7 +171,7 @@ export default function PassDetail() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <Link href="/passes">
+          <Link href="/vacancies">
             <Button variant="ghost" size="icon" className="rounded-xl" data-testid="button-back">
               <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
             </Button>
@@ -239,7 +240,7 @@ export default function PassDetail() {
               </div>
             </DialogContent>
           </Dialog>
-          <Link href={`/passes/${passId}/edit`}>
+          <Link href={`/vacancies/${passId}/edit`}>
             <Button className="rounded-xl gap-2" data-testid="button-edit-pass">
               <Edit className="w-4 h-4" strokeWidth={1.5} />
               Edit vacancy

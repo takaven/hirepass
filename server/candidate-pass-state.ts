@@ -5,6 +5,7 @@ import type {
   CandidatePassActionState,
   CandidatePassViewState,
 } from "@shared/pass-state";
+import { presentHiringStage } from "@shared/hiring-workflow";
 
 export type {
   CandidateHiringStage,
@@ -53,15 +54,7 @@ export type CandidatePassStateInput = {
   now?: Date;
 };
 
-const stageOrder: CandidateHiringStage[] = [
-  "Application",
-  "Screening",
-  "Assessment",
-  "Interview",
-  "Decision",
-  "Offer",
-  "Handoff",
-];
+const stageOrder: CandidateHiringStage[] = ["Applied", "Review", "Interview", "Decision"];
 
 function toDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -70,23 +63,7 @@ function toDate(value: Date | string | null | undefined): Date | null {
 }
 
 export function mapCandidateHiringStage(status?: string | null): CandidateHiringStage {
-  switch ((status || "new").toLowerCase()) {
-    case "screening":
-      return "Screening";
-    case "shortlisted":
-      return "Assessment";
-    case "interview":
-      return "Interview";
-    case "offer":
-      return "Offer";
-    case "hired":
-      return "Handoff";
-    case "rejected":
-      return "Decision";
-    case "new":
-    default:
-      return "Application";
-  }
+  return presentHiringStage((status || "new").toLowerCase()).label;
 }
 
 function buildJourney(currentStage: CandidateHiringStage): CandidateJourneyStep[] {
@@ -242,19 +219,6 @@ function expectedMovement(input: CandidatePassStateInput, waitingOn: string, nex
   return "Expected movement: this Pass will update when the next step is recorded.";
 }
 
-function passHandoff(latest: { text: string; date: Date | null }, waitingOn: string): string | null {
-  if (!latest.date) return null;
-  const owner = waitingOn;
-  if (latest.text.startsWith("Manager Pass issued")) return "Pass Handoff: Hiring team -> Hiring stakeholder";
-  if (latest.text.startsWith("Candidate Pass issued")) return "Pass Handoff: Hiring team -> Candidate";
-  if (latest.text.startsWith("Hiring Manager")) return `Pass Handoff: Hiring Manager -> ${owner}`;
-  if (latest.text.startsWith("Interview slot") || latest.text.startsWith("Document") || latest.text.startsWith("Assessment") || latest.text.startsWith("Offer")) {
-    return `Pass Handoff: Candidate -> ${owner}`;
-  }
-  if (latest.text.startsWith("Hiring team")) return `Pass Handoff: Hiring team -> ${owner}`;
-  return null;
-}
-
 function actionPhrase(next: string): string {
   const phrase = next
     .trim()
@@ -279,7 +243,7 @@ function withPassState(base: Omit<CandidatePassViewState, "now" | "yourAction" |
     expectedMovement: expectedMovement(input, base.waitingOn, base.nextAction.description, now),
     latestUpdate: base.latestUpdate || latest.text,
     latestUpdateAt: latest.at,
-    passHandoff: passHandoff(latest, base.waitingOn),
+    passHandoff: null,
   };
 }
 
@@ -329,8 +293,8 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       hiringStage,
       stateLabel: "COMPLETED",
       headline: "Your hiring journey is complete.",
-      summary: "The hiring team will guide the employment handoff outside this Candidate Pass.",
-      waitingOn: "Handoff",
+      summary: "The hiring team will guide any employment handoff outside this Candidate Pass.",
+      waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "No action required", description: "Your Candidate Pass work is complete.", target: "none" },
       latestUpdate: "",
       journey: buildJourney(hiringStage),
@@ -373,7 +337,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
   if (needsSoftAssessment || needsTechnicalAssessment) {
     return withPassState({
       actionState: "ACTION_REQUIRED",
-      hiringStage: "Assessment",
+      hiringStage: "Review",
       stateLabel: "ACTION REQUIRED",
       headline: needsSoftAssessment ? "Complete your soft skills assessment." : "Complete your technical assessment.",
       summary: "Your assessment keeps the hiring process moving.",
@@ -385,7 +349,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "assessment",
       },
       latestUpdate: "",
-      journey: buildJourney("Assessment"),
+      journey: buildJourney("Review"),
     }, input, now);
   }
 

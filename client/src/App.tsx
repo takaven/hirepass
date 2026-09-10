@@ -1,5 +1,5 @@
 import { Switch, Route, useLocation } from "wouter";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { apiRequest, queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,6 +14,7 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Candidates = lazy(() => import("@/pages/candidates"));
 const CandidateForm = lazy(() => import("@/pages/candidate-form"));
+const CandidateProfile = lazy(() => import("@/pages/candidate-profile"));
 const Passes = lazy(() => import("@/pages/passes"));
 const PassForm = lazy(() => import("@/pages/pass-form"));
 const PassDetail = lazy(() => import("@/pages/pass-detail"));
@@ -41,7 +42,7 @@ function InternalLogin() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#20242B] px-4">
       <form
         className="w-full max-w-sm space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100"
         onSubmit={(event) => {
@@ -60,7 +61,7 @@ function InternalLogin() {
         <label className="block space-y-1 text-sm">
           <span className="text-slate-300">Username</span>
           <input
-            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-blue-400"
+            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-white"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"
@@ -70,7 +71,7 @@ function InternalLogin() {
         <label className="block space-y-1 text-sm">
           <span className="text-slate-300">Password</span>
           <input
-            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-blue-400"
+            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-white"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -80,7 +81,7 @@ function InternalLogin() {
         </label>
         {loginMutation.isError && <p className="text-sm text-red-300">Sign in failed. Check the configured owner/admin credentials.</p>}
         <button
-          className="h-10 w-full rounded-md bg-blue-500 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-60"
+          className="h-10 w-full rounded-md bg-white text-sm font-medium text-[#20242B] hover:bg-slate-100 disabled:opacity-60"
           type="submit"
           disabled={loginMutation.isPending}
           data-testid="button-internal-login"
@@ -106,10 +107,10 @@ function InternalAuthGate() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] text-[#42494D]">
         <div className="flex flex-col items-center gap-3">
-          <img src="/brand/hirepass-endorsed-dark.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
-          <p className="text-sm text-slate-400">Checking access...</p>
+          <img src="/brand/hirepass-endorsed-light.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
+          <p className="text-sm text-[#68707D]">Checking access...</p>
         </div>
       </div>
     );
@@ -120,35 +121,53 @@ function InternalAuthGate() {
 
 function RouteFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+    <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] text-[#42494D]">
       <div className="flex flex-col items-center gap-3">
-        <img src="/brand/hirepass-endorsed-dark.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
-        <p className="text-sm text-slate-400">Loading HirePass...</p>
+        <img src="/brand/hirepass-endorsed-light.svg" alt="HirePass by TAKAVEN" className="h-auto w-40" />
+        <p className="text-sm text-[#68707D]">Loading HirePass...</p>
       </div>
     </div>
   );
 }
 
 function MainRouter() {
+  function RedirectTo({ to }: { to: string }) {
+    const [, setLocation] = useLocation();
+    useEffect(() => {
+      setLocation(to, { replace: true });
+    }, [setLocation, to]);
+    return null;
+  }
+
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/passes" component={Passes} />
-      <Route path="/pass-control" component={HrPassControl} />
-      <Route path="/passes/new" component={PassForm} />
-      <Route path="/passes/:id" component={PassDetail} />
-      <Route path="/passes/:id/edit" component={PassForm} />
-      <Route path="/passes/:passId/candidates" component={PassCandidates} />
+      <Route path="/home">{() => <RedirectTo to="/" />}</Route>
+      <Route path="/vacancies/new" component={PassForm} />
+      <Route path="/vacancies/:id/edit" component={PassForm} />
+      <Route path="/vacancies/:passId/candidates" component={PassCandidates} />
+      <Route path="/vacancies/:id" component={PassDetail} />
+      <Route path="/vacancies" component={Passes} />
+      <Route path="/passes/new">{() => <RedirectTo to="/vacancies/new" />}</Route>
+      <Route path="/passes/:id/edit">{(params) => <RedirectTo to={`/vacancies/${params.id}/edit`} />}</Route>
+      <Route path="/passes/:passId/candidates">{(params) => <RedirectTo to={`/vacancies/${params.passId}/candidates`} />}</Route>
+      <Route path="/passes/:id">{(params) => <RedirectTo to={`/vacancies/${params.id}`} />}</Route>
+      <Route path="/passes">{() => <RedirectTo to="/vacancies" />}</Route>
+      <Route path="/hiring-control" component={HrPassControl} />
+      <Route path="/pass-control">{() => <RedirectTo to="/hiring-control" />}</Route>
       <Route path="/candidates" component={Candidates} />
       <Route path="/candidates/new" component={CandidateForm} />
-      <Route path="/candidates/:id" component={CandidateForm} />
       <Route path="/candidates/:id/edit" component={CandidateForm} />
+      <Route path="/candidates/:id" component={CandidateProfile} />
       <Route path="/interviews" component={Interviews} />
       <Route path="/interviews/new" component={InterviewForm} />
       <Route path="/interviews/:id/edit" component={InterviewForm} />
-      <Route path="/managers" component={Managers} />
-      <Route path="/managers/new" component={ManagerForm} />
-      <Route path="/managers/:id/edit" component={ManagerForm} />
+      <Route path="/hiring-team" component={Managers} />
+      <Route path="/hiring-team/new" component={ManagerForm} />
+      <Route path="/hiring-team/:id/edit" component={ManagerForm} />
+      <Route path="/managers">{() => <RedirectTo to="/hiring-team" />}</Route>
+      <Route path="/managers/new">{() => <RedirectTo to="/hiring-team/new" />}</Route>
+      <Route path="/managers/:id/edit">{(params) => <RedirectTo to={`/hiring-team/${params.id}/edit`} />}</Route>
       <Route path="/settings" component={Settings} />
       <Route path="/analytics" component={Analytics} />
       <Route component={NotFound} />

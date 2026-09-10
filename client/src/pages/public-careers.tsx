@@ -18,7 +18,7 @@ export default function PublicCareers() {
             Careers at {config?.companyName || "the hiring company"}
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
-            Explore open vacancies or share your CV for future roles. HirePass keeps the process simple and gives the hiring team clear next actions.
+            Explore current opportunities or share your profile for suitable future roles.
           </p>
         </header>
 
@@ -57,9 +57,8 @@ export default function PublicCareers() {
           <Button className="mt-4" asChild><Link href="/talent-pool">Join our talent pool</Link></Button>
         </GlassCard>
 
-        <footer className="mt-10 text-center text-xs text-muted-foreground">HirePass by TAKAVEN</footer>
+        <footer className="mt-10 text-center text-xs text-muted-foreground">Powered by HirePass</footer>
       </main>
     </div>
   );
 }
-

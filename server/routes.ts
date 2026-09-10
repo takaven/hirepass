@@ -49,10 +49,22 @@ import { wakeAiReviewWorker } from "./ai/worker";
 import { enqueueEmail, type EmailIntent } from "./email/outbox";
 import { getEmailConfig, publicAppUrl } from "./email/config";
 
+function publicCompanyLogoUrl() {
+  const value = process.env.HIREPASS_COMPANY_LOGO_URL || "";
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
   companyLocation: process.env.HIREPASS_COMPANY_LOCATION || "",
   careersContactEmail: process.env.HIREPASS_CAREERS_CONTACT_EMAIL || "",
+  companyLogoUrl: publicCompanyLogoUrl(),
   privacyNoticeUrl: process.env.HIREPASS_PRIVACY_NOTICE_URL || "",
   privacyNoticeVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION || "launch-v1",
   aiEnabled: getAiConfig().enabled,
@@ -178,6 +190,20 @@ export async function registerRoutes(
 ): Promise<Server> {
   const defaultExpiry = () => new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
   const createCandidatePassToken = () => `cand_${randomBytes(32).toString("base64url")}`;
+
+  async function createOrReuseCandidatePassUrl(passCandidateId: number): Promise<string | null> {
+    const existingUrl = await candidatePassUrlForApplication(passCandidateId);
+    if (existingUrl) return existingUrl;
+    const link = await storage.createCandidateLink({
+      token: createCandidatePassToken(),
+      passCandidateId,
+      canFillApplication: true,
+      canTakeAssessment: true,
+      expiresAt: defaultExpiry(),
+      isActive: true,
+    });
+    return publicAppUrl(`/candidate-pass/${link.token}`);
+  }
 
   async function getValidCandidateLink(token: string, res: Response) {
     const candidateLink = await storage.getCandidateLinkByToken(token);
@@ -1517,6 +1543,8 @@ export async function registerRoutes(
     try {
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId: Number(req.params.id) });
+      const mayReturnImmediateStatusLink = Boolean(result.applicationId && !result.duplicateApplication && !result.reusedCandidate);
+      const candidatePassUrl = mayReturnImmediateStatusLink ? await createOrReuseCandidatePassUrl(result.applicationId!) : null;
       if (result.applicationId && !result.duplicateApplication) {
         try {
           const queued = await queueReviewForApplication(result.applicationId);
@@ -1538,6 +1566,7 @@ export async function registerRoutes(
       res.status(result.duplicateApplication ? 200 : 201).json({
         success: true,
         message: result.duplicateApplication ? "Your application was already received" : "Application submitted successfully",
+        candidatePassUrl,
         ...result,
       });
     } catch (error) { return sendPublicIntakeError(error, res); }
@@ -1549,6 +1578,8 @@ export async function registerRoutes(
       const passId = z.number().int().positive().parse(req.body.passId);
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId });
+      const mayReturnImmediateStatusLink = Boolean(result.applicationId && !result.duplicateApplication && !result.reusedCandidate);
+      const candidatePassUrl = mayReturnImmediateStatusLink ? await createOrReuseCandidatePassUrl(result.applicationId!) : null;
       if (result.applicationId && !result.duplicateApplication) {
         try {
           const queued = await queueReviewForApplication(result.applicationId);
@@ -1567,7 +1598,7 @@ export async function registerRoutes(
           ? "Your application is already on file with the hiring team. Your retry did not replace the CV already attached to that application."
           : "Your application has been received. The hiring team will manage any next step in HirePass.",
       });
-      res.status(result.duplicateApplication ? 200 : 201).json({ success: true, ...result });
+      res.status(result.duplicateApplication ? 200 : 201).json({ success: true, candidatePassUrl, ...result });
     } catch (error) { return sendPublicIntakeError(error, res); }
   });
 

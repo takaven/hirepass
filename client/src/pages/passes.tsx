@@ -83,7 +83,7 @@ export default function Passes() {
             Manage all recruitment requisitions and job openings
           </p>
         </div>
-        <Link href="/passes/new">
+        <Link href="/vacancies/new">
           <Button className="rounded-xl gap-2" data-testid="button-new-pass">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
             New Vacancy
@@ -144,7 +144,7 @@ export default function Passes() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 flex-wrap mb-2">
-                      <Link href={`/passes/${pass.id}`}>
+                      <Link href={`/vacancies/${pass.id}`}>
                         <h3 className="font-semibold text-lg hover:text-primary transition-colors">
                           {pass.positionTitle}
                         </h3>
@@ -187,19 +187,19 @@ export default function Passes() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="rounded-xl">
-                    <Link href={`/passes/${pass.id}`}>
+                    <Link href={`/vacancies/${pass.id}`}>
                       <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
                         <Eye className="w-4 h-4" strokeWidth={1.5} />
                         View Details
                       </DropdownMenuItem>
                     </Link>
-                    <Link href={`/passes/${pass.id}/candidates`}>
+                    <Link href={`/vacancies/${pass.id}/candidates`}>
                       <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer" data-testid={`pass-pipeline-${pass.id}`}>
                         <Users className="w-4 h-4" strokeWidth={1.5} />
                         Candidate Pipeline
                       </DropdownMenuItem>
                     </Link>
-                    <Link href={`/passes/${pass.id}/edit`}>
+                    <Link href={`/vacancies/${pass.id}/edit`}>
                       <DropdownMenuItem className="gap-2 rounded-lg cursor-pointer">
                         <Edit className="w-4 h-4" strokeWidth={1.5} />
                         Edit
@@ -228,7 +228,7 @@ export default function Passes() {
               : "Create your first recruitment pass to get started"}
           </p>
           {!searchQuery && statusFilter === "all" && (
-            <Link href="/passes/new">
+            <Link href="/vacancies/new">
               <Button className="mt-6 rounded-xl gap-2">
                 <Plus className="w-4 h-4" strokeWidth={1.5} />
                 Create Vacancy

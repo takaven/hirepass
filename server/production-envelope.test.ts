@@ -240,6 +240,7 @@ describe("HirePass production envelope", () => {
         companyName: "Test Company",
         companyLocation: "Dubai",
         careersContactEmail: "careers@example.test",
+        companyLogoUrl: "",
         privacyNoticeUrl: "https://example.test/privacy",
         privacyNoticeVersion: "test-v1",
         aiEnabled: false,
@@ -586,6 +587,7 @@ describe("HirePass production envelope", () => {
     assert.match(privacySource, /This notice does not promise a fixed retention period/);
     assert.match(privacySource, /Mauritius Data Protection Act 2017/);
     assert.doesNotMatch(privacySource, /ARIE Finance/);
+    assert.doesNotMatch(privacySource, /"Not configured"/);
 
     const publicApplySource = await readFile(path.join(process.cwd(), "client/src/pages/public-apply.tsx"), "utf8");
     assert.match(publicApplySource, /I have read the \{privacyLink\} and understand how \{config\.companyName\} will use my personal information in connection with my application/);
@@ -594,21 +596,102 @@ describe("HirePass production envelope", () => {
     assert.match(publicApplySource, /I can contact \{config\.careersContactEmail \|\| "the hiring organisation"\} if I no longer wish to be considered for future opportunities/);
 
     const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
+    const candidateStateSource = await readFile(path.join(process.cwd(), "server/candidate-pass-state.ts"), "utf8");
     assert.match(candidateSource, /Current stage/);
     assert.match(candidateSource, /Your action/);
     assert.match(candidateSource, /Your journey/);
+    assert.match(candidateSource, /<PublicBrand config=\{publicConfig\} \/>/);
+    assert.match(candidateSource, /grid grid-cols-4 gap-2/);
     assert.match(candidateSource, /\{documents\.length > 0 && \(/);
     assert.match(candidateSource, /\{timeline\.length > 0 && \(/);
     assert.match(candidateSource, /id="pass-messages"/);
+    assert.doesNotMatch(candidateSource, /bg-slate-950/);
+    assert.doesNotMatch(candidateSource, /sm:grid-cols-7/);
     assert.doesNotMatch(candidateSource, /Dominant next action/);
     assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
     assert.doesNotMatch(candidateSource, /Latest update/);
+    assert.match(candidateStateSource, /const stageOrder: CandidateHiringStage\[\] = \["Applied", "Review", "Interview", "Decision"\]/);
+    assert.doesNotMatch(candidateStateSource, /"Handoff"/);
 
     const stakeholderSource = await readFile(path.join(process.cwd(), "client/src/pages/manager-recruitment-pass.tsx"), "utf8");
     assert.match(stakeholderSource, /What needs your input\?/);
     assert.match(stakeholderSource, /Candidate \/ vacancy context/);
     assert.match(stakeholderSource, /Relevant evidence/);
+    assert.match(stakeholderSource, /<PublicBrand config=\{publicConfig\} \/>/);
+    assert.doesNotMatch(stakeholderSource, /bg-slate-950/);
     assert.doesNotMatch(stakeholderSource, /\["Now", managerPassState\.headline\]/);
+  });
+
+  it("keeps customer identity primary on public surfaces", async () => {
+    const routesSource = await readFile(path.join(process.cwd(), "server/routes.ts"), "utf8");
+    const publicApplySource = await readFile(path.join(process.cwd(), "client/src/pages/public-apply.tsx"), "utf8");
+    const careersSource = await readFile(path.join(process.cwd(), "client/src/pages/public-careers.tsx"), "utf8");
+    const talentPoolSource = await readFile(path.join(process.cwd(), "client/src/pages/public-talent-pool.tsx"), "utf8");
+    const appSource = await readFile(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
+
+    assert.match(routesSource, /HIREPASS_COMPANY_LOGO_URL/);
+    assert.match(publicApplySource, /companyLogoUrl/);
+    assert.match(publicApplySource, /Powered by HirePass/);
+    assert.match(careersSource, /Explore current opportunities or share your profile for suitable future roles/);
+    assert.doesNotMatch(careersSource, /HirePass keeps the process simple/);
+    assert.match(talentPoolSource, /<PublicFooter config=\{config\}\/>/);
+    assert.doesNotMatch(publicApplySource, /HirePass by TAKAVEN\{config/);
+  });
+
+  it("presents Home, Analytics and Settings as simple pilot surfaces", async () => {
+    const homeSource = await readFile(path.join(process.cwd(), "client/src/pages/dashboard.tsx"), "utf8");
+    const analyticsSource = await readFile(path.join(process.cwd(), "client/src/pages/analytics.tsx"), "utf8");
+    const settingsSource = await readFile(path.join(process.cwd(), "client/src/pages/settings.tsx"), "utf8");
+
+    assert.match(homeSource, /What needs your attention/);
+    assert.match(homeSource, /You're up to date/);
+    assert.match(homeSource, /New vacancy/);
+    assert.doesNotMatch(homeSource, /Add Candidate/);
+    assert.doesNotMatch(homeSource, /hiredThisMonth/);
+    assert.doesNotMatch(homeSource, /text-\[9px\]|text-\[10px\]|text-\[11px\]/);
+
+    assert.doesNotMatch(analyticsSource, /PieChart|BarChart|CHART_COLORS|Vacancies by Department/);
+    assert.match(analyticsSource, /Time to fill/);
+    assert.match(analyticsSource, /No completed hire timing yet/);
+
+    assert.match(settingsSource, /Organisation readiness/);
+    assert.match(settingsSource, /Ready/);
+    assert.match(settingsSource, /Needs setup/);
+    assert.match(settingsSource, /Managed by your HirePass administrator/);
+    assert.doesNotMatch(settingsSource, /deployment environment|restart the application/);
+  });
+
+  it("limits public application status access to brand-new candidate applications", async () => {
+    const routesSource = await readFile(path.join(process.cwd(), "server/routes.ts"), "utf8");
+    const publicApplySource = await readFile(path.join(process.cwd(), "client/src/pages/public-apply.tsx"), "utf8");
+    const publicSubmissionSource = await readFile(path.join(process.cwd(), "client/src/lib/public-submission.ts"), "utf8");
+
+    assert.match(routesSource, /createOrReuseCandidatePassUrl/);
+    assert.match(routesSource, /candidatePassUrlForApplication\(passCandidateId\)/);
+    assert.match(routesSource, /expiresAt: defaultExpiry\(\)/);
+    assert.match(routesSource, /token: createCandidatePassToken\(\)/);
+    assert.match(routesSource, /!result\.duplicateApplication && !result\.reusedCandidate/);
+    assert.match(routesSource, /candidatePassUrl/);
+    assert.match(publicSubmissionSource, /result\.reusedCandidate \? null/);
+    assert.match(publicApplySource, /View application status/);
+  });
+
+  it("keeps the internal pilot surface on semantic vacancy and hiring-team routes", async () => {
+    const appSource = await readFile(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
+    const sidebarSource = await readFile(path.join(process.cwd(), "client/src/components/app-sidebar.tsx"), "utf8");
+    const candidatesSource = await readFile(path.join(process.cwd(), "client/src/pages/candidates.tsx"), "utf8");
+
+    assert.match(appSource, /path="\/vacancies"/);
+    assert.match(appSource, /path="\/hiring-team"/);
+    assert.match(appSource, /path="\/hiring-control"/);
+    assert.match(appSource, /<RedirectTo to="\/vacancies" \/>/);
+    assert.match(appSource, /component=\{CandidateProfile\}/);
+    assert.match(sidebarSource, /url: "\/vacancies"/);
+    assert.match(sidebarSource, /url: "\/hiring-team"/);
+    assert.match(sidebarSource, /url: "\/hiring-control"/);
+    assert.doesNotMatch(sidebarSource, /url: "\/passes"/);
+    assert.match(candidatesSource, /setLocation\(`\/candidates\/\$\{candidate\.id\}`\)/);
+    assert.match(candidatesSource, /setLocation\(`\/candidates\/\$\{candidate\.id\}\/edit`\)/);
   });
 
   it("requires comparison candidates to share the same role target and current criteria version", async () => {

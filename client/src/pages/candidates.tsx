@@ -47,6 +47,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Candidate, Pass, PassCandidate } from "@shared/schema";
+import { presentCandidateSource } from "@shared/hiring-workflow";
 
 interface CandidateWithPasses extends Candidate {
   passCandidates?: (PassCandidate & { pass: Pass })[];
@@ -283,7 +284,7 @@ export default function Candidates() {
                     {candidate.passCandidates.map((pc) => (
                       <Link 
                         key={pc.id} 
-                        href={`/passes/${pc.passId}`}
+                        href={`/vacancies/${pc.passId}`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Badge 
@@ -308,7 +309,7 @@ export default function Candidates() {
                 )}
                 {candidate.source && (
                   <Badge variant="outline" className="text-xs">
-                    {candidate.source}
+                    {presentCandidateSource(candidate.source)}
                   </Badge>
                 )}
                 {candidate.inTalentPool && (

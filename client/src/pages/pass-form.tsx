@@ -65,10 +65,12 @@ export default function PassForm() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/passes/:id");
   const [, editParams] = useRoute("/passes/:id/edit");
+  const [, vacancyParams] = useRoute("/vacancies/:id");
+  const [, vacancyEditParams] = useRoute("/vacancies/:id/edit");
   const { toast } = useToast();
   const [expandedPositions, setExpandedPositions] = useState<Set<number>>(new Set([0]));
 
-  const passId = params?.id || editParams?.id;
+  const passId = vacancyParams?.id || vacancyEditParams?.id || params?.id || editParams?.id;
   const isEditing = Boolean(passId && passId !== "new");
 
   const { data: pass, isLoading: passLoading } = useQuery<Pass>({
@@ -247,7 +249,7 @@ export default function PassForm() {
       
       queryClient.invalidateQueries({ queryKey: ["/api/passes"] });
       toast({ title: "Vacancy created successfully" });
-      setLocation(`/passes/${createdPass.id}`);
+      setLocation(`/vacancies/${createdPass.id}`);
     },
     onError: () => {
       toast({ title: "Failed to create pass", variant: "destructive" });
@@ -287,7 +289,7 @@ export default function PassForm() {
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId] });
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "positions"] });
       toast({ title: "Vacancy updated successfully" });
-      setLocation(`/passes/${passId}`);
+      setLocation(`/vacancies/${passId}`);
     },
     onError: () => {
       toast({ title: "Failed to update pass", variant: "destructive" });
@@ -316,7 +318,7 @@ export default function PassForm() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/passes">
+        <Link href="/vacancies">
           <Button variant="ghost" size="icon" className="rounded-xl" data-testid="button-back">
             <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
           </Button>
@@ -796,7 +798,7 @@ export default function PassForm() {
           </GlassCard>
 
           <div className="flex justify-end gap-4">
-            <Link href="/passes">
+            <Link href="/vacancies">
               <Button type="button" variant="outline" className="rounded-xl">
                 Cancel
               </Button>
