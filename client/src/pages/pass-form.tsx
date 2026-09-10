@@ -246,7 +246,7 @@ export default function PassForm() {
       }
       
       queryClient.invalidateQueries({ queryKey: ["/api/passes"] });
-      toast({ title: "Vacancy and Pass created successfully" });
+      toast({ title: "Vacancy created successfully" });
       setLocation(`/passes/${createdPass.id}`);
     },
     onError: () => {
@@ -286,7 +286,7 @@ export default function PassForm() {
       queryClient.invalidateQueries({ queryKey: ["/api/passes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId] });
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "positions"] });
-      toast({ title: "Pass updated successfully" });
+      toast({ title: "Vacancy updated successfully" });
       setLocation(`/passes/${passId}`);
     },
     onError: () => {
@@ -323,7 +323,7 @@ export default function PassForm() {
         </Link>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
-            {isEditing ? "Edit Vacancy & Pass" : "New Vacancy & Pass"}
+            {isEditing ? "Edit Vacancy" : "New Vacancy"}
           </h1>
           <p className="text-muted-foreground mt-1">
             {isEditing ? `Editing ${pass?.passId}` : "Create a new recruitment requisition"}
@@ -812,7 +812,7 @@ export default function PassForm() {
               ) : (
                 <Save className="w-4 h-4" strokeWidth={1.5} />
               )}
-              {isEditing ? "Update Pass" : "Create Pass"}
+              {isEditing ? "Update Vacancy" : "Create Vacancy"}
             </Button>
           </div>
         </form>

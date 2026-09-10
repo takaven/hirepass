@@ -88,7 +88,7 @@ For a standard setup, agree the starting hiring workflow and configure only the 
 
 Complex workflow tailoring, candidate/data migration, integrations, custom reporting or product changes are separately scoped work.
 
-Do not represent arbitrary workflow design, outbound email/reminders, candidate comparison, talent-pool matching, a recruiting assistant or multiple named internal accounts as configuration that exists. Bounded stages, general CV submission and evidence-backed vacancy-application AI review are current capabilities; confirm the exact release behavior against the current source.
+Do not represent arbitrary workflow design, reminder rules, recruiting assistant chat or multiple named internal accounts as configuration that exists. Bounded stages, general CV submission, transactional email outbox, evidence-backed AI review, Candidate Library matching and comparison from existing AI evidence are current capabilities; confirm the exact release behavior against the current source.
 
 ## AI-Assisted Review
 
@@ -115,6 +115,10 @@ Before real candidate data is reviewed by AI, run a fictional-data AI smoke test
 - continued manual review when AI is unavailable.
 
 Do not use AI output as an automatic reject/select decision. Hiring decisions remain human-owned.
+
+## Transactional Email
+
+Transactional email is a launch capability for meaningful human updates only: application/CV receipt, Candidate Pass issue/reissue and Stakeholder Pass issue/reissue. Configure it at deployment level with `HIREPASS_EMAIL_ENABLED=true`, `HIREPASS_EMAIL_FROM`, `HIREPASS_SMTP_HOST`, `HIREPASS_SMTP_PORT`, optional `HIREPASS_SMTP_SECURE`, `HIREPASS_SMTP_USER` and `HIREPASS_SMTP_PASSWORD`. Delivery uses a small database outbox with bounded retry. Email failure must not roll back hiring workflow changes.
 
 ## Mandatory Pre-Data Security And Privacy Gate
 

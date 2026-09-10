@@ -7,7 +7,7 @@ import { pool } from "./db";
 import { eraseCandidatePii } from "./candidate-privacy";
 import { storeCandidateCvUpload } from "./document-files";
 import { saveInternalCandidateCv } from "./internal-cv";
-import { queueReviewForApplication } from "./ai/review";
+import { queueLibraryMatchReview, queueReviewForApplication } from "./ai/review";
 import { storage } from "./storage";
 
 const uploadDir = await mkdtemp(path.join(tmpdir(), "hirepass-phase-four-"));
@@ -120,5 +120,43 @@ describe("Phase 4 AI intelligence PostgreSQL integration", () => {
     const active = await storage.getAiCriteria(pass.rows[0].id, null);
     assert.equal(active.length, 1);
     assert.equal(active[0].title, "Original criterion");
+  });
+
+  it("queues one Candidate Library match for a reusable current CV without auto-applying", async () => {
+    const suffix = Date.now();
+    const pass = await pool.query<{ id: number }>("insert into passes (pass_id,position_title,department,location,employment_type,status) values ($1,'Library Match Role','Ops','Dubai','Full-time','active') returning id", [`HP-P4-LIB-${suffix}`]);
+    await storage.replaceAiCriteriaAndConfirm(pass.rows[0].id, null, [{ passId: pass.rows[0].id, positionId: null, title: "Treasury evidence", evaluationInstruction: "Look for treasury evidence", importance: "required", source: "manual", sortOrder: 0, isActive: true }], "criteria_changed");
+    const candidate = await pool.query<{ id: number }>("insert into candidates (name,email,in_talent_pool) values ('Library Candidate',$1,true) returning id", [`library-${suffix}@example.test`]);
+    const cv = await storeCandidateCvUpload({ candidateId: candidate.rows[0].id, fileName: "library.pdf", mimeType: "application/pdf", fileDataBase64: pdf("library cv") });
+    const doc = await pool.query<{ id: number }>("insert into documents (candidate_id,doc_type,title,file_path,file_name,status,extracted_text,extraction_status) values ($1,'cv','Current CV',$2,$3,'submitted','treasury evidence','completed') returning id", [candidate.rows[0].id, cv.storageKey, cv.originalName]);
+    await pool.query("update candidates set cv_file_path=$2,cv_file_name=$3 where id=$1", [candidate.rows[0].id, cv.storageKey, cv.originalName]);
+    const [first, second] = await Promise.all([
+      queueLibraryMatchReview({ passId: pass.rows[0].id, candidateId: candidate.rows[0].id }),
+      queueLibraryMatchReview({ passId: pass.rows[0].id, candidateId: candidate.rows[0].id }),
+    ]);
+    assert.equal([first, second].filter((result) => result.queued).length, 1);
+    const reviews = await pool.query("select review_type,document_id,count(*) over()::int as total from ai_candidate_reviews where pass_id=$1 and candidate_id=$2", [pass.rows[0].id, candidate.rows[0].id]);
+    assert.equal(reviews.rows[0].review_type, "library_match");
+    assert.equal(reviews.rows[0].document_id, doc.rows[0].id);
+    assert.equal(reviews.rows[0].total, 1);
+    assert.equal((await pool.query("select count(*)::int as count from pass_candidates where pass_id=$1 and candidate_id=$2", [pass.rows[0].id, candidate.rows[0].id])).rows[0].count, 0);
+    await pool.query("update candidates set is_anonymized=true where id=$1", [candidate.rows[0].id]);
+    assert.equal((await queueLibraryMatchReview({ passId: pass.rows[0].id, candidateId: candidate.rows[0].id })).reason, "target_not_found");
+  });
+
+  it("deduplicates transactional email events and lets failed delivery retry without workflow rollback", async () => {
+    const suffix = Date.now();
+    const eventKey = `email-proof-${suffix}`;
+    const first = await storage.enqueueEmail({ eventKey, recipientEmail: "candidate@example.test", subject: "Application received", bodyText: "Received", status: "pending", attemptCount: 0 });
+    const second = await storage.enqueueEmail({ eventKey, recipientEmail: "candidate@example.test", subject: "Application received", bodyText: "Received", status: "pending", attemptCount: 0 });
+    assert.equal(first.created, true);
+    assert.equal(second.created, false);
+    const claimed = await storage.claimPendingEmails(1);
+    assert.equal(claimed.length, 1);
+    await storage.markEmailFailed(claimed[0].id, "email_delivery_failed");
+    const row = await pool.query("select status,attempt_count,last_error_code from email_outbox where id=$1", [claimed[0].id]);
+    assert.equal(row.rows[0].status, "pending");
+    assert.equal(row.rows[0].attempt_count, 1);
+    assert.equal(row.rows[0].last_error_code, "email_delivery_failed");
   });
 });

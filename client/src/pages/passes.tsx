@@ -50,7 +50,7 @@ export default function Passes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/passes"] });
-      toast({ title: "Pass deleted successfully" });
+      toast({ title: "Vacancy deleted successfully" });
     },
     onError: () => {
       toast({ title: "Failed to delete pass", variant: "destructive" });
@@ -78,7 +78,7 @@ export default function Passes() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Vacancies & Passes</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Vacancies</h1>
           <p className="text-muted-foreground mt-1">
             Manage all recruitment requisitions and job openings
           </p>
@@ -231,7 +231,7 @@ export default function Passes() {
             <Link href="/passes/new">
               <Button className="mt-6 rounded-xl gap-2">
                 <Plus className="w-4 h-4" strokeWidth={1.5} />
-                Create Pass
+                Create Vacancy
               </Button>
             </Link>
           )}

@@ -1,7 +1,52 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 import { deriveReviewBand, validateCriterionSafety } from "./ai/criteria";
 import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput } from "./ai/review-schema";
+import { extractPdfText } from "./ai/extraction";
+
+function textPdf(text: string) {
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+  ];
+  const stream = `BT\n/F1 18 Tf\n72 720 Td\n(${text.replace(/[()\\]/g, "")}) Tj\nET`;
+  objects.push(`5 0 obj\n<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream\nendobj\n`);
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+function noTextPdf() {
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
 
 describe("AI intelligence Slice A rules", () => {
   it("rejects protected or irrelevant criteria before confirmation", () => {
@@ -91,5 +136,44 @@ describe("AI intelligence Slice A rules", () => {
       summary: "Human decision required.",
     });
     assert.equal(validateProtectedOutput(result), false);
+  });
+
+  it("builds fit-model input without candidate identity and uses position role context", () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    return import("./ai/review").then(({ buildAiReviewRequest }) => {
+    const request = buildAiReviewRequest({
+      review: { criteriaSnapshot: [{ id: 1, title: "Payments", evaluationInstruction: "Look for payments work", importance: "required" }] } as any,
+      pass: { positionTitle: "Parent Vacancy", department: "Finance", location: "Dubai", employmentType: "Full-time", experienceMin: 1, experienceMax: 2, jobDescriptionFinal: "Parent JD" } as any,
+      position: { positionTitle: "Treasury Analyst", experienceMin: 3, experienceMax: 5, requirements: "SWIFT", qualifications: "Treasury", jobDescriptionFinal: "Position JD" },
+      candidate: { name: "Do Not Send", email: "secret@example.com", phone: "555", currentTitle: "Analyst", currentCompany: "Bank", experienceYears: 4, skills: ["SWIFT"] } as any,
+      documentId: 44,
+      cvText: "SWIFT analyst",
+    });
+    assert.equal(request.vacancy.title, "Treasury Analyst");
+    assert.equal(request.vacancy.jobDescription, "Position JD");
+    assert.equal((request.candidate as any).name, undefined);
+    assert.equal((request.candidate as any).email, undefined);
+    assert.equal((request.candidate as any).phone, undefined);
+    });
+  });
+
+  it("extracts text from a real parsable PDF and fails safely for malformed or no-text PDFs", async () => {
+    const previous = process.env.HIREPASS_UPLOAD_DIR;
+    const root = await mkdtemp(path.join(os.tmpdir(), "hirepass-pdf-"));
+    process.env.HIREPASS_UPLOAD_DIR = root;
+    try {
+      await mkdir(path.join(root, "1"), { recursive: true });
+      await writeFile(path.join(root, "1", "text.pdf"), textPdf("HirePass real PDF extraction proof"));
+      await writeFile(path.join(root, "1", "blank.pdf"), noTextPdf());
+      await writeFile(path.join(root, "1", "broken.pdf"), Buffer.from("%PDF-not-valid%%EOF"));
+      const extracted = await extractPdfText("1/text.pdf");
+      assert.equal(extracted.status, "completed");
+      assert.match(extracted.text || "", /HirePass real PDF extraction proof/);
+      assert.equal((await extractPdfText("1/blank.pdf")).status, "text_unavailable");
+      assert.equal((await extractPdfText("1/broken.pdf")).status, "failed");
+    } finally {
+      process.env.HIREPASS_UPLOAD_DIR = previous;
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

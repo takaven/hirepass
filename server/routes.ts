@@ -43,9 +43,10 @@ import {
 } from "./document-files";
 import { aiStatus, getAiConfig } from "./ai/config";
 import { criterionInputSchema, validateCriterionSafety } from "./ai/criteria";
-import { suggestCriteriaWithAnthropic } from "./ai/provider";
-import { processPendingAiReviews, queueReviewForApplication } from "./ai/review";
+import { suggestCriteriaWithAnthropic, suggestInterviewQuestionsWithAnthropic } from "./ai/provider";
+import { processPendingAiReviews, queueLibraryMatchReview, queueReviewForApplication } from "./ai/review";
 import { wakeAiReviewWorker } from "./ai/worker";
+import { enqueueEmail } from "./email/outbox";
 
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
@@ -754,6 +755,20 @@ export async function registerRoutes(
     };
   }
 
+  async function vacancyContext(passId: number, positionId: number | null) {
+    const pass = await storage.getPass(passId);
+    const position = positionId ? await storage.getPassPosition(positionId) : null;
+    return {
+      title: position?.positionTitle || pass?.positionTitle,
+      department: pass?.department,
+      location: pass?.location,
+      employmentType: pass?.employmentType,
+      requirements: position?.requirements,
+      qualifications: position?.qualifications,
+      jobDescription: position?.jobDescriptionFinal || pass?.jobDescriptionFinal || pass?.jobDescriptionDraft,
+    };
+  }
+
   app.get("/api/intelligence/status", (_req, res) => {
     res.json(aiStatus());
   });
@@ -856,6 +871,65 @@ export async function registerRoutes(
     if (!result.queued) return res.status(409).json(result);
     wakeAiReviewWorker();
     res.status(202).json(result);
+  });
+
+  app.get("/api/intelligence/passes/:passId/library-matches", async (req, res) => {
+    const passId = parsePositiveId(req.params.passId);
+    if (!passId) return res.status(400).json({ error: "Valid vacancy ID is required" });
+    const reviews = (await storage.getAiReviewsByPass(passId)).filter((review) => review.reviewType === "library_match");
+    const enriched = await Promise.all(reviews.map(async (review) => ({
+      ...aiReviewSummary(review),
+      reviewType: review.reviewType,
+      candidate: await storage.getCandidate(review.candidateId),
+    })));
+    res.json(enriched.filter((row) => row.candidate && !(row.candidate as any).isAnonymized));
+  });
+
+  app.post("/api/intelligence/passes/:passId/library-matches", async (req, res) => {
+    const passId = parsePositiveId(req.params.passId);
+    if (!passId) return res.status(400).json({ error: "Valid vacancy ID is required" });
+    const positionId = req.body?.positionId ? parsePositiveId(String(req.body.positionId)) : null;
+    const limit = Math.max(1, Math.min(Number(req.body?.limit || getAiConfig().maxBatch), getAiConfig().maxBatch));
+    const allCandidates = await storage.getCandidates();
+    const existing = await storage.getPassCandidates(passId);
+    const attached = new Set(existing.map((application) => application.candidateId));
+    const eligible = allCandidates.filter((candidate) => !candidate.isAnonymized && candidate.cvFilePath && !attached.has(candidate.id)).slice(0, limit);
+    let queued = 0;
+    for (const candidate of eligible) {
+      const result = await queueLibraryMatchReview({ passId, candidateId: candidate.id, positionId });
+      if (result.queued) queued += 1;
+    }
+    if (queued) wakeAiReviewWorker();
+    res.status(202).json({ queued, eligible: eligible.length, remaining: Math.max(0, allCandidates.length - attached.size - eligible.length) });
+  });
+
+  app.post("/api/intelligence/passes/:passId/compare", async (req, res) => {
+    const passId = parsePositiveId(req.params.passId);
+    const ids = z.array(z.number().int().positive()).min(2).max(4).parse(req.body?.passCandidateIds);
+    const applications = await Promise.all(ids.map((id) => storage.getPassCandidateById(id)));
+    if (applications.some((application) => !application || application.passId !== passId)) return res.status(400).json({ error: "Candidates must belong to this vacancy" });
+    const reviews = await Promise.all(ids.map((id) => storage.getLatestAiReview(id)));
+    if (reviews.some((review) => !review || review.status !== "completed" || !review.result)) return res.status(409).json({ error: "Comparison needs completed AI reviews for each selected candidate" });
+    const candidates = await Promise.all(applications.map(async (application) => ({
+      ...application,
+      candidate: application ? await storage.getCandidate(application.candidateId) : null,
+    })));
+    res.json({ candidates, reviews });
+  });
+
+  app.post("/api/intelligence/applications/:passCandidateId/interview-questions", async (req, res) => {
+    const passCandidateId = parsePositiveId(req.params.passCandidateId);
+    if (!passCandidateId) return res.status(400).json({ error: "Valid application ID is required" });
+    const review = await storage.getLatestAiReview(passCandidateId);
+    const application = await storage.getPassCandidateById(passCandidateId);
+    if (!review?.result || review.status !== "completed" || !application) return res.status(409).json({ error: "Completed AI review required" });
+    const vacancy = await vacancyContext(application.passId, application.positionId ?? null);
+    const questions = await suggestInterviewQuestionsWithAnthropic({
+      vacancy,
+      criteria: (review.criteriaSnapshot as any[]).map((criterion) => ({ id: criterion.id, title: criterion.title, importance: criterion.importance })),
+      review: review.result as any,
+    });
+    res.json({ questions });
   });
 
   app.post("/api/intelligence/queue/process", async (_req, res) => {
@@ -1306,6 +1380,13 @@ export async function registerRoutes(
     try {
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion });
+      await enqueueEmail({
+        eventKey: `talent-pool-received:${result.candidateId}`,
+        to: validated.email,
+        recipientName: validated.name,
+        subject: "CV received",
+        bodyText: "Your CV has been received and stored in the hiring company's candidate library. The hiring team may consider it for suitable future vacancies.",
+      });
       res.status(201).json({ success: true, message: "Your CV has been submitted", ...result });
     } catch (error) { return sendPublicIntakeError(error, res); }
   });
@@ -1322,6 +1403,16 @@ export async function registerRoutes(
           console.error("AI review enqueue failed after public application:", queueError);
         }
       }
+      const pass = await storage.getPass(Number(req.params.id));
+      await enqueueEmail({
+        eventKey: `application-received:${result.applicationId || result.candidateId}:${result.duplicateApplication ? "duplicate" : "new"}`,
+        to: validated.email,
+        recipientName: validated.name,
+        subject: result.duplicateApplication ? "Application already received" : `Application received${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
+        bodyText: result.duplicateApplication
+          ? "Your application is already on file with the hiring team. Your retry did not replace the CV already attached to that application."
+          : "Your application has been received. The hiring team will manage any next step in HirePass.",
+      });
       res.status(result.duplicateApplication ? 200 : 201).json({
         success: true,
         message: result.duplicateApplication ? "Your application was already received" : "Application submitted successfully",
@@ -1344,6 +1435,16 @@ export async function registerRoutes(
           console.error("AI review enqueue failed after public application:", queueError);
         }
       }
+      const pass = await storage.getPass(passId);
+      await enqueueEmail({
+        eventKey: `application-received:${result.applicationId || result.candidateId}:${result.duplicateApplication ? "duplicate" : "new"}`,
+        to: validated.email,
+        recipientName: validated.name,
+        subject: result.duplicateApplication ? "Application already received" : `Application received${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
+        bodyText: result.duplicateApplication
+          ? "Your application is already on file with the hiring team. Your retry did not replace the CV already attached to that application."
+          : "Your application has been received. The hiring team will manage any next step in HirePass.",
+      });
       res.status(result.duplicateApplication ? 200 : 201).json({ success: true, ...result });
     } catch (error) { return sendPublicIntakeError(error, res); }
   });
@@ -1610,6 +1711,14 @@ export async function registerRoutes(
         linkType: linkType || "manager",
         expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry()
       });
+      const stakeholder = await storage.getManager(Number(resolvedManagerId));
+      await enqueueEmail({
+        eventKey: `stakeholder-pass-issued:${shareLink.id}`,
+        to: stakeholder?.email,
+        recipientName: stakeholder?.name,
+        subject: `Stakeholder Pass: ${pass.positionTitle}`,
+        bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: /manager-pass/${shareLink.token}`,
+      });
       res.status(201).json(shareLink);
     } catch (error) {
       console.error("Error creating share link:", error);
@@ -1660,6 +1769,15 @@ export async function registerRoutes(
         passCandidateId,
         isActive: true,
         expiresAt: expiresAt ? new Date(expiresAt) : defaultExpiry(),
+      });
+      const candidate = await storage.getCandidate(passCandidate.candidateId);
+      const pass = await storage.getPass(passCandidate.passId);
+      await enqueueEmail({
+        eventKey: `candidate-pass-issued:${candidateLink.id}`,
+        to: candidate?.email,
+        recipientName: candidate?.name,
+        subject: `Candidate Pass${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
+        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: /candidate-pass/${candidateLink.token}`,
       });
       
       res.status(201).json(candidateLink);

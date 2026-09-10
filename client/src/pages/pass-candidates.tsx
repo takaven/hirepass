@@ -145,6 +145,9 @@ export default function PassCandidates() {
   const [selectedStakeholderId, setSelectedStakeholderId] = useState<string>("");
   const [selectedCandidateForLink, setSelectedCandidateForLink] = useState<string>("");
   const [generatedCandidateLink, setGeneratedCandidateLink] = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [comparison, setComparison] = useState<any | null>(null);
+  const [interviewQuestions, setInterviewQuestions] = useState<string[] | null>(null);
 
   const { data: pass, isLoading: passLoading } = useQuery<Pass>({
     queryKey: ["/api/passes", passId],
@@ -167,6 +170,10 @@ export default function PassCandidates() {
   });
   const { data: aiReviews } = useQuery<AiReview[]>({
     queryKey: [`/api/intelligence/passes/${passId}/reviews`],
+    enabled: !!passId,
+  });
+  const { data: libraryMatches } = useQuery<any[]>({
+    queryKey: [`/api/intelligence/passes/${passId}/library-matches`],
     enabled: !!passId,
   });
   const reviewByApplication = useMemo(() => {
@@ -196,6 +203,7 @@ export default function PassCandidates() {
     queryKey: [`/api/intelligence/applications/${detailCandidate?.id}/review`],
     enabled: !!detailCandidate?.id,
   });
+  useEffect(() => setInterviewQuestions(null), [detailCandidate?.id]);
 
   const retryAiReviewMutation = useMutation({
     mutationFn: async (passCandidateId: number) => {
@@ -209,6 +217,38 @@ export default function PassCandidates() {
     onError: () => {
       toast({ title: "AI review unavailable. Retry.", variant: "destructive" });
     },
+  });
+
+  const findExistingMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", `/api/intelligence/passes/${passId}/library-matches`, {
+      positionId: filterPositionId !== "all" && filterPositionId !== "unassigned" ? Number(filterPositionId) : undefined,
+    }),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/intelligence/passes/${passId}/library-matches`] });
+      toast({ title: "Finding existing candidates" });
+    },
+    onError: () => toast({ title: "AI matching unavailable. Retry.", variant: "destructive" }),
+  });
+
+  const compareMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/intelligence/passes/${passId}/compare`, { passCandidateIds: selectedCandidates.slice(0, 4) });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setComparison(data);
+      setCompareOpen(true);
+    },
+    onError: () => toast({ title: "Compare needs completed AI reviews for 2–4 candidates.", variant: "destructive" }),
+  });
+
+  const interviewQuestionsMutation = useMutation({
+    mutationFn: async (passCandidateId: number) => {
+      const response = await apiRequest("POST", `/api/intelligence/applications/${passCandidateId}/interview-questions`, {});
+      return response.json();
+    },
+    onSuccess: (data) => setInterviewQuestions(data.questions || []),
+    onError: () => toast({ title: "Interview questions unavailable. Retry.", variant: "destructive" }),
   });
 
   const { data: allCandidates } = useQuery<Candidate[]>({
@@ -430,7 +470,7 @@ export default function PassCandidates() {
         <h3 className="mt-4 text-lg font-medium">Pass not found</h3>
         <Link href="/passes">
           <Button variant="outline" className="mt-4 rounded-xl">
-            Back to Passes
+            Back to Vacancies
           </Button>
         </Link>
       </GlassCard>
@@ -468,6 +508,16 @@ export default function PassCandidates() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            className="rounded-xl gap-2"
+            onClick={() => findExistingMutation.mutate()}
+            disabled={findExistingMutation.isPending}
+            data-testid="button-find-existing-candidates"
+          >
+            {findExistingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" strokeWidth={2} />}
+            Find existing candidates
+          </Button>
           <Button 
             variant="outline" 
             className="rounded-xl gap-2"
@@ -581,6 +631,15 @@ export default function PassCandidates() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant="outline"
+                className="rounded-xl gap-2"
+                onClick={() => compareMutation.mutate()}
+                disabled={selectedCandidates.length < 2 || selectedCandidates.length > 4 || compareMutation.isPending}
+                data-testid="button-compare-candidates"
+              >
+                Compare
+              </Button>
               <Button
                 variant="destructive"
                 className="rounded-xl gap-2"
@@ -717,6 +776,34 @@ export default function PassCandidates() {
         })}
       </div>
 
+      {libraryMatches?.length ? (
+        <GlassCard className="p-4" data-testid="library-match-results">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold">Existing candidate matches</h3>
+              <p className="text-xs text-muted-foreground">HirePass checked the Candidate Library. Add someone only if you want them considered for this vacancy.</p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {libraryMatches.slice(0, 6).map((match) => (
+              <div key={match.id} className="rounded-xl border border-border/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{match.candidate?.name}</p>
+                    <p className="text-xs text-muted-foreground">{match.candidate?.currentTitle || "Candidate Library profile"}</p>
+                  </div>
+                  <Badge variant="outline">{match.status === "completed" ? reviewLabel(match.passCandidateId || -1).replace("Waiting for criteria", match.reviewBand?.replace(/_/g, " ") || "Reviewed") : match.status}</Badge>
+                </div>
+                <Button className="mt-3 w-full rounded-xl" variant="outline" size="sm" onClick={() => {
+                  setSelectedCandidateId(String(match.candidate?.id || ""));
+                  setAddDialogOpen(true);
+                }}>Add to vacancy</Button>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      ) : null}
+
       <Sheet open={!!detailCandidate} onOpenChange={() => setDetailCandidate(null)}>
         <SheetContent className="sm:max-w-lg" data-testid="candidate-detail-sheet">
           {detailCandidate && (
@@ -843,6 +930,29 @@ export default function PassCandidates() {
                       {detailReview.result.clarificationQuestions?.length ? (
                         <p className="text-xs"><span className="font-medium">Clarify:</span> {detailReview.result.clarificationQuestions.join("; ")}</p>
                       ) : null}
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">Interview help</p>
+                            <p className="text-xs text-muted-foreground">Suggest a few questions from this vacancy’s criteria and the candidate’s evidence gaps.</p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl"
+                            onClick={() => interviewQuestionsMutation.mutate(detailCandidate.id)}
+                            disabled={interviewQuestionsMutation.isPending}
+                            data-testid="button-suggest-interview-questions"
+                          >
+                            {interviewQuestionsMutation.isPending ? "Suggesting…" : "Suggest questions"}
+                          </Button>
+                        </div>
+                        {interviewQuestions?.length ? (
+                          <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs">
+                            {interviewQuestions.map((question, index) => <li key={index}>{question}</li>)}
+                          </ol>
+                        ) : null}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -1028,11 +1138,47 @@ export default function PassCandidates() {
                   data-testid="button-confirm-add"
                 >
                   {addCandidateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Add to Pass
+                  Add to vacancy
                 </Button>
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Compare candidates</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Side-by-side evidence from existing AI-assisted reviews. HirePass does not make a new AI call or choose a winner.</p>
+          {comparison?.reviews?.length ? (
+            <div className="overflow-x-auto">
+              <table className="mt-4 w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="py-2 text-left">Criterion</th>
+                    {comparison.candidates.map((application: any) => <th key={application.id} className="px-3 py-2 text-left">{application.candidate?.name || `Candidate #${application.candidateId}`}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(comparison.reviews[0].criteriaSnapshot || []).map((criterion: any) => (
+                    <tr key={criterion.id} className="border-b align-top">
+                      <td className="py-3 pr-3 font-medium">{criterion.title}</td>
+                      {comparison.reviews.map((review: any) => {
+                        const result = review.result?.criteria?.find((item: any) => item.criterionId === criterion.id);
+                        return (
+                          <td key={review.id} className="px-3 py-3">
+                            <Badge variant="outline">{(result?.status || "not evidenced").replace(/_/g, " ")}</Badge>
+                            {result?.evidence?.[0]?.excerpt && <p className="mt-2 text-xs text-muted-foreground">“{result.evidence[0].excerpt}”</p>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 
