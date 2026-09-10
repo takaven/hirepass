@@ -49,6 +49,45 @@ export async function queueReviewForApplication(passCandidateId: number, force =
   return queued.created ? { queued: true, review: queued.review } : { queued: false, reason: "current_review_exists", review: queued.review };
 }
 
+export async function queueLibraryMatchReview(input: { passId: number; candidateId: number; positionId?: number | null }, force = false) {
+  const config = getAiConfig();
+  if (!config.enabled) return { queued: false, reason: "ai_disabled" };
+  if (!config.configured) return { queued: false, reason: "ai_unavailable" };
+  const pass = await storage.getPass(input.passId);
+  const candidate = await storage.getCandidate(input.candidateId);
+  if (!pass || !candidate || candidate.isAnonymized) return { queued: false, reason: "target_not_found" };
+  const attached = (await storage.getPassCandidates(pass.id)).some((application) => application.candidateId === candidate.id);
+  if (attached) return { queued: false, reason: "already_attached" };
+  const position = input.positionId ? await storage.getPassPosition(input.positionId) : null;
+  if (input.positionId && !position) return { queued: false, reason: "position_not_found" };
+  if (position && position.passId !== pass.id) return { queued: false, reason: "position_not_found" };
+  const criteriaVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
+  const confirmedAt = position ? position.aiCriteriaConfirmedAt : pass.aiCriteriaConfirmedAt;
+  if (!confirmedAt || criteriaVersion <= 0) return { queued: false, reason: "criteria_not_confirmed" };
+  const criteria = await storage.getAiCriteria(pass.id, input.positionId ?? null);
+  if (!criteria.length) return { queued: false, reason: "criteria_missing" };
+  const docs = await storage.getDocumentsByCandidate(candidate.id);
+  const document = candidate.cvFilePath
+    ? docs.find((doc) => doc.docType === "cv" && doc.filePath === candidate.cvFilePath && doc.filePath)
+    : null;
+  if (!document?.filePath) return { queued: false, reason: "current_cv_unavailable" };
+  const queued = await storage.createAiReviewIfCurrentMissing({
+    reviewType: "library_match",
+    passId: pass.id,
+    positionId: input.positionId ?? null,
+    passCandidateId: null,
+    candidateId: candidate.id,
+    documentId: document.id,
+    criteriaVersion,
+    criteriaSnapshot: normalizeCriteriaForSnapshot(criteria),
+    status: "pending",
+    promptVersion: AI_PROMPT_VERSION,
+    schemaVersion: AI_SCHEMA_VERSION,
+    reviewRuleVersion: AI_REVIEW_RULE_VERSION,
+  }, force);
+  return queued.created ? { queued: true, review: queued.review } : { queued: false, reason: "current_review_exists", review: queued.review };
+}
+
 async function ensureExtractedText(document: Document) {
   if (document.extractionStatus === "completed" && document.extractedText) return document;
   if (!document.filePath) return document;
@@ -108,7 +147,7 @@ export async function processAiReview(review: AiCandidateReview) {
     const candidate = await storage.getCandidate(review.candidateId);
     const passCandidate = review.passCandidateId ? await storage.getPassCandidate(review.passCandidateId) : null;
     const document = review.documentId ? await storage.getDocument(review.documentId) : null;
-    if (!pass || !candidate || !passCandidate || !document) throw new Error("review_target_missing");
+    if (!pass || !candidate || (review.reviewType === "application" && !passCandidate) || !document) throw new Error("review_target_missing");
     const position = review.positionId ? await storage.getPassPosition(review.positionId) : null;
     const currentVersion = position ? position.aiCriteriaVersion : pass.aiCriteriaVersion;
     const currentConfirmedAt = position ? position.aiCriteriaConfirmedAt : pass.aiCriteriaConfirmedAt;
@@ -150,7 +189,9 @@ export async function processAiReview(review: AiCandidateReview) {
     const refreshedPass = await storage.getPass(review.passId);
     const refreshedPosition = review.positionId ? await storage.getPassPosition(review.positionId) : null;
     const refreshedVersion = refreshedPosition ? refreshedPosition.aiCriteriaVersion : refreshedPass?.aiCriteriaVersion;
-    const latest = await storage.getLatestAiReview(passCandidate.id);
+    const latest = passCandidate
+      ? await storage.getLatestAiReview(passCandidate.id)
+      : await storage.getLatestLibraryMatch(review.passId, review.candidateId, review.positionId ?? null);
     const stillCurrent = latest?.id === review.id &&
       latest.documentId === document.id &&
       latest.criteriaVersion === refreshedVersion &&

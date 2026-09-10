@@ -15,19 +15,14 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   {
-    title: "Dashboard",
+    title: "Home",
     url: "/",
     icon: LayoutDashboard,
   },
   {
-    title: "Passes",
+    title: "Vacancies",
     url: "/passes",
     icon: FileText,
-  },
-  {
-    title: "Pass Control",
-    url: "/pass-control",
-    icon: ShieldCheck,
   },
   {
     title: "Candidates",
@@ -35,14 +30,22 @@ const navItems = [
     icon: Users,
   },
   {
+    title: "Hiring Team",
+    url: "/managers",
+    icon: Building2,
+  },
+];
+
+const secondaryNavItems = [
+  {
     title: "Interviews",
     url: "/interviews",
     icon: Calendar,
   },
   {
-    title: "Stakeholders",
-    url: "/managers",
-    icon: Building2,
+    title: "Pass Control",
+    url: "/pass-control",
+    icon: ShieldCheck,
   },
   {
     title: "Analytics",
@@ -99,6 +102,26 @@ export function AppSidebar() {
                         )}>
                           {item.title}
                         </span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu className="space-y-0.5">
+              {secondaryNavItems.map((item) => {
+                const isActive = location === item.url || 
+                  (item.url !== "/" && location.startsWith(item.url));
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild className={cn("rounded-xl h-8 px-2.5 transition-all duration-150", isActive ? "bg-primary/10 shadow-sm" : "hover:bg-black/[0.03] dark:hover:bg-white/[0.05]")}>
+                      <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
+                        <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-primary/60")} strokeWidth={2} />
+                        <span className={cn("text-[11px]", isActive ? "text-foreground font-medium" : "text-muted-foreground")}>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

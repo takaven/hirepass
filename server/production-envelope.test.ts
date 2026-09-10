@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, before, describe, it } from "node:test";
@@ -573,5 +573,170 @@ describe("HirePass production envelope", () => {
       });
       assert.equal(suggestions.status, 409);
     });
+  });
+
+  it("keeps public Pass first views simple and action-led", async () => {
+    const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
+    assert.match(candidateSource, /Current stage/);
+    assert.match(candidateSource, /Your action/);
+    assert.match(candidateSource, /Your journey/);
+    assert.match(candidateSource, /\{documents\.length > 0 && \(/);
+    assert.match(candidateSource, /\{timeline\.length > 0 && \(/);
+    assert.match(candidateSource, /id="pass-messages"/);
+    assert.doesNotMatch(candidateSource, /Dominant next action/);
+    assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
+    assert.doesNotMatch(candidateSource, /Latest update/);
+
+    const stakeholderSource = await readFile(path.join(process.cwd(), "client/src/pages/manager-recruitment-pass.tsx"), "utf8");
+    assert.match(stakeholderSource, /What needs your input\?/);
+    assert.match(stakeholderSource, /Candidate \/ vacancy context/);
+    assert.match(stakeholderSource, /Relevant evidence/);
+    assert.doesNotMatch(stakeholderSource, /\["Now", managerPassState\.headline\]/);
+  });
+
+  it("requires comparison candidates to share the same role target and current criteria version", async () => {
+    const samePosition = { id: 501, passId: 10, positionTitle: "Operations Lead", aiCriteriaVersion: 2, aiCriteriaConfirmedAt: now };
+    const otherPosition = { id: 502, passId: 10, positionTitle: "Finance Lead", aiCriteriaVersion: 2, aiCriteriaConfirmedAt: now };
+    const completedReview = (id: number, positionId: number | null, criteriaVersion = 2) => ({
+      id,
+      reviewType: "application",
+      passId: 10,
+      positionId,
+      passCandidateId: id + 1000,
+      candidateId: 201,
+      documentId: 701,
+      criteriaVersion,
+      status: "completed",
+      reviewBand: "strong_evidence",
+      result: { criteria: [], strengths: [], materialGaps: [], clarificationQuestions: [], summary: "Human decision required." },
+      criteriaSnapshot: [],
+    });
+    await withServer({
+      getPassPosition: async (id: number) => id === 501 ? samePosition : id === 502 ? otherPosition : undefined,
+      getPassCandidateById: async (id: number) => {
+        if (id === 1101) return { ...passCandidate, id, positionId: 501 };
+        if (id === 1102) return { ...passCandidate, id, candidateId: 202, positionId: 501 };
+        if (id === 1103) return { ...passCandidate, id, candidateId: 203, positionId: 502 };
+        if (id === 1104) return { ...passCandidate, id, candidateId: 204, positionId: 501 };
+        return undefined;
+      },
+      getLatestAiReview: async (id: number) => id === 1102 ? completedReview(102, 501, 1) : completedReview(id - 1000, id === 1103 ? 502 : 501),
+      getCandidate: async (id: number) => ({ ...candidate, id, name: `Candidate ${id}` }),
+    }, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      const good = await fetch(`${baseUrl}/api/intelligence/passes/10/compare`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateIds: [1101, 1104] }) });
+      assert.equal(good.status, 200);
+      const crossPosition = await fetch(`${baseUrl}/api/intelligence/passes/10/compare`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateIds: [1101, 1103] }) });
+      assert.equal(crossPosition.status, 409);
+      const stale = await fetch(`${baseUrl}/api/intelligence/passes/10/compare`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateIds: [1101, 1102] }) });
+      assert.equal(stale.status, 409);
+    });
+  });
+
+  it("requires explicit target selection for multi-position library matching", async () => {
+    const positions = [
+      { id: 501, passId: 10, positionTitle: "Operations Lead", aiCriteriaVersion: 1, aiCriteriaConfirmedAt: now },
+      { id: 502, passId: 10, positionTitle: "Finance Lead", aiCriteriaVersion: 1, aiCriteriaConfirmedAt: now },
+    ];
+    await withServer({
+      getPassPositions: async () => positions,
+      getPassPosition: async (id: number) => positions.find((position) => position.id === id),
+      getCandidates: async () => [],
+      getPassCandidates: async () => [],
+      getAiReviewsByPass: async () => [
+        { id: 1, reviewType: "library_match", passId: 10, positionId: 501, candidateId: 201, status: "completed", criteriaVersion: 1, result: {}, reviewBand: "strong_evidence" },
+        { id: 2, reviewType: "library_match", passId: 10, positionId: 502, candidateId: 202, status: "completed", criteriaVersion: 1, result: {}, reviewBand: "insufficient_evidence" },
+      ],
+      getCandidate: async (id: number) => ({ ...candidate, id, name: `Candidate ${id}` }),
+    }, async (baseUrl) => {
+      const cookie = await login(baseUrl);
+      const all = await fetch(`${baseUrl}/api/intelligence/passes/10/library-matches`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({}) });
+      assert.equal(all.status, 409);
+      const foreign = await fetch(`${baseUrl}/api/intelligence/passes/10/library-matches`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ positionId: 999 }) });
+      assert.equal(foreign.status, 404);
+      const filtered = await fetch(`${baseUrl}/api/intelligence/passes/10/library-matches?positionId=501`, { headers: { cookie } });
+      assert.equal(filtered.status, 200);
+      const body = await filtered.json() as any[];
+      assert.equal(body.length, 1);
+      assert.equal(body[0].positionId, 501);
+    });
+  });
+
+  it("validates canonical email URLs and keeps email enqueue failure non-blocking", async () => {
+    const previous = {
+      nodeEnv: process.env.NODE_ENV,
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    const { publicAppUrl } = await import("./email/config");
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "http://example.test";
+      assert.equal(publicAppUrl("/candidate-pass/token"), null);
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test/path?ignored=true";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      assert.equal(publicAppUrl("/candidate-pass/token"), "https://careers.example.test/candidate-pass/token");
+      process.env.NODE_ENV = "test";
+
+      await withServer({
+        getCandidateLinksByPassCandidate: async () => [],
+        createCandidateLink: async (data: any) => ({ id: 77, token: data.token, ...data }),
+        enqueueEmail: async () => { throw new Error("simulated enqueue failure"); },
+      }, async (baseUrl) => {
+        const cookie = await login(baseUrl);
+        const response = await fetch(`${baseUrl}/api/candidate-links`, {
+          method: "POST",
+          headers: { cookie, "content-type": "application/json" },
+          body: JSON.stringify({ passCandidateId: 101 }),
+        });
+        assert.equal(response.status, 201);
+      });
+    } finally {
+      process.env.NODE_ENV = previous.nodeEnv;
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
+  });
+
+  it("queues Candidate and Stakeholder Pass emails with absolute public URLs", async () => {
+    const previous = {
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    const emails: any[] = [];
+    try {
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      await withServer({
+        createShareLink: async (data: any) => ({ id: 11, token: "stakeholder-token", ...data }),
+        createCandidateLink: async (data: any) => ({ id: 12, token: data.token, ...data }),
+        enqueueEmail: async (email: any) => {
+          emails.push(email);
+          return { created: true, email: { id: emails.length, ...email } };
+        },
+      }, async (baseUrl) => {
+        const cookie = await login(baseUrl);
+        assert.equal((await fetch(`${baseUrl}/api/share-links`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passId: 10, managerId: 301 }) })).status, 201);
+        assert.equal((await fetch(`${baseUrl}/api/candidate-links`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateId: 101 }) })).status, 201);
+      });
+      assert.equal(emails.length, 2);
+      assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/manager-pass\/stakeholder-token/);
+      assert.match(emails[1].bodyText, /https:\/\/careers\.example\.test\/candidate-pass\//);
+    } finally {
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
   });
 });

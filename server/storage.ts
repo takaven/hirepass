@@ -8,7 +8,7 @@ import {
   users, notifications, passPositions, onboardingRecords,
   candidateMessages, candidateDocuments, interviewSlots, candidateTimelineEvents,
   onboardingLinks, onboardingStageProgress,
-  aiReviewCriteria, aiCandidateReviews,
+  aiReviewCriteria, aiCandidateReviews, emailOutbox,
   type Manager, type InsertManager,
   type Pass, type InsertPass,
   type PassPosition, type InsertPassPosition,
@@ -34,6 +34,7 @@ import {
   type OnboardingStageProgress, type InsertOnboardingStageProgress,
   type AiReviewCriterion, type InsertAiReviewCriterion,
   type AiCandidateReview, type InsertAiCandidateReview,
+  type EmailOutbox, type InsertEmailOutbox,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { configuredStages } from "@shared/hiring-workflow";
@@ -95,11 +96,18 @@ export interface IStorage {
   replaceAiCriteriaAndConfirm(passId: number, positionId: number | null, criteria: InsertAiReviewCriterion[], staleReason: string): Promise<{ criteria: AiReviewCriterion[]; version: number; confirmedAt: Date }>;
   markAiReviewsStale(passId: number, positionId: number | null, reason: string): Promise<void>;
   getLatestAiReview(passCandidateId: number): Promise<AiCandidateReview | undefined>;
+  getLatestLibraryMatch(passId: number, candidateId: number, positionId: number | null): Promise<AiCandidateReview | undefined>;
   getAiReviewsByPass(passId: number): Promise<AiCandidateReview[]>;
   createAiReview(data: InsertAiCandidateReview): Promise<AiCandidateReview>;
   createAiReviewIfCurrentMissing(data: InsertAiCandidateReview, force?: boolean): Promise<{ created: boolean; review: AiCandidateReview }>;
   updateAiReview(id: number, data: Partial<InsertAiCandidateReview>): Promise<AiCandidateReview | undefined>;
   claimPendingAiReviews(limit: number, workerId: string): Promise<AiCandidateReview[]>;
+
+  // Email outbox
+  enqueueEmail(email: InsertEmailOutbox): Promise<{ created: boolean; email: EmailOutbox }>;
+  claimPendingEmails(limit: number): Promise<EmailOutbox[]>;
+  markEmailSent(id: number): Promise<void>;
+  markEmailFailed(id: number, errorCode: string): Promise<void>;
 
   // Public Passes
   getOpenPasses(): Promise<Pass[]>;
@@ -604,7 +612,20 @@ export class DatabaseStorage implements IStorage {
 
   async getLatestAiReview(passCandidateId: number): Promise<AiCandidateReview | undefined> {
     const [review] = await db.select().from(aiCandidateReviews)
-      .where(eq(aiCandidateReviews.passCandidateId, passCandidateId))
+      .where(and(eq(aiCandidateReviews.passCandidateId, passCandidateId), eq(aiCandidateReviews.reviewType, "application")))
+      .orderBy(desc(aiCandidateReviews.createdAt))
+      .limit(1);
+    return review;
+  }
+
+  async getLatestLibraryMatch(passId: number, candidateId: number, positionId: number | null): Promise<AiCandidateReview | undefined> {
+    const [review] = await db.select().from(aiCandidateReviews)
+      .where(and(
+        eq(aiCandidateReviews.passId, passId),
+        eq(aiCandidateReviews.candidateId, candidateId),
+        positionId === null ? isNull(aiCandidateReviews.positionId) : eq(aiCandidateReviews.positionId, positionId),
+        eq(aiCandidateReviews.reviewType, "library_match"),
+      ))
       .orderBy(desc(aiCandidateReviews.createdAt))
       .limit(1);
     return review;
@@ -623,9 +644,15 @@ export class DatabaseStorage implements IStorage {
 
   async createAiReviewIfCurrentMissing(data: InsertAiCandidateReview, force = false): Promise<{ created: boolean; review: AiCandidateReview }> {
     return db.transaction(async (tx: any) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${data.passCandidateId ?? 0}, ${data.documentId ?? 0})`);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${data.reviewType}:${data.passId}:${data.positionId ?? "pass"}:${data.passCandidateId ?? "library"}:${data.candidateId}:${data.documentId ?? "document"}`}))`);
       const [latest] = await tx.select().from(aiCandidateReviews)
-        .where(eq(aiCandidateReviews.passCandidateId, data.passCandidateId!))
+        .where(and(
+          eq(aiCandidateReviews.reviewType, data.reviewType || "application"),
+          data.passCandidateId ? eq(aiCandidateReviews.passCandidateId, data.passCandidateId) : isNull(aiCandidateReviews.passCandidateId),
+          eq(aiCandidateReviews.passId, data.passId),
+          eq(aiCandidateReviews.candidateId, data.candidateId),
+          data.positionId ? eq(aiCandidateReviews.positionId, data.positionId) : isNull(aiCandidateReviews.positionId),
+        ))
         .orderBy(desc(aiCandidateReviews.createdAt))
         .limit(1);
       const sameCurrent = latest &&
@@ -1035,6 +1062,45 @@ export class DatabaseStorage implements IStorage {
   async createNotification(notification: InsertNotification): Promise<Notification> {
     const [newNotification] = await db.insert(notifications).values(notification).returning();
     return newNotification;
+  }
+
+  async enqueueEmail(email: InsertEmailOutbox): Promise<{ created: boolean; email: EmailOutbox }> {
+    const [created] = await db.insert(emailOutbox).values(email).onConflictDoNothing({ target: emailOutbox.eventKey }).returning();
+    if (created) return { created: true, email: created };
+    const [existing] = await db.select().from(emailOutbox).where(eq(emailOutbox.eventKey, email.eventKey)).limit(1);
+    if (!existing) throw new Error("Email event conflict could not be resolved");
+    return { created: false, email: existing };
+  }
+
+  async claimPendingEmails(limit: number): Promise<EmailOutbox[]> {
+    return db.transaction(async (tx) => {
+      const claimable = await tx.select({ id: emailOutbox.id }).from(emailOutbox)
+        .where(and(
+          sql`${emailOutbox.attemptCount} < 3`,
+          or(
+            and(eq(emailOutbox.status, "pending"), sql`${emailOutbox.nextAttemptAt} <= now()`),
+            and(eq(emailOutbox.status, "sending"), sql`${emailOutbox.updatedAt} < now() - interval '10 minutes'`),
+          ),
+        ))
+        .orderBy(asc(emailOutbox.createdAt))
+        .limit(limit)
+        .for("update", { skipLocked: true });
+      if (!claimable.length) return [];
+      return tx.update(emailOutbox)
+        .set({ status: "sending", updatedAt: new Date(), attemptCount: sql`${emailOutbox.attemptCount} + 1` })
+        .where(inArray(emailOutbox.id, claimable.map((row) => row.id)))
+        .returning();
+    });
+  }
+
+  async markEmailSent(id: number): Promise<void> {
+    await db.update(emailOutbox).set({ status: "sent", sentAt: new Date(), updatedAt: new Date(), lastErrorCode: null }).where(eq(emailOutbox.id, id));
+  }
+
+  async markEmailFailed(id: number, errorCode: string): Promise<void> {
+    await db.update(emailOutbox)
+      .set({ status: "pending", lastErrorCode: errorCode, nextAttemptAt: sql`now() + interval '10 minutes'`, updatedAt: new Date() })
+      .where(eq(emailOutbox.id, id));
   }
 
   async markNotificationRead(id: number): Promise<boolean> {

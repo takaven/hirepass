@@ -31,7 +31,7 @@ Each customer deployment maintains a persistent candidate database. A candidate 
 
 Candidates can enter through two bounded routes:
 
-1. **General CV submission:** a public “Submit your CV”, “Join our talent pool” or speculative-application link that does not require an active vacancy. This is part of the intended target and is not complete in the current production product.
+1. **General CV submission:** a public “Submit your CV”, “Join our talent pool” or speculative-application link that does not require an active vacancy. This is implemented through the talent-pool intake path and stores candidates in the central Candidate Library.
 2. **Vacancy application:** a public link for a specific HirePass vacancy. The company may publish it on its website, social media, LinkedIn, email or an external advertisement. HirePass is the application destination, not the advertising marketplace.
 
 A vacancy applicant becomes both an application for that vacancy and a member of the central candidate database. Existing candidates should be reused rather than duplicated, with previous applications and outcomes available to authorised users.
@@ -76,7 +76,7 @@ The launch-safe output should favour explainable evidence over a falsely precise
 
 AI is decision support. It must not automatically reject, select or silently disadvantage a candidate. An authorised person remains accountable for shortlist, rejection and selection. The system preserves confirmed criteria, analysis, model/configuration provenance, source-document provenance and the human decision needed for audit.
 
-The repository contains legacy AI routes and scoring fields, but those routes are disabled in production and are not the launch AI surface. The supported launch AI surface starts with criteria confirmation, PDF text extraction, queued vacancy-application review and evidence-backed candidate review bands. It does not provide automatic rejection, candidate comparison, talent-pool matching or a general recruiting assistant.
+The repository contains legacy AI routes and scoring fields, but those routes are disabled in production and are not the launch AI surface. The supported launch AI surface starts with criteria confirmation, PDF text extraction, queued vacancy-application review and evidence-backed candidate review bands. V1 also supports Candidate Library matching, side-by-side comparison from existing review evidence and contextual interview-question suggestions. It does not provide automatic rejection, autonomous ranking or a general recruiting assistant.
 
 ### Interviews And Decisions
 
@@ -121,7 +121,7 @@ Candidate and Hiring Stakeholder Pass links are bearer credentials. They require
 | Messages and documents | Partial | In-product flows exist; outbound delivery and some review/configuration do not. |
 | Interviews and decisions | Exists for launch core | Availability, primary interviewer, candidate slot booking, rescheduling, recommendation/notes and final decisions use existing Pass structures. Calendar and sophisticated scheduling remain deferred. |
 | Assessments and offers | Partial | Data/routes exist; production workflows are not uniformly complete. |
-| AI-assisted CV review | Exists as Slice A launch foundation | Supports confirmed criteria, queued vacancy-application review, evidence-backed outputs and stale-review handling when enabled/configured. Candidate comparison, talent-pool matching and assistant features remain out of scope. |
+| AI-assisted CV review | Exists as launch capability | Supports confirmed criteria, queued vacancy-application review, Candidate Library matching, comparison from existing evidence, interview-question suggestions and stale-review handling when enabled/configured. |
 | Multiple internal responsibilities | Exists for launch core | One `owner_admin` controls named stakeholders and scoped Pass links; stakeholder records independently declare Hiring Manager and interviewer eligibility. |
 | Branding/company configuration | Exists at deployment level | Company name, optional location/contact and privacy notice identity come from the isolated deployment environment; the Settings page is deliberately read-only. |
 | Notifications | Partial | In-app records exist; email, reminders and recipient mapping are incomplete. |
@@ -175,7 +175,7 @@ Copy `.env.example` to `.env` for local or disposable development and fill only 
 
 ## Required Configuration
 
-Core variables are `DATABASE_URL`, `HIREPASS_ADMIN_USERNAME`, `HIREPASS_SESSION_SECRET`, `HIREPASS_UPLOAD_DIR`, `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Production also requires `HIREPASS_ADMIN_PASSWORD_HASH`; plaintext `HIREPASS_ADMIN_PASSWORD` is local/disposable only. The session secret must be at least 32 characters. `HIREPASS_COMPANY_LOCATION` and `HIREPASS_CAREERS_CONTACT_EMAIL` are optional public display values.
+Core variables are `DATABASE_URL`, `HIREPASS_ADMIN_USERNAME`, `HIREPASS_SESSION_SECRET`, `HIREPASS_UPLOAD_DIR`, `HIREPASS_COMPANY_NAME`, `HIREPASS_PRIVACY_NOTICE_URL` and `HIREPASS_PRIVACY_NOTICE_VERSION`. Production also requires `HIREPASS_ADMIN_PASSWORD_HASH`; plaintext `HIREPASS_ADMIN_PASSWORD` is local/disposable only. The session secret must be at least 32 characters. `HIREPASS_COMPANY_LOCATION` and `HIREPASS_CAREERS_CONTACT_EMAIL` are optional public display values. Transactional email uses deployment-level `HIREPASS_EMAIL_ENABLED`, `HIREPASS_PUBLIC_BASE_URL`, `HIREPASS_EMAIL_FROM` and SMTP variables; hiring users do not configure transport settings in-product. `HIREPASS_PUBLIC_BASE_URL` must be the HTTPS origin candidates and stakeholders can open from email.
 
 `HIREPASS_PASS_ID_PREFIX` is optional and defaults to `HP`. AI-assisted review is disabled unless `HIREPASS_AI_ENABLED=true` and `ANTHROPIC_API_KEY` is configured. `HIREPASS_AI_MODEL` defaults to `claude-sonnet-5`; batch size and timeout may be bounded with `HIREPASS_AI_MAX_BATCH` and `HIREPASS_AI_TIMEOUT_MS`.
 

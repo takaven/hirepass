@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import PDFDocument from "pdfkit";
 import { deriveReviewBand, validateCriterionSafety } from "./ai/criteria";
 import { candidateReviewResultSchema, validateCriterionCoverage, validateEvidence, validateProtectedOutput } from "./ai/review-schema";
+import { extractPdfText } from "./ai/extraction";
+
+function generatedPdf(text?: string) {
+  return new Promise<Buffer>((resolve) => {
+    const doc = new PDFDocument({ size: "LETTER", margin: 72 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    if (text) doc.fontSize(14).text(text);
+    doc.end();
+  });
+}
+
+function emptyPdf() {
+  return Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\nxref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \ntrailer\n<< /Root 1 0 R /Size 3 >>\nstartxref\n113\n%%EOF\n", "latin1");
+}
 
 describe("AI intelligence Slice A rules", () => {
   it("rejects protected or irrelevant criteria before confirmation", () => {
@@ -91,5 +111,44 @@ describe("AI intelligence Slice A rules", () => {
       summary: "Human decision required.",
     });
     assert.equal(validateProtectedOutput(result), false);
+  });
+
+  it("builds fit-model input without candidate identity and uses position role context", () => {
+    process.env.DATABASE_URL ||= "postgres://test:test@localhost:5432/test";
+    return import("./ai/review").then(({ buildAiReviewRequest }) => {
+    const request = buildAiReviewRequest({
+      review: { criteriaSnapshot: [{ id: 1, title: "Payments", evaluationInstruction: "Look for payments work", importance: "required" }] } as any,
+      pass: { positionTitle: "Parent Vacancy", department: "Finance", location: "Dubai", employmentType: "Full-time", experienceMin: 1, experienceMax: 2, jobDescriptionFinal: "Parent JD" } as any,
+      position: { positionTitle: "Treasury Analyst", experienceMin: 3, experienceMax: 5, requirements: "SWIFT", qualifications: "Treasury", jobDescriptionFinal: "Position JD" },
+      candidate: { name: "Do Not Send", email: "secret@example.com", phone: "555", currentTitle: "Analyst", currentCompany: "Bank", experienceYears: 4, skills: ["SWIFT"] } as any,
+      documentId: 44,
+      cvText: "SWIFT analyst",
+    });
+    assert.equal(request.vacancy.title, "Treasury Analyst");
+    assert.equal(request.vacancy.jobDescription, "Position JD");
+    assert.equal((request.candidate as any).name, undefined);
+    assert.equal((request.candidate as any).email, undefined);
+    assert.equal((request.candidate as any).phone, undefined);
+    });
+  });
+
+  it("extracts text from a real parsable PDF and fails safely for malformed or no-text PDFs", async () => {
+    const previous = process.env.HIREPASS_UPLOAD_DIR;
+    const root = await mkdtemp(path.join(os.tmpdir(), "hirepass-pdf-"));
+    process.env.HIREPASS_UPLOAD_DIR = root;
+    try {
+      await mkdir(path.join(root, "1"), { recursive: true });
+      await writeFile(path.join(root, "1", "text.pdf"), await generatedPdf("HirePass real PDF extraction proof"));
+      await writeFile(path.join(root, "1", "blank.pdf"), emptyPdf());
+      await writeFile(path.join(root, "1", "broken.pdf"), Buffer.from("%PDF-not-valid%%EOF"));
+      const extracted = await extractPdfText("1/text.pdf");
+      assert.equal(extracted.status, "completed");
+      assert.match(extracted.text || "", /HirePass real PDF extraction proof/);
+      assert.equal((await extractPdfText("1/blank.pdf")).status, "text_unavailable");
+      assert.equal((await extractPdfText("1/broken.pdf")).status, "failed");
+    } finally {
+      process.env.HIREPASS_UPLOAD_DIR = previous;
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

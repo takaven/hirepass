@@ -156,10 +156,10 @@ export default function PassDetail() {
     return (
       <GlassCard className="p-12 text-center">
         <FileText className="w-16 h-16 mx-auto text-primary/30" strokeWidth={1} />
-        <h3 className="mt-4 text-lg font-medium">Pass not found</h3>
+        <h3 className="mt-4 text-lg font-medium">Vacancy not found</h3>
         <Link href="/passes">
           <Button variant="outline" className="mt-4 rounded-xl">
-            Back to Passes
+            Back to Vacancies
           </Button>
         </Link>
       </GlassCard>
@@ -203,7 +203,7 @@ export default function PassDetail() {
             </DialogTrigger>
             <DialogContent className="rounded-2xl">
               <DialogHeader>
-                <DialogTitle>Add Candidate to Pass</DialogTitle>
+                <DialogTitle>Add candidate to vacancy</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-4">
                 <Select value={selectedCandidateId} onValueChange={setSelectedCandidateId}>
@@ -233,7 +233,7 @@ export default function PassDetail() {
                     data-testid="button-confirm-add"
                   >
                     {addCandidateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Add to Pass
+                    Add to vacancy
                   </Button>
                 </div>
               </div>
@@ -242,7 +242,7 @@ export default function PassDetail() {
           <Link href={`/passes/${passId}/edit`}>
             <Button className="rounded-xl gap-2" data-testid="button-edit-pass">
               <Edit className="w-4 h-4" strokeWidth={1.5} />
-              Edit Pass
+              Edit vacancy
             </Button>
           </Link>
         </div>
@@ -252,7 +252,7 @@ export default function PassDetail() {
         <GlassCard className="lg:col-span-2">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" strokeWidth={1.5} />
-            Pass Details
+            Vacancy
           </h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>

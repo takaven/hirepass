@@ -39,6 +39,22 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const emailOutbox = pgTable("email_outbox", {
+  id: serial("id").primaryKey(),
+  eventKey: varchar("event_key", { length: 200 }).notNull().unique(),
+  recipientEmail: varchar("recipient_email", { length: 255 }).notNull(),
+  recipientName: varchar("recipient_name", { length: 255 }),
+  subject: varchar("subject", { length: 255 }).notNull(),
+  bodyText: text("body_text").notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastErrorCode: varchar("last_error_code", { length: 100 }),
+  nextAttemptAt: timestamp("next_attempt_at").defaultNow(),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // User and notifications relations
 export const usersRelations = relations(users, ({ many }) => ({
   notifications: many(notifications),
@@ -878,6 +894,7 @@ export const insertTechnicalAssessmentSchema = createInsertSchema(technicalAsses
 export const insertAssessmentResponseSchema = createInsertSchema(assessmentResponses).omit({ id: true, createdAt: true });
 export const insertSettingSchema = createInsertSchema(settings).omit({ id: true, updatedAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertEmailOutboxSchema = createInsertSchema(emailOutbox).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ createdAt: true, updatedAt: true });
 export const insertSessionSchema = createInsertSchema(sessions);
 export const insertOnboardingRecordSchema = createInsertSchema(onboardingRecords).omit({ id: true, createdAt: true, updatedAt: true });
@@ -896,6 +913,8 @@ export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type EmailOutbox = typeof emailOutbox.$inferSelect;
+export type InsertEmailOutbox = z.infer<typeof insertEmailOutboxSchema>;
 export type Manager = typeof managers.$inferSelect;
 export type InsertManager = z.infer<typeof insertManagerSchema>;
 export type Pass = typeof passes.$inferSelect;

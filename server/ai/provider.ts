@@ -25,6 +25,30 @@ export type AiCriteriaSuggestionRequest = {
   sourceText: string;
 };
 
+export type InterviewQuestionRequest = {
+  vacancy: Record<string, unknown>;
+  criteria: Array<{ id: number; title: string; importance: string }>;
+  review: CandidateReviewResult;
+};
+
+const interviewQuestionSchema = {
+  name: "suggest_interview_questions",
+  description: "Suggest a short list of interview questions based on confirmed role criteria and AI review gaps.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      questions: {
+        type: "array",
+        minItems: 3,
+        maxItems: 5,
+        items: { type: "string", minLength: 10, maxLength: 300 },
+      },
+    },
+    required: ["questions"],
+  },
+};
+
 function client() {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ai_not_configured");
@@ -192,4 +216,42 @@ Use the record_candidate_review tool. For CV evidence, include documentId and sh
     inputTokens: (message as any).usage?.input_tokens,
     outputTokens: (message as any).usage?.output_tokens,
   };
+}
+
+export async function suggestInterviewQuestionsWithAnthropic(input: InterviewQuestionRequest) {
+  const config = getAiConfig();
+  if (!config.configured) throw new Error("ai_not_configured");
+  const message = await Promise.race([
+    client().messages.create({
+      model: config.model,
+      max_tokens: 900,
+      system: "You support HirePass interview preparation. Human decision required. Suggest practical, role-related questions only. Do not mention or infer protected characteristics.",
+      messages: [{
+        role: "user",
+        content: `Suggest 3 to 5 interview questions for this vacancy and candidate review context.
+
+Vacancy:
+${JSON.stringify(input.vacancy)}
+
+Confirmed criteria:
+${JSON.stringify(input.criteria)}
+
+Evidence-backed review:
+${JSON.stringify({
+  criteria: input.review.criteria,
+  materialGaps: input.review.materialGaps,
+  clarificationQuestions: input.review.clarificationQuestions,
+})}
+
+Use the suggest_interview_questions tool.`,
+      }],
+      tools: [interviewQuestionSchema as any],
+      tool_choice: { type: "tool", name: "suggest_interview_questions" },
+    }),
+    new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("ai_timeout")), config.timeoutMs)),
+  ]);
+  const toolUse = message.content.find((block: any) => block.type === "tool_use" && block.name === "suggest_interview_questions") as any;
+  const questions = toolUse?.input?.questions;
+  if (!Array.isArray(questions)) throw new Error("malformed_ai_output");
+  return questions.map((question) => String(question).trim()).filter(Boolean).slice(0, 5);
 }

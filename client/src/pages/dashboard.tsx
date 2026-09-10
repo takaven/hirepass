@@ -72,7 +72,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-base font-semibold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-[11px]">
-            Candidates, vacancies, interviews and Pass actions
+            Vacancies, candidates, interviews and Pass actions
           </p>
         </div>
         <div className="flex gap-1.5">
