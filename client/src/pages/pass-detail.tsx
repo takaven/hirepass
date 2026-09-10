@@ -38,8 +38,9 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Pass, Candidate } from "@shared/schema";
+import type { Pass, Candidate, PassPosition } from "@shared/schema";
 import { configuredStages } from "@shared/hiring-workflow";
+import { AiReviewCriteriaPanel } from "@/components/ai-review-criteria";
 
 interface PassCandidate {
   id: number;
@@ -87,6 +88,10 @@ export default function PassDetail() {
 
   const { data: passCandidates, isLoading: candidatesLoading } = useQuery<PassCandidate[]>({
     queryKey: ["/api/passes", passId, "candidates"],
+    enabled: !!passId,
+  });
+  const { data: positions } = useQuery<PassPosition[]>({
+    queryKey: ["/api/passes", passId, "positions"],
     enabled: !!passId,
   });
 
@@ -297,9 +302,11 @@ export default function PassDetail() {
               </p>
             </div>
           )}
-        </GlassCard>
+      </GlassCard>
 
-        <GlassCard>
+      {passId && <AiReviewCriteriaPanel passId={Number(passId)} positions={positions || []} />}
+
+      <GlassCard>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-primary" strokeWidth={1.5} />
             Pipeline Summary

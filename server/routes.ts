@@ -41,6 +41,11 @@ import {
   storeCandidateDocumentUpload,
   validateUploadRoot,
 } from "./document-files";
+import { aiStatus, getAiConfig } from "./ai/config";
+import { criterionInputSchema, validateCriterionSafety } from "./ai/criteria";
+import { suggestCriteriaWithAnthropic } from "./ai/provider";
+import { processPendingAiReviews, queueReviewForApplication } from "./ai/review";
+import { wakeAiReviewWorker } from "./ai/worker";
 
 const publicPrivacyConfig = () => ({
   companyName: process.env.HIREPASS_COMPANY_NAME || "Hiring company",
@@ -48,6 +53,7 @@ const publicPrivacyConfig = () => ({
   careersContactEmail: process.env.HIREPASS_CAREERS_CONTACT_EMAIL || "",
   privacyNoticeUrl: process.env.HIREPASS_PRIVACY_NOTICE_URL || "",
   privacyNoticeVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION || "launch-v1",
+  aiEnabled: getAiConfig().enabled,
 });
 
 const anthropic = new Anthropic();
@@ -709,6 +715,153 @@ export async function registerRoutes(
     }
   });
 
+  // ============ AI INTELLIGENCE ROUTES ============
+  function sameTarget(positionId: number | null | undefined, expected: number | null) {
+    return (positionId ?? null) === expected;
+  }
+
+  async function queueTargetApplications(passId: number, positionId: number | null) {
+    const candidates = await storage.getPassCandidates(passId);
+    const activeCandidates = candidates.filter((candidate) =>
+      sameTarget(candidate.positionId, positionId) && !["rejected", "withdrawn", "hired"].includes(candidate.status || "new")
+    );
+    const limit = getAiConfig().maxBatch;
+    let queued = 0;
+    for (const candidate of activeCandidates.slice(0, limit)) {
+      const result = await queueReviewForApplication(candidate.id, true);
+      if (result.queued) queued += 1;
+    }
+    wakeAiReviewWorker();
+    return { queued, eligible: activeCandidates.length, remaining: Math.max(0, activeCandidates.length - limit) };
+  }
+
+  function aiReviewSummary(review: any) {
+    return {
+      id: review.id,
+      passId: review.passId,
+      positionId: review.positionId,
+      passCandidateId: review.passCandidateId,
+      documentId: review.documentId,
+      criteriaVersion: review.criteriaVersion,
+      status: review.status,
+      reviewBand: review.reviewBand,
+      staleReason: review.staleReason,
+      safeErrorCode: review.safeErrorCode,
+      createdAt: review.createdAt,
+      startedAt: review.startedAt,
+      completedAt: review.completedAt,
+      updatedAt: review.updatedAt,
+    };
+  }
+
+  app.get("/api/intelligence/status", (_req, res) => {
+    res.json(aiStatus());
+  });
+
+  app.get("/api/intelligence/passes/:passId/criteria", async (req, res) => {
+    const passId = parsePositiveId(req.params.passId);
+    if (!passId) return res.status(400).json({ error: "Valid pass ID is required" });
+    const positionId = req.query.positionId ? parsePositiveId(String(req.query.positionId)) : null;
+    if (req.query.positionId && !positionId) return res.status(400).json({ error: "Valid position ID is required" });
+    const pass = await storage.getPass(passId);
+    if (!pass) return res.status(404).json({ error: "Pass not found" });
+    const position = positionId ? await storage.getPassPosition(positionId) : null;
+    if (positionId && position?.passId !== passId) return res.status(404).json({ error: "Position not found for this pass" });
+    const criteria = await storage.getAiCriteria(passId, positionId);
+    res.json({
+      criteria,
+      confirmedAt: positionId ? position?.aiCriteriaConfirmedAt : pass.aiCriteriaConfirmedAt,
+      version: positionId ? position?.aiCriteriaVersion : pass.aiCriteriaVersion,
+      target: { passId, positionId },
+    });
+  });
+
+  app.post("/api/intelligence/passes/:passId/criteria/suggest", async (req, res) => {
+    try {
+      const passId = parsePositiveId(req.params.passId);
+      if (!passId) return res.status(400).json({ error: "Valid pass ID is required" });
+      const positionId = req.body.positionId ? z.coerce.number().int().positive().parse(req.body.positionId) : null;
+      const pass = await storage.getPass(passId);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      const position = positionId ? await storage.getPassPosition(positionId) : null;
+      if (positionId && position?.passId !== passId) return res.status(404).json({ error: "Position not found for this pass" });
+      const config = getAiConfig();
+      if (!config.configured) return res.status(409).json({ error: "AI criteria suggestions are not configured. Add criteria manually or configure the AI add-on." });
+      const title = position?.positionTitle || pass.positionTitle;
+      const sourceText = [position?.requirements, position?.qualifications, position?.jobDescriptionFinal, pass.jobDescriptionFinal, pass.jobDescriptionDraft].filter(Boolean).join("\n");
+      const result = await suggestCriteriaWithAnthropic({
+        title,
+        vacancy: {
+          passId,
+          positionId,
+          positionTitle: title,
+          department: pass.department,
+          location: pass.location,
+          employmentType: pass.employmentType,
+        },
+        sourceText,
+      });
+      res.json({ ...result, source: sourceText ? "role_fields" : "role_title", target: { passId, positionId } });
+    } catch (error) {
+      console.error("AI criteria suggestion failed:", error);
+      res.status(500).json({ error: "Failed to suggest AI review criteria" });
+    }
+  });
+
+  app.post("/api/intelligence/passes/:passId/criteria/confirm", async (req, res) => {
+    try {
+      const passId = z.coerce.number().int().positive().parse(req.params.passId);
+      const positionId = req.body.positionId ? z.coerce.number().int().positive().parse(req.body.positionId) : null;
+      const input = z.object({ criteria: z.array(criterionInputSchema).min(1).max(12) }).parse(req.body);
+      const pass = await storage.getPass(passId);
+      if (!pass) return res.status(404).json({ error: "Pass not found" });
+      const position = positionId ? await storage.getPassPosition(positionId) : null;
+      if (positionId && position?.passId !== passId) return res.status(404).json({ error: "Position not found for this pass" });
+      for (const criterion of input.criteria) {
+        const unsafe = validateCriterionSafety(criterion);
+        if (unsafe) return res.status(400).json({ error: unsafe, criterion: criterion.title });
+      }
+      const confirmed = await storage.replaceAiCriteriaAndConfirm(passId, positionId, input.criteria.map((criterion, index) => ({
+        ...criterion,
+        passId,
+        positionId,
+        sortOrder: criterion.sortOrder ?? index,
+      })), "criteria_changed");
+      const queue = await queueTargetApplications(passId, positionId);
+      res.json({ confirmed: true, version: confirmed.version, ...queue });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.errors });
+      res.status(500).json({ error: "Failed to confirm AI review criteria" });
+    }
+  });
+
+  app.get("/api/intelligence/passes/:passId/reviews", async (req, res) => {
+    const passId = parsePositiveId(req.params.passId);
+    if (!passId) return res.status(400).json({ error: "Valid pass ID is required" });
+    const reviews = await storage.getAiReviewsByPass(passId);
+    res.json(reviews.map(aiReviewSummary));
+  });
+
+  app.get("/api/intelligence/applications/:passCandidateId/review", async (req, res) => {
+    const passCandidateId = parsePositiveId(req.params.passCandidateId);
+    if (!passCandidateId) return res.status(400).json({ error: "Valid application ID is required" });
+    const review = await storage.getLatestAiReview(passCandidateId);
+    res.json(review || { status: "waiting_for_criteria" });
+  });
+
+  app.post("/api/intelligence/applications/:passCandidateId/review", async (req, res) => {
+    const passCandidateId = parsePositiveId(req.params.passCandidateId);
+    if (!passCandidateId) return res.status(400).json({ error: "Valid application ID is required" });
+    const result = await queueReviewForApplication(passCandidateId, Boolean(req.body?.force));
+    if (!result.queued) return res.status(409).json(result);
+    wakeAiReviewWorker();
+    res.status(202).json(result);
+  });
+
+  app.post("/api/intelligence/queue/process", async (_req, res) => {
+    res.json(await processPendingAiReviews());
+  });
+
   // ============ CANDIDATE ROUTES ============
   app.get("/api/candidates", async (req, res) => {
     try {
@@ -890,6 +1043,12 @@ export async function registerRoutes(
         passId: parseInt(req.params.passId)
       });
       const passCandidate = await storage.addCandidateToPass(validated);
+      try {
+        const queued = await queueReviewForApplication(passCandidate.id);
+        if (queued.queued) wakeAiReviewWorker();
+      } catch (queueError) {
+        console.error("AI review enqueue failed after candidate assignment:", queueError);
+      }
       res.status(201).json(passCandidate);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1155,6 +1314,14 @@ export async function registerRoutes(
     try {
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId: Number(req.params.id) });
+      if (result.applicationId && !result.duplicateApplication) {
+        try {
+          const queued = await queueReviewForApplication(result.applicationId);
+          if (queued.queued) wakeAiReviewWorker();
+        } catch (queueError) {
+          console.error("AI review enqueue failed after public application:", queueError);
+        }
+      }
       res.status(result.duplicateApplication ? 200 : 201).json({
         success: true,
         message: result.duplicateApplication ? "Your application was already received" : "Application submitted successfully",
@@ -1169,6 +1336,14 @@ export async function registerRoutes(
       const passId = z.number().int().positive().parse(req.body.passId);
       const validated = publicSubmissionSchema.parse(req.body);
       const result = await submitPublicCandidate({ ...validated, privacyNoticeVersion: publicPrivacyConfig().privacyNoticeVersion, passId });
+      if (result.applicationId && !result.duplicateApplication) {
+        try {
+          const queued = await queueReviewForApplication(result.applicationId);
+          if (queued.queued) wakeAiReviewWorker();
+        } catch (queueError) {
+          console.error("AI review enqueue failed after public application:", queueError);
+        }
+      }
       res.status(result.duplicateApplication ? 200 : 201).json({ success: true, ...result });
     } catch (error) { return sendPublicIntakeError(error, res); }
   });

@@ -53,6 +53,11 @@ export async function eraseCandidatePii(candidateId: number) {
        where pass_candidate_id in (select id from pass_candidates where candidate_id = $1)`, [candidateId],
     );
     await client.query("update documents set title = 'Erased document', content = null, file_path = null, file_name = null, status = 'erased', updated_at = now() where candidate_id = $1", [candidateId]);
+    await client.query(
+      "update documents set extracted_text = null, extraction_status = 'erased', extraction_error_code = null, extracted_at = null, updated_at = now() where candidate_id = $1",
+      [candidateId],
+    );
+    await client.query("delete from ai_candidate_reviews where candidate_id = $1", [candidateId]);
     await client.query("update pass_candidates set ai_brief = null, selection_notes = null, rejection_reason = null, rejection_notes = null, updated_at = now() where candidate_id = $1", [candidateId]);
     await client.query("update assessment_responses set responses = '{}'::jsonb where pass_candidate_id in (select id from pass_candidates where candidate_id = $1)", [candidateId]);
     await client.query("update interviews set interview_notes = null, updated_at = now() where pass_candidate_id in (select id from pass_candidates where candidate_id = $1)", [candidateId]);

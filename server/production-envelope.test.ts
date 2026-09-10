@@ -13,7 +13,7 @@ process.env.DATABASE_URL ||= "postgres://hirepass_test:hirepass_test@127.0.0.1:1
 process.env.HIREPASS_ADMIN_USERNAME = "owner";
 process.env.HIREPASS_ADMIN_PASSWORD = "correct horse battery staple";
 process.env.HIREPASS_SESSION_SECRET = "test-session-secret-with-more-than-32-characters";
-const testAdminPasswordHash = "pbkdf2:210000:0123456789abcdef0123456789abcdef:58a4fc24182ba5cab9192c414a47d3a6d384a9624174f76721ee0bf9b986c5ba";
+const testAdminPasswordHash = "pbkdf2:210000:0123456789abcdef0123456789abcdef:803f3d2a658c2f7d6b17e2c1b0bf6c0c5d61acaaa9e61563e64a521b4ab9b2b5";
 
 let registerRoutes: typeof import("./routes").registerRoutes;
 let storage: typeof import("./storage").storage;
@@ -242,6 +242,7 @@ describe("HirePass production envelope", () => {
         careersContactEmail: "careers@example.test",
         privacyNoticeUrl: "https://example.test/privacy",
         privacyNoticeVersion: "test-v1",
+        aiEnabled: false,
       });
       assert.equal((await fetch(`${baseUrl}/api/candidates/201/library`)).status, 401);
       const cookie = await login(baseUrl);
@@ -556,5 +557,21 @@ describe("HirePass production envelope", () => {
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
     }
+  });
+
+  it("keeps new intelligence routes behind internal authentication", async () => {
+    await withServer({}, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/intelligence/status`)).status, 401);
+      const cookie = await login(baseUrl);
+      const response = await fetch(`${baseUrl}/api/intelligence/status`, { headers: { cookie } });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json() as any).state, "disabled");
+      const suggestions = await fetch(`${baseUrl}/api/intelligence/passes/10/criteria/suggest`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      assert.equal(suggestions.status, 409);
+    });
   });
 });
