@@ -571,6 +571,71 @@ describe("HR Pass Control lifecycle routes", () => {
     });
   });
 
+  it("emails the issued Candidate Pass from the Pass Control route with an absolute public URL", async () => {
+    const previous = {
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    const emails: any[] = [];
+    try {
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      await withServer({
+        createCandidateLink: async (data: any) => ({ ...data, id: 33, token: "pass-control-candidate-token" }),
+        enqueueEmail: async (email: any) => {
+          emails.push(email);
+          return { created: true, email: { id: emails.length, ...email } };
+        },
+      }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidates/101/candidate-link`, { method: "POST" });
+        assert.equal(response.status, 201);
+        const link = await json(response);
+        assert.equal(link.id, 33);
+        assert.equal(emails.length, 1);
+        assert.equal(emails[0].eventKey, "candidate-pass-issued:33");
+        assert.equal(emails[0].recipientEmail, "candidate@example.com");
+        assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/candidate-pass\/pass-control-candidate-token/);
+      });
+    } finally {
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
+  });
+
+  it("keeps Candidate Pass Control issuance successful if email enqueue fails", async () => {
+    const previous = {
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    try {
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      await withServer({
+        createCandidateLink: async (data: any) => ({ ...data, id: 34, token: "nonblocking-candidate-token" }),
+        enqueueEmail: async () => { throw new Error("simulated enqueue failure"); },
+      }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidates/101/candidate-link`, { method: "POST" });
+        assert.equal(response.status, 201);
+        assert.equal((await json(response)).id, 34);
+      });
+    } finally {
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
+  });
+
   it("issues distinct cryptographic-looking Candidate Pass tokens", async () => {
     const issuedTokens: string[] = [];
     await withServer({
@@ -622,6 +687,71 @@ describe("HR Pass Control lifecycle routes", () => {
       assert.equal(additional.status, 201);
       assert.deepEqual(issued, [301, 302]);
     });
+  });
+
+  it("emails the issued Stakeholder Pass from the Pass Control route with an absolute public URL", async () => {
+    const previous = {
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    const emails: any[] = [];
+    try {
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      await withServer({
+        createShareLink: async (data: any) => ({ ...managerLink, id: 44, token: "pass-control-stakeholder-token", ...data }),
+        enqueueEmail: async (email: any) => {
+          emails.push(email);
+          return { created: true, email: { id: emails.length, ...email } };
+        },
+      }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        assert.equal(response.status, 201);
+        const link = await json(response);
+        assert.equal(link.id, 44);
+        assert.equal(emails.length, 1);
+        assert.equal(emails[0].eventKey, "stakeholder-pass-issued:44");
+        assert.equal(emails[0].recipientEmail, "manager@example.com");
+        assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/manager-pass\/pass-control-stakeholder-token/);
+      });
+    } finally {
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
+  });
+
+  it("keeps Stakeholder Pass Control issuance successful if email enqueue fails", async () => {
+    const previous = {
+      emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+      smtpHost: process.env.HIREPASS_SMTP_HOST,
+      emailFrom: process.env.HIREPASS_EMAIL_FROM,
+    };
+    try {
+      process.env.HIREPASS_EMAIL_ENABLED = "true";
+      process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+      process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
+      process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
+      await withServer({
+        createShareLink: async (data: any) => ({ ...managerLink, id: 45, token: "nonblocking-stakeholder-token", ...data }),
+        enqueueEmail: async () => { throw new Error("simulated enqueue failure"); },
+      }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        assert.equal(response.status, 201);
+        assert.equal((await json(response)).id, 45);
+      });
+    } finally {
+      if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+      if (previous.smtpHost === undefined) delete process.env.HIREPASS_SMTP_HOST; else process.env.HIREPASS_SMTP_HOST = previous.smtpHost;
+      if (previous.emailFrom === undefined) delete process.env.HIREPASS_EMAIL_FROM; else process.env.HIREPASS_EMAIL_FROM = previous.emailFrom;
+    }
   });
 
   it("rejects an actionable Stakeholder Pass without a stakeholder binding", async () => {

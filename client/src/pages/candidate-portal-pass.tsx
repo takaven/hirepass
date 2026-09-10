@@ -484,18 +484,16 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
             </DialogContent>
           </Dialog>
 
-          <Card id="pass-documents" className="border-slate-800 bg-slate-900/80">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <FileText className="h-5 w-5 text-orange-300" />
-                Documents
-              </CardTitle>
-              <CardDescription className="text-slate-400">Track requested and received hiring documents.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {documents.length === 0 ? (
-                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No documents have been requested yet.</p>
-              ) : (
+          {documents.length > 0 && (
+            <Card id="pass-documents" className="border-slate-800 bg-slate-900/80">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <FileText className="h-5 w-5 text-orange-300" />
+                  Documents
+                </CardTitle>
+                <CardDescription className="text-slate-400">Track requested and received hiring documents.</CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-2">
                   {documents.map((doc) => (
                     <div key={doc.id} className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -530,15 +528,15 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                     </div>
                   ))}
                 </div>
-              )}
-              {pendingDocs.length > 0 && (
-                <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
-                  <Upload className="h-4 w-4" />
-                  Upload PDF, JPG or PNG files up to 10 MB. Your document is stored against this Candidate Pass.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                {pendingDocs.length > 0 && (
+                  <p className="mt-3 flex items-center gap-2 text-sm text-orange-200">
+                    <Upload className="h-4 w-4" />
+                    Upload PDF, JPG or PNG files up to 10 MB. Your document is stored against this Candidate Pass.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card id="pass-messages" className="border-slate-800 bg-slate-900/80">
             <CardHeader>
@@ -585,26 +583,24 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           </Card>
         </section>
 
-        <Card className="border-slate-800 bg-slate-900/80">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-white">
-              <MessageSquare className="h-5 w-5 text-slate-300" />
-              Journey log
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {timeline.length === 0 ? (
-              <p className="text-sm text-slate-400">No journey updates have been added yet.</p>
-            ) : (
-              timeline.map((event, index) => (
+        {timeline.length > 0 && (
+          <Card className="border-slate-800 bg-slate-900/80">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <MessageSquare className="h-5 w-5 text-slate-300" />
+                Journey log
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {timeline.map((event, index) => (
                 <div key={event.id || index} className="border-l border-slate-700 pl-4">
                   <p className="font-medium text-white">{event.title}</p>
                   <p className="text-sm text-slate-400">{event.description}</p>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       <Dialog open={showSlotDialog} onOpenChange={setShowSlotDialog}>

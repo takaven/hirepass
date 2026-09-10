@@ -580,6 +580,9 @@ describe("HirePass production envelope", () => {
     assert.match(candidateSource, /Current stage/);
     assert.match(candidateSource, /Your action/);
     assert.match(candidateSource, /Your journey/);
+    assert.match(candidateSource, /\{documents\.length > 0 && \(/);
+    assert.match(candidateSource, /\{timeline\.length > 0 && \(/);
+    assert.match(candidateSource, /id="pass-messages"/);
     assert.doesNotMatch(candidateSource, /Dominant next action/);
     assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
     assert.doesNotMatch(candidateSource, /Latest update/);

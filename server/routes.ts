@@ -105,6 +105,41 @@ async function enqueueCandidateActionEmail(input: {
   }
 }
 
+async function enqueueStakeholderPassIssuedEmail(pass: any, link: any, managerId: number) {
+  try {
+    const stakeholder = await storage.getManager(managerId);
+    return enqueueEmailSafely({
+      eventKey: `stakeholder-pass-issued:${link.id}`,
+      to: stakeholder?.email,
+      recipientName: stakeholder?.name,
+      subject: `Stakeholder Pass: ${pass.positionTitle}`,
+      bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(`/manager-pass/${link.token}`) || "Ask the hiring team for your Stakeholder Pass link."}`,
+    });
+  } catch (error) {
+    console.warn("Stakeholder Pass email enqueue skipped", { reason: error instanceof Error ? error.message : "unknown" });
+    return { queued: false, reason: "email_enqueue_failed" };
+  }
+}
+
+async function enqueueCandidatePassIssuedEmail(passCandidate: any, link: any, pass?: any) {
+  try {
+    const [candidate, resolvedPass] = await Promise.all([
+      storage.getCandidate(passCandidate.candidateId),
+      pass ? Promise.resolve(pass) : storage.getPass(passCandidate.passId),
+    ]);
+    return enqueueEmailSafely({
+      eventKey: `candidate-pass-issued:${link.id}`,
+      to: candidate?.email,
+      recipientName: candidate?.name,
+      subject: `Candidate Pass${resolvedPass?.positionTitle ? `: ${resolvedPass.positionTitle}` : ""}`,
+      bodyText: `A Candidate Pass is available for your application${resolvedPass?.positionTitle ? ` for ${resolvedPass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${link.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
+    });
+  } catch (error) {
+    console.warn("Candidate Pass email enqueue skipped", { reason: error instanceof Error ? error.message : "unknown" });
+    return { queued: false, reason: "email_enqueue_failed" };
+  }
+}
+
 function interviewEndTime(startTime: string, duration: number): string {
   const match = /^(\d{2}):(\d{2})$/.exec(startTime);
   if (!match) throw new Error("Invalid interview start time");
@@ -308,6 +343,7 @@ export async function registerRoutes(
         targetId: link.id,
         details: { managerId: managerId || null },
       });
+      await enqueueStakeholderPassIssuedEmail(pass, link, Number(managerId));
       res.status(201).json(link);
     } catch (error) {
       console.error("Error issuing manager pass:", error);
@@ -342,6 +378,7 @@ export async function registerRoutes(
         targetId: link.id,
         details: { passCandidateId },
       });
+      await enqueueCandidatePassIssuedEmail(passCandidate, link);
       res.status(201).json(link);
     } catch (error) {
       console.error("Error issuing candidate pass:", error);
