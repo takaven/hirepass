@@ -576,6 +576,14 @@ describe("HirePass production envelope", () => {
   });
 
   it("keeps public Pass first views simple and action-led", async () => {
+    const appSource = await readFile(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
+    const privacySource = await readFile(path.join(process.cwd(), "client/src/pages/public-privacy.tsx"), "utf8");
+    assert.match(appSource, /isPrivacyRoute/);
+    assert.match(appSource, /<PublicPrivacy \/>/);
+    assert.match(privacySource, /Recruitment Privacy Notice/);
+    assert.match(privacySource, /companyName/);
+    assert.doesNotMatch(privacySource, /ARIE Finance/);
+
     const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
     assert.match(candidateSource, /Current stage/);
     assert.match(candidateSource, /Your action/);

@@ -27,6 +27,7 @@ const HrPassControl = lazy(() => import("@/pages/hr-pass-control"));
 const PublicApply = lazy(() => import("@/pages/public-apply"));
 const PublicCareers = lazy(() => import("@/pages/public-careers"));
 const PublicTalentPool = lazy(() => import("@/pages/public-talent-pool"));
+const PublicPrivacy = lazy(() => import("@/pages/public-privacy"));
 const PassCandidates = lazy(() => import("@/pages/pass-candidates"));
 const ManagerRecruitmentPass = lazy(() => import("@/pages/manager-recruitment-pass"));
 const CandidatePortalPass = lazy(() => import("@/pages/candidate-portal-pass"));
@@ -203,6 +204,7 @@ function App() {
   
   const isApplyRoute = location === "/apply" || /^\/apply\/\d+$/.test(location);
   const isCareersRoute = location === "/careers";
+  const isPrivacyRoute = location === "/privacy";
   const isTalentPoolRoute = location === "/talent-pool" || location === "/submit-cv";
   const isRetiredPublicPassRoute = location.startsWith("/pass/");
   // Token-based manager pass: /manager-pass/mgr_xxxxx
@@ -217,6 +219,8 @@ function App() {
           <Suspense fallback={<RouteFallback />}>
           {isCareersRoute ? (
             <PublicCareers />
+          ) : isPrivacyRoute ? (
+            <PublicPrivacy />
           ) : isTalentPoolRoute ? (
             <PublicTalentPool />
           ) : isApplyRoute ? (
