@@ -3,6 +3,7 @@ import { Briefcase, Calendar, Clock, Users } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Candidate, Interview, Pass } from "@shared/schema";
+import { isOperationallyOpenVacancy } from "@shared/hiring-workflow";
 
 function Metric({ label, value, detail, icon: Icon }: { label: string; value: number | string; detail?: string; icon: typeof Briefcase }) {
   return (
@@ -25,7 +26,7 @@ export default function Analytics() {
   const { data: interviews, isLoading: interviewsLoading } = useQuery<Interview[]>({ queryKey: ["/api/interviews"] });
 
   const isLoading = passesLoading || candidatesLoading || interviewsLoading;
-  const openVacancies = passes?.filter((pass) => ["active", "open", "in_progress", "screening", "sourcing"].includes(pass.status || "")).length || 0;
+  const openVacancies = passes?.filter((pass) => isOperationallyOpenVacancy(pass.status)).length || 0;
   const scheduledInterviews = interviews?.filter((interview) => interview.status === "scheduled").length || 0;
   const completedVacancies = passes?.filter((pass) => pass.status === "filled").length || 0;
   const departments = Array.from(new Set((passes || []).map((pass) => pass.department).filter(Boolean)));

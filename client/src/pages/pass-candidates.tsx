@@ -63,7 +63,16 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Pass, Candidate, PassPosition, Manager } from "@shared/schema";
-import { presentHiringStage, presentHiringStatusLabel } from "@shared/hiring-workflow";
+import {
+  type CandidateStatusOption,
+  candidateStatusOptions,
+  candidatesRequiringVisibleStatusChange,
+  presentHiringStage,
+  presentHiringStatusLabel,
+  shouldChangeVisibleCandidateStatus,
+  uniqueVisibleHiringPhases,
+  visibleStatusValue,
+} from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -107,21 +116,20 @@ interface AiReview {
 
 type PipelineData = Record<string, PassCandidate[]>;
 
-const STAGES = [
-  { key: "new", label: "Applied", color: "bg-gray-500" },
-  { key: "screening", label: "Review", color: "bg-blue-500" },
-  { key: "interview", label: "Interview", color: "bg-purple-500" },
-  { key: "offer", label: "Decision", color: "bg-amber-500" },
+const POSITION_COLORS = [
+  "bg-[#F4F6F8] text-[#20242B] border-[#D8DEE4]",
+  "bg-white text-[#20242B] border-[#D8DEE4]",
+  "bg-[#01FF22]/10 text-[#20242B] border-[#01FF22]/40",
+  "bg-zinc-50 text-zinc-700 border-zinc-200",
 ];
 
-const POSITION_COLORS = [
-  "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-  "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30",
-  "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30",
-  "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30",
-  "bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30",
-  "bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-500/30",
-];
+const STAGE_DOT_COLORS: Record<string, string> = {
+  new: "bg-[#68707D]",
+  screening: "bg-[#01FF22]",
+  shortlisted: "bg-[#01FF22]",
+  interview: "bg-[#42494D]",
+  offer: "bg-[#20242B]",
+};
 
 export default function PassCandidates() {
   const [, params] = useRoute("/passes/:passId/candidates");
@@ -155,7 +163,12 @@ export default function PassCandidates() {
   useEffect(() => {
     if (!selectedStakeholderId && pass?.hiringManagerId) setSelectedStakeholderId(String(pass.hiringManagerId));
   }, [pass?.hiringManagerId, selectedStakeholderId]);
-  const visibleStages = STAGES;
+  const visibleStages = uniqueVisibleHiringPhases(pass?.enabledStages).map((phase) => ({
+    key: phase.value,
+    label: phase.label,
+    color: STAGE_DOT_COLORS[phase.value] || "bg-[#42494D]",
+  }));
+  const visibleStatusOptions = candidateStatusOptions(pass?.enabledStages);
 
   const { data: pipeline, isLoading: pipelineLoading } = useQuery<PipelineData>({
     queryKey: ["/api/passes", passId, "candidates", "pipeline"],
@@ -357,7 +370,7 @@ export default function PassCandidates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/passes", passId, "candidates", "pipeline"] });
-      toast({ title: "Candidate added to pass" });
+      toast({ title: "Candidate added to vacancy" });
       setAddDialogOpen(false);
       setSelectedCandidateId("");
       setSelectedPositionId("");
@@ -436,11 +449,12 @@ export default function PassCandidates() {
   const handleDrop = useCallback((e: React.DragEvent, stageKey: string) => {
     e.preventDefault();
     setDragOverColumn(null);
-    if (draggedItem && draggedItem.status !== stageKey) {
-      updateStatusMutation.mutate({ id: draggedItem.id, status: stageKey });
+    const targetStatus = stageKey as CandidateStatusOption["value"];
+    if (draggedItem && shouldChangeVisibleCandidateStatus(draggedItem.status, targetStatus, pass?.enabledStages)) {
+      updateStatusMutation.mutate({ id: draggedItem.id, status: targetStatus });
     }
     setDraggedItem(null);
-  }, [draggedItem, updateStatusMutation]);
+  }, [draggedItem, pass?.enabledStages, updateStatusMutation]);
 
   const toggleSelection = (id: number) => {
     setSelectedCandidates(prev => 
@@ -449,8 +463,13 @@ export default function PassCandidates() {
   };
 
   const handleBulkMove = (status: string) => {
-    if (selectedCandidates.length > 0) {
-      bulkUpdateMutation.mutate({ ids: selectedCandidates, status });
+    const candidates = Object.values(pipeline || {}).flat();
+    const targetStatus = status as CandidateStatusOption["value"];
+    const ids = candidatesRequiringVisibleStatusChange(candidates, selectedCandidates, targetStatus, pass?.enabledStages).map((candidate) => candidate.id);
+    if (ids.length > 0) {
+      bulkUpdateMutation.mutate({ ids, status });
+    } else if (selectedCandidates.length > 0) {
+      setSelectedCandidates([]);
     }
   };
 
@@ -471,8 +490,8 @@ export default function PassCandidates() {
       <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-24 rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
-          {[...Array(7)].map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
             <Skeleton key={i} className="h-96 rounded-2xl" />
           ))}
         </div>
@@ -571,7 +590,7 @@ export default function PassCandidates() {
             className={`
               rounded-xl px-4 transition-all
               ${filterPositionId === "all" 
-                ? "bg-[#00C853]/20 text-[#00C853] border border-[#00C853]/40" 
+                ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
                 : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
             `}
             onClick={() => setFilterPositionId("all")}
@@ -587,7 +606,7 @@ export default function PassCandidates() {
               className={`
                 rounded-xl px-4 transition-all
                 ${filterPositionId === String(position.id) 
-                  ? "bg-[#00C853]/20 text-[#00C853] border border-[#00C853]/40" 
+                  ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
                   : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
               `}
               onClick={() => setFilterPositionId(String(position.id))}
@@ -608,7 +627,7 @@ export default function PassCandidates() {
             className={`
               rounded-xl px-4 transition-all
               ${filterPositionId === "unassigned" 
-                ? "bg-[#00C853]/20 text-[#00C853] border border-[#00C853]/40" 
+                ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
                 : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
             `}
             onClick={() => setFilterPositionId("unassigned")}
@@ -641,8 +660,8 @@ export default function PassCandidates() {
                   <SelectValue placeholder="Move to Stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  {visibleStages.map(stage => (
-                    <SelectItem key={stage.key} value={stage.key}>
+                  {visibleStatusOptions.map(stage => (
+                    <SelectItem key={stage.value} value={stage.value}>
                       {stage.label}
                     </SelectItem>
                   ))}
@@ -672,7 +691,7 @@ export default function PassCandidates() {
         </GlassCard>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {visibleStages.map(stage => {
           const candidates = candidatesForVisibleStage(stage.key);
           const isOver = dragOverColumn === stage.key;
@@ -1004,20 +1023,23 @@ export default function PassCandidates() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Update Status</h4>
                   <Select
-                    value={detailCandidate.status}
+                    value={visibleStatusValue(detailCandidate.status, pass?.enabledStages)}
                     onValueChange={(status) => {
-                      updateStatusMutation.mutate({ id: detailCandidate.id, status });
-                      setDetailCandidate({ ...detailCandidate, status });
+                      const targetStatus = status as CandidateStatusOption["value"];
+                      if (shouldChangeVisibleCandidateStatus(detailCandidate.status, targetStatus, pass?.enabledStages)) {
+                        updateStatusMutation.mutate({ id: detailCandidate.id, status });
+                        setDetailCandidate({ ...detailCandidate, status });
+                      }
                     }}
                   >
                     <SelectTrigger className="rounded-xl" data-testid="select-detail-status">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {visibleStages.map(stage => (
-                        <SelectItem key={stage.key} value={stage.key}>
+                      {visibleStatusOptions.map(stage => (
+                        <SelectItem key={stage.value} value={stage.value}>
                           <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${stage.color}`} />
+                            <div className={`w-2 h-2 rounded-full ${STAGE_DOT_COLORS[stage.value] || "bg-[#42494D]"}`} />
                             {stage.label}
                           </div>
                         </SelectItem>

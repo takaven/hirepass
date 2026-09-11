@@ -39,7 +39,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Pass, Candidate, PassPosition } from "@shared/schema";
-import { configuredStages } from "@shared/hiring-workflow";
+import { candidateStatusOptions, presentHiringStage, visibleStatusValue, uniqueVisibleHiringPhases } from "@shared/hiring-workflow";
 import { AiReviewCriteriaPanel } from "@/components/ai-review-criteria";
 
 interface PassCandidate {
@@ -53,21 +53,23 @@ interface PassCandidate {
   candidate: Candidate;
 }
 
-const statusPipeline = [
-  { value: "new", label: "Applied", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
-  { value: "screening", label: "Review", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
-  { value: "shortlisted", label: "Review", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" },
-  { value: "interview", label: "Interview", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
-  { value: "offer", label: "Decision", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
-  { value: "hired", label: "Hired", color: "bg-green-500 text-white" },
-  { value: "rejected", label: "Not selected", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" },
-];
+const statusColors: Record<string, string> = {
+  new: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  screening: "bg-[#20242B] text-white dark:bg-[#F4F6F8] dark:text-[#20242B]",
+  shortlisted: "bg-[#20242B] text-white dark:bg-[#F4F6F8] dark:text-[#20242B]",
+  interview: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+  offer: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+  hired: "bg-[#01FF22]/20 text-[#20242B] border border-[#01FF22]/50",
+  rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  withdrawn: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
+};
 
-function CandidateStatusBadge({ status }: { status: string }) {
-  const statusConfig = statusPipeline.find(s => s.value === status) || statusPipeline[0];
+function CandidateStatusBadge({ status, stages }: { status: string; stages?: unknown }) {
+  const options = candidateStatusOptions(stages);
+  const option = options.find((s) => s.value === visibleStatusValue(status, stages)) || options[0];
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.color}`}>
-      {statusConfig.label}
+    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[option.value] || statusColors.new}`}>
+      {option.label}
     </span>
   );
 }
@@ -138,10 +140,18 @@ export default function PassDetail() {
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
 
-  const groupedCandidates = statusPipeline.map(status => ({
-    ...status,
-    candidates: passCandidates?.filter(pc => pc.status === status.value) || [],
+  const groupedCandidates = uniqueVisibleHiringPhases(pass?.enabledStages).map((phase) => ({
+    ...phase,
+    candidates: passCandidates?.filter((pc) => presentHiringStage(pc.status).step === phase.step && !presentHiringStage(pc.status).outcome) || [],
   }));
+  const outcomeCounts = candidateStatusOptions(pass?.enabledStages)
+    .filter((option) => option.kind === "outcome")
+    .map((option) => ({
+      ...option,
+      count: passCandidates?.filter((pc) => visibleStatusValue(pc.status, pass?.enabledStages) === option.value).length || 0,
+    }))
+    .filter((option) => option.count > 0 || option.value !== "withdrawn");
+  const visibleStatusOptions = candidateStatusOptions(pass?.enabledStages);
 
   if (passLoading) {
     return (
@@ -321,6 +331,19 @@ export default function PassDetail() {
                 </Badge>
               </div>
             ))}
+            {outcomeCounts.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Outcomes</p>
+                <div className="space-y-2">
+                  {outcomeCounts.map((outcome) => (
+                    <div key={outcome.value} className="flex items-center justify-between">
+                      <span className="text-sm">{outcome.label}</span>
+                      <Badge variant="secondary" className="rounded-full">{outcome.count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-4 pt-4 border-t">
             <div className="flex items-center justify-between text-sm">
@@ -371,16 +394,16 @@ export default function PassDetail() {
                   </div>
                 </div>
                 <Select
-                  value={pc.status}
+                  value={visibleStatusValue(pc.status, pass?.enabledStages)}
                   onValueChange={(status) => updateStatusMutation.mutate({ id: pc.id, status })}
                 >
                   <SelectTrigger className="w-40 rounded-xl" data-testid={`select-status-${pc.id}`}>
-                    <CandidateStatusBadge status={pc.status} />
+                    <CandidateStatusBadge status={pc.status} stages={pass?.enabledStages} />
                   </SelectTrigger>
                   <SelectContent>
-                    {statusPipeline.filter((stage) => stage.value === "rejected" || configuredStages(pass?.enabledStages).includes(stage.value as any)).map(s => (
+                    {visibleStatusOptions.map(s => (
                       <SelectItem key={s.value} value={s.value}>
-                        <CandidateStatusBadge status={s.value} />
+                        <CandidateStatusBadge status={s.value} stages={pass?.enabledStages} />
                       </SelectItem>
                     ))}
                   </SelectContent>

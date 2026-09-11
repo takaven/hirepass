@@ -5,6 +5,7 @@ import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Candidate, Interview, Pass } from "@shared/schema";
+import { isOperationallyOpenVacancy } from "@shared/hiring-workflow";
 
 interface DashboardStats {
   totalCandidates: number;
@@ -26,7 +27,7 @@ export default function Dashboard() {
   const { data: interviews, isLoading: interviewsLoading } = useQuery<Interview[]>({ queryKey: ["/api/interviews/upcoming"] });
 
   const loading = statsLoading || candidatesLoading || passesLoading || interviewsLoading;
-  const openVacancies = (passes || []).filter((pass) => ["active", "open", "in_progress", "screening", "sourcing"].includes(pass.status || ""));
+  const openVacancies = (passes || []).filter((pass) => isOperationallyOpenVacancy(pass.status));
   const interviewItems = (interviews || []).slice(0, 3).map((interview) => ({
     key: `interview-${interview.id}`,
     href: "/interviews",
