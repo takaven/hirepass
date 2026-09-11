@@ -36,7 +36,15 @@ import { Link } from "wouter";
 import type { Pass, Manager, PassPosition } from "@shared/schema";
 import { insertPassSchema } from "@shared/schema";
 import { useState, useEffect } from "react";
-import { DEFAULT_HIRING_STAGES, isInterviewEnabled, stagesFromVisibleWorkflow, TERMINAL_HIRING_OUTCOMES, VISIBLE_HIRING_PHASES } from "@shared/hiring-workflow";
+import {
+  canonicalVisibleHiringPhases,
+  DEFAULT_HIRING_STAGES,
+  isCanonicalVisibleWorkflow,
+  isInterviewEnabled,
+  stagesFromVisibleWorkflow,
+  TERMINAL_HIRING_OUTCOMES,
+  uniqueVisibleHiringPhases,
+} from "@shared/hiring-workflow";
 
 const positionSchema = z.object({
   id: z.number().optional(),
@@ -305,6 +313,11 @@ export default function PassForm() {
   };
 
   const totalHeadcount = form.watch("positions")?.reduce((sum, p) => sum + (p.headcount || 0), 0) || 0;
+  const currentEnabledStages = form.watch("enabledStages");
+  const isLegacyWorkflow = isEditing && !isCanonicalVisibleWorkflow(currentEnabledStages);
+  const visibleWorkflowPhases = isLegacyWorkflow
+    ? uniqueVisibleHiringPhases(currentEnabledStages)
+    : canonicalVisibleHiringPhases();
 
   if (isEditing && (passLoading || positionsLoading)) {
     return (
@@ -484,15 +497,22 @@ export default function PassForm() {
           <GlassCard className="p-6">
             <h2 className="text-lg font-semibold">Hiring workflow</h2>
             <p className="mt-1 text-sm text-muted-foreground">HirePass keeps the journey simple. Interview is the only optional phase for this vacancy.</p>
+            {isLegacyWorkflow && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Legacy workflow — existing stage configuration is preserved.
+              </div>
+            )}
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {VISIBLE_HIRING_PHASES.map((phase) => {
-                const selected = phase.value === "interview" ? isInterviewEnabled(form.watch("enabledStages")) : true;
+              {visibleWorkflowPhases.map((phase) => {
+                const selected = isLegacyWorkflow || phase.value !== "interview"
+                  ? true
+                  : isInterviewEnabled(currentEnabledStages);
                 return (
                   <label key={phase.step} className="flex items-start gap-3 rounded-xl border border-border bg-white/60 px-3 py-3 text-sm">
                     <input
                       type="checkbox"
                       checked={selected}
-                      disabled={phase.fixed}
+                      disabled={isLegacyWorkflow || phase.fixed}
                       onChange={(event) => {
                         form.setValue("enabledStages", stagesFromVisibleWorkflow({ interviewEnabled: event.target.checked }), { shouldDirty: true });
                       }}
@@ -500,7 +520,9 @@ export default function PassForm() {
                     />
                     <span>
                       <span className="block font-medium">{phase.label}</span>
-                      <span className="text-xs text-muted-foreground">{phase.fixed ? "Fixed" : "Optional"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {isLegacyWorkflow ? "Preserved" : phase.fixed ? "Fixed" : "Optional"}
+                      </span>
                     </span>
                   </label>
                 );

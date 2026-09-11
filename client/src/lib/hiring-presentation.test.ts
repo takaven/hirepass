@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  allowedCandidateStatus,
+  backendStatusForVisiblePhase,
+  canonicalVisibleHiringPhases,
   candidateStatusOptions,
   isInterviewEnabled,
   isOperationallyOpenVacancy,
@@ -34,6 +37,10 @@ describe("hiring workflow presentation", () => {
     assert.equal(phases.filter((phase) => phase.label === "Review").length, 1);
   });
 
+  it("keeps the canonical new-vacancy journey fixed", () => {
+    assert.deepEqual(canonicalVisibleHiringPhases().map((phase) => phase.label), ["Applied", "Review", "Interview", "Decision"]);
+  });
+
   it("keeps terminal outcomes separate from configurable phases", () => {
     assert.deepEqual(TERMINAL_HIRING_OUTCOMES.map((outcome) => outcome.label), ["Hired", "Not selected", "Withdrawn"]);
     assert.equal(uniqueVisibleHiringPhases().some((phase) => phase.label === "Hired"), false);
@@ -57,6 +64,41 @@ describe("hiring workflow presentation", () => {
     assert.equal(isInterviewEnabled(stagesFromVisibleWorkflow({ interviewEnabled: true })), true);
     assert.deepEqual(stagesFromVisibleWorkflow({ interviewEnabled: false }), ["new", "screening", "shortlisted", "offer", "hired"]);
     assert.deepEqual(uniqueVisibleHiringPhases(stagesFromVisibleWorkflow({ interviewEnabled: false })).map((phase) => phase.label), ["Applied", "Review", "Decision"]);
+    assert.equal(candidateStatusOptions(stagesFromVisibleWorkflow({ interviewEnabled: false })).some((option) => option.label === "Interview"), false);
+  });
+
+  it("does not expose Review or Decision for legacy workflows that cannot accept those statuses", () => {
+    const stages = ["new", "interview", "hired"];
+    const phases = uniqueVisibleHiringPhases(stages);
+    const options = candidateStatusOptions(stages);
+
+    assert.deepEqual(phases.map((phase) => phase.label), ["Applied", "Interview"]);
+    assert.equal(options.some((option) => option.label === "Review"), false);
+    assert.equal(options.some((option) => option.label === "Decision"), false);
+    assert.equal(options.every((option) => allowedCandidateStatus(option.value, stages)), true);
+  });
+
+  it("maps legacy shortlisted-only Review to shortlisted", () => {
+    const stages = ["new", "shortlisted", "interview", "hired"];
+    assert.deepEqual(uniqueVisibleHiringPhases(stages).map((phase) => phase.label), ["Applied", "Review", "Interview"]);
+    assert.equal(backendStatusForVisiblePhase("review", stages), "shortlisted");
+    assert.equal(visibleStatusValue("shortlisted", stages), "shortlisted");
+    assert.equal(candidateStatusOptions(stages).find((option) => option.label === "Review")?.value, "shortlisted");
+  });
+
+  it("maps legacy screening-only Review to screening", () => {
+    const stages = ["new", "screening", "interview", "hired"];
+    assert.deepEqual(uniqueVisibleHiringPhases(stages).map((phase) => phase.label), ["Applied", "Review", "Interview"]);
+    assert.equal(backendStatusForVisiblePhase("review", stages), "screening");
+    assert.equal(visibleStatusValue("screening", stages), "screening");
+    assert.equal(candidateStatusOptions(stages).find((option) => option.label === "Review")?.value, "screening");
+  });
+
+  it("does not expose Interview for legacy workflows without interview", () => {
+    const stages = ["new", "screening", "offer", "hired"];
+    assert.deepEqual(uniqueVisibleHiringPhases(stages).map((phase) => phase.label), ["Applied", "Review", "Decision"]);
+    assert.equal(candidateStatusOptions(stages).some((option) => option.label === "Interview"), false);
+    assert.equal(candidateStatusOptions(stages).every((option) => allowedCandidateStatus(option.value, stages)), true);
   });
 
   it("uses one open vacancy definition for Home and Analytics", () => {

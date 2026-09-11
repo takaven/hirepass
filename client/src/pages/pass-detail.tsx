@@ -56,6 +56,7 @@ interface PassCandidate {
 const statusColors: Record<string, string> = {
   new: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   screening: "bg-[#20242B] text-white dark:bg-[#F4F6F8] dark:text-[#20242B]",
+  shortlisted: "bg-[#20242B] text-white dark:bg-[#F4F6F8] dark:text-[#20242B]",
   interview: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
   offer: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
   hired: "bg-[#01FF22]/20 text-[#20242B] border border-[#01FF22]/50",
@@ -63,8 +64,9 @@ const statusColors: Record<string, string> = {
   withdrawn: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200",
 };
 
-function CandidateStatusBadge({ status }: { status: string }) {
-  const option = candidateStatusOptions().find((s) => s.value === visibleStatusValue(status)) || candidateStatusOptions()[0];
+function CandidateStatusBadge({ status, stages }: { status: string; stages?: unknown }) {
+  const options = candidateStatusOptions(stages);
+  const option = options.find((s) => s.value === visibleStatusValue(status, stages)) || options[0];
   return (
     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[option.value] || statusColors.new}`}>
       {option.label}
@@ -146,7 +148,7 @@ export default function PassDetail() {
     .filter((option) => option.kind === "outcome")
     .map((option) => ({
       ...option,
-      count: passCandidates?.filter((pc) => visibleStatusValue(pc.status) === option.value).length || 0,
+      count: passCandidates?.filter((pc) => visibleStatusValue(pc.status, pass?.enabledStages) === option.value).length || 0,
     }))
     .filter((option) => option.count > 0 || option.value !== "withdrawn");
   const visibleStatusOptions = candidateStatusOptions(pass?.enabledStages);
@@ -392,16 +394,16 @@ export default function PassDetail() {
                   </div>
                 </div>
                 <Select
-                  value={visibleStatusValue(pc.status)}
+                  value={visibleStatusValue(pc.status, pass?.enabledStages)}
                   onValueChange={(status) => updateStatusMutation.mutate({ id: pc.id, status })}
                 >
                   <SelectTrigger className="w-40 rounded-xl" data-testid={`select-status-${pc.id}`}>
-                    <CandidateStatusBadge status={pc.status} />
+                    <CandidateStatusBadge status={pc.status} stages={pass?.enabledStages} />
                   </SelectTrigger>
                   <SelectContent>
                     {visibleStatusOptions.map(s => (
                       <SelectItem key={s.value} value={s.value}>
-                        <CandidateStatusBadge status={s.value} />
+                        <CandidateStatusBadge status={s.value} stages={pass?.enabledStages} />
                       </SelectItem>
                     ))}
                   </SelectContent>

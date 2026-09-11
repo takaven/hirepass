@@ -117,6 +117,7 @@ const POSITION_COLORS = [
 const STAGE_DOT_COLORS: Record<string, string> = {
   new: "bg-[#68707D]",
   screening: "bg-[#01FF22]",
+  shortlisted: "bg-[#01FF22]",
   interview: "bg-[#42494D]",
   offer: "bg-[#20242B]",
 };
@@ -1007,7 +1008,7 @@ export default function PassCandidates() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Update Status</h4>
                   <Select
-                    value={visibleStatusValue(detailCandidate.status)}
+                    value={visibleStatusValue(detailCandidate.status, pass?.enabledStages)}
                     onValueChange={(status) => {
                       updateStatusMutation.mutate({ id: detailCandidate.id, status });
                       setDetailCandidate({ ...detailCandidate, status });

@@ -26,7 +26,15 @@ export type CandidateStatusOption = {
   fixed?: boolean;
 };
 
-export const VISIBLE_HIRING_PHASES: Array<{ step: SimpleHiringJourneyStep; value: HiringStage; label: VisibleHiringLabel; fixed: boolean; optional?: boolean }> = [
+export type VisibleHiringPhase = {
+  step: SimpleHiringJourneyStep;
+  value: HiringStage;
+  label: VisibleHiringLabel;
+  fixed: boolean;
+  optional?: boolean;
+};
+
+export const VISIBLE_HIRING_PHASES: VisibleHiringPhase[] = [
   { step: "applied", value: "new", label: "Applied", fixed: true },
   { step: "review", value: "screening", label: "Review", fixed: true },
   { step: "interview", value: "interview", label: "Interview", fixed: false, optional: true },
@@ -72,34 +80,68 @@ export function presentHiringStatusLabel(status: string | null | undefined): str
   return presented.outcomeLabel ?? presented.label;
 }
 
-export function uniqueVisibleHiringPhases(stages: unknown = DEFAULT_HIRING_STAGES) {
+export function canonicalVisibleHiringPhases(): VisibleHiringPhase[] {
+  return VISIBLE_HIRING_PHASES;
+}
+
+export function backendStatusForVisiblePhase(
+  phase: SimpleHiringJourneyStep | VisibleHiringLabel,
+  stages: unknown = DEFAULT_HIRING_STAGES,
+): HiringStage | null {
   const configured = configuredStages(stages);
-  return VISIBLE_HIRING_PHASES.filter((phase) => phase.fixed || configured.includes(phase.value));
+  const normalized = String(phase).toLowerCase();
+
+  switch (normalized) {
+    case "applied":
+      return configured.includes("new") ? "new" : null;
+    case "review":
+      if (configured.includes("screening")) return "screening";
+      if (configured.includes("shortlisted")) return "shortlisted";
+      return null;
+    case "interview":
+      return configured.includes("interview") ? "interview" : null;
+    case "decision":
+      return configured.includes("offer") ? "offer" : null;
+    default:
+      return null;
+  }
+}
+
+export function visibleHiringPhasesForConfiguredStages(stages: unknown = DEFAULT_HIRING_STAGES): VisibleHiringPhase[] {
+  return VISIBLE_HIRING_PHASES.flatMap((phase) => {
+    const value = backendStatusForVisiblePhase(phase.step, stages);
+    return value ? [{ ...phase, value }] : [];
+  });
+}
+
+export function uniqueVisibleHiringPhases(stages: unknown = DEFAULT_HIRING_STAGES): VisibleHiringPhase[] {
+  return visibleHiringPhasesForConfiguredStages(stages);
 }
 
 export function candidateStatusOptions(stages: unknown = DEFAULT_HIRING_STAGES): CandidateStatusOption[] {
-  const configured = configuredStages(stages);
-  const phaseOptions = VISIBLE_HIRING_PHASES
-    .filter((phase) => phase.fixed || configured.includes(phase.value))
+  const phaseOptions = visibleHiringPhasesForConfiguredStages(stages)
     .map((phase) => ({ value: phase.value, label: phase.label, kind: "phase" as const, fixed: phase.fixed }));
   return [...phaseOptions, ...TERMINAL_HIRING_OUTCOMES];
 }
 
-export function visibleStatusValue(status: string | null | undefined): CandidateStatusOption["value"] {
+export function visibleStatusValue(status: string | null | undefined, stages: unknown = DEFAULT_HIRING_STAGES): CandidateStatusOption["value"] {
+  const configured = configuredStages(stages);
   switch (status) {
+    case "screening":
+      return configured.includes("screening") ? "screening" : backendStatusForVisiblePhase("review", stages) ?? "new";
     case "shortlisted":
     case "assessment":
-      return "screening";
+      return backendStatusForVisiblePhase("review", stages) ?? "new";
+    case "offer":
+      return configured.includes("offer") ? "offer" : "new";
     case "handoff":
       return "hired";
     case "rejected":
     case "withdrawn":
     case "new":
-    case "screening":
     case "interview":
-    case "offer":
     case "hired":
-      return status;
+      return allowedCandidateStatus(status, stages) ? status : "new";
     default:
       return "new";
   }
@@ -113,6 +155,18 @@ export function stagesFromVisibleWorkflow({ interviewEnabled }: { interviewEnabl
 
 export function isInterviewEnabled(stages: unknown): boolean {
   return configuredStages(stages).includes("interview");
+}
+
+export function isCanonicalVisibleWorkflow(stages: unknown): boolean {
+  const configured = configuredStages(stages);
+  return (
+    sameStages(configured, stagesFromVisibleWorkflow({ interviewEnabled: true })) ||
+    sameStages(configured, stagesFromVisibleWorkflow({ interviewEnabled: false }))
+  );
+}
+
+function sameStages(left: HiringStage[], right: HiringStage[]): boolean {
+  return left.length === right.length && left.every((stage, index) => stage === right[index]);
 }
 
 export function isOperationallyOpenVacancy(status: string | null | undefined): boolean {

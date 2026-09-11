@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { allowedCandidateStatus, configuredStages, HIRING_STAGE_LABELS, isOperationallyOpenVacancy, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
+import {
+  allowedCandidateStatus,
+  backendStatusForVisiblePhase,
+  candidateStatusOptions,
+  configuredStages,
+  HIRING_STAGE_LABELS,
+  isOperationallyOpenVacancy,
+  nextConfiguredStage,
+  uniqueVisibleHiringPhases,
+  validateConfiguredStages,
+} from "@shared/hiring-workflow";
 import { resolveManagerPassState } from "./manager-pass-state";
 
 describe("bounded hiring workflows", () => {
@@ -18,6 +28,22 @@ describe("bounded hiring workflows", () => {
   it("advances reduced workflows without disabled stages", () => {
     assert.equal(nextConfiguredStage("new", ["new", "interview", "hired"]), "interview");
     assert.equal(nextConfiguredStage("interview", ["new", "interview", "hired"]), "hired");
+  });
+
+  it("generates backend-valid choices for reduced legacy workflows", () => {
+    const stages = ["new", "interview", "hired"];
+    const options = candidateStatusOptions(stages);
+
+    assert.deepEqual(uniqueVisibleHiringPhases(stages).map((phase) => phase.label), ["Applied", "Interview"]);
+    assert.equal(options.some((option) => option.label === "Review"), false);
+    assert.equal(options.some((option) => option.label === "Decision"), false);
+    assert.equal(options.every((option) => allowedCandidateStatus(option.value, stages)), true);
+  });
+
+  it("resolves Review to the enabled backend review status for legacy workflows", () => {
+    assert.equal(backendStatusForVisiblePhase("Review", ["new", "shortlisted", "interview", "hired"]), "shortlisted");
+    assert.equal(backendStatusForVisiblePhase("Review", ["new", "screening", "interview", "hired"]), "screening");
+    assert.equal(backendStatusForVisiblePhase("Decision", ["new", "shortlisted", "interview", "hired"]), null);
   });
 
   it("uses an operational open-vacancy definition that excludes draft and closed states", () => {
