@@ -21,7 +21,7 @@ const navItems = [
   },
   {
     title: "Vacancies",
-    url: "/passes",
+    url: "/vacancies",
     icon: FileText,
   },
   {
@@ -31,7 +31,7 @@ const navItems = [
   },
   {
     title: "Hiring Team",
-    url: "/managers",
+    url: "/hiring-team",
     icon: Building2,
   },
 ];
@@ -44,7 +44,7 @@ const secondaryNavItems = [
   },
   {
     title: "Pass Control",
-    url: "/pass-control",
+    url: "/hiring-control",
     icon: ShieldCheck,
   },
   {

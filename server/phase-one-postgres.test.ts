@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
+import express from "express";
 import { pool } from "./db";
 import { eraseCandidatePii } from "./candidate-privacy";
 import { storeCandidateCvUpload } from "./document-files";
 import { saveInternalCandidateCv } from "./internal-cv";
 import { reuseCandidateForPass, submitPublicCandidate } from "./public-intake";
+import { registerRoutes } from "./routes";
 
 const uploadDir = await mkdtemp(path.join(tmpdir(), "hirepass-phase-one-"));
 process.env.HIREPASS_UPLOAD_DIR = uploadDir;
@@ -25,9 +28,93 @@ async function storedFiles(directory = uploadDir): Promise<string[]> {
   return nested.flat().sort();
 }
 
+async function withPublicRouteServer(callback: (baseUrl: string) => Promise<void>) {
+  const previous = {
+    publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+    privacyVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION,
+    emailEnabled: process.env.HIREPASS_EMAIL_ENABLED,
+    aiEnabled: process.env.HIREPASS_AI_ENABLED,
+  };
+  process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test";
+  process.env.HIREPASS_PRIVACY_NOTICE_VERSION = "test-v1";
+  process.env.HIREPASS_EMAIL_ENABLED = "false";
+  process.env.HIREPASS_AI_ENABLED = "false";
+  const app = express();
+  app.use(express.json({ limit: "15mb" }));
+  const server = createServer(app);
+  await registerRoutes(server, app);
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  assert(address && typeof address === "object");
+  try {
+    await callback(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
+    if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+    if (previous.privacyVersion === undefined) delete process.env.HIREPASS_PRIVACY_NOTICE_VERSION; else process.env.HIREPASS_PRIVACY_NOTICE_VERSION = previous.privacyVersion;
+    if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
+    if (previous.aiEnabled === undefined) delete process.env.HIREPASS_AI_ENABLED; else process.env.HIREPASS_AI_ENABLED = previous.aiEnabled;
+  }
+}
+
+async function submitPublicApplication(baseUrl: string, passId: number, email: string, label: string) {
+  const response = await fetch(`${baseUrl}/api/public/passes/${passId}/apply`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...base(email, label), name: `Applicant ${label}`, privacyAcknowledged: true }),
+  });
+  const body = await response.json() as any;
+  return { response, body };
+}
+
 after(async () => { await pool.end(); await rm(uploadDir, { recursive: true, force: true }); });
 
 describe("Phase 1 public intake and Candidate Library persistence", () => {
+  it("returns immediate Candidate Pass status links only for brand-new candidate applications", async () => {
+    const suffix = Date.now();
+    const firstPass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status) values ($1,'Secure Public Route','Test','Dubai','Full-time','active') returning id", [`HP-P1-SEC-${suffix}`]);
+    const secondPass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status) values ($1,'Secure Reuse Route','Test','Dubai','Full-time','active') returning id", [`HP-P1-SECB-${suffix}`]);
+    const email = `secure-${suffix}@example.test`;
+
+    await withPublicRouteServer(async (baseUrl) => {
+      const created = await submitPublicApplication(baseUrl, firstPass.rows[0].id, email, "created");
+      assert.equal(created.response.status, 201);
+      assert.equal(created.body.duplicateApplication, false);
+      assert.equal(created.body.reusedCandidate, false);
+      assert.match(created.body.candidatePassUrl, /^https:\/\/careers\.example\.test\/candidate-pass\//);
+      const createdLinks = await pool.query<{ count: number; expires_at: Date; token: string }>(
+        `select count(*)::int count, max(expires_at) expires_at, max(token) token
+         from candidate_links where pass_candidate_id=$1`,
+        [created.body.applicationId],
+      );
+      assert.equal(createdLinks.rows[0].count, 1);
+      assert.ok(createdLinks.rows[0].expires_at);
+      const issuedToken = createdLinks.rows[0].token;
+      assert.ok(issuedToken);
+
+      const duplicate = await submitPublicApplication(baseUrl, firstPass.rows[0].id, email, "duplicate");
+      assert.equal(duplicate.response.status, 200);
+      assert.equal(duplicate.body.duplicateApplication, true);
+      assert.equal(duplicate.body.candidatePassUrl, null);
+      assert.doesNotMatch(JSON.stringify(duplicate.body), /candidate-pass\//);
+      assert.equal(JSON.stringify(duplicate.body).includes(issuedToken), false);
+      const duplicateLinks = await pool.query<{ count: number }>("select count(*)::int count from candidate_links where pass_candidate_id=$1", [created.body.applicationId]);
+      assert.equal(duplicateLinks.rows[0].count, 1);
+
+      const reused = await submitPublicApplication(baseUrl, secondPass.rows[0].id, email, "reused");
+      assert.equal(reused.response.status, 201);
+      assert.equal(reused.body.duplicateApplication, false);
+      assert.equal(reused.body.reusedCandidate, true);
+      assert.equal(reused.body.candidatePassUrl, null);
+      assert.doesNotMatch(JSON.stringify(reused.body), /candidate-pass\//);
+      assert.equal(JSON.stringify(reused.body).includes(issuedToken), false);
+      const reusedLinks = await pool.query<{ count: number }>("select count(*)::int count from candidate_links where pass_candidate_id=$1", [reused.body.applicationId]);
+      assert.equal(reusedLinks.rows[0].count, 0);
+      const candidateLinks = await pool.query<{ count: number }>("select count(*)::int count from candidate_links where pass_candidate_id in (select id from pass_candidates where candidate_id=$1)", [created.body.candidateId]);
+      assert.equal(candidateLinks.rows[0].count, 1);
+    });
+  });
+
   it("reuses candidates safely, retains every submitted CV, prevents duplicate applications, and erases every CV", async () => {
     const suffix = Date.now();
     const openPass = await pool.query<{id:number}>("insert into passes (pass_id,position_title,department,location,employment_type,status) values ($1,'Phase One Open','Test','Dubai','Full-time','active') returning id", [`HP-P1-${suffix}`]);

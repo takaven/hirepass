@@ -20,14 +20,16 @@ type Criterion = {
 
 export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: number; positions?: Array<{ id:number; positionTitle:string }> }) {
   const [positionId, setPositionId] = useState<string>("pass");
+  const [editingConfirmed, setEditingConfirmed] = useState(false);
   const targetPositionId = positionId === "pass" ? undefined : Number(positionId);
   const queryKey = targetPositionId ? `/api/intelligence/passes/${passId}/criteria?positionId=${targetPositionId}` : `/api/intelligence/passes/${passId}/criteria`;
   const { data } = useQuery<{ criteria: Criterion[]; version: number; confirmedAt?: string | null }>({ queryKey: [queryKey] });
   const { data: aiStatus } = useQuery<{ state: string; enabled: boolean; configured: boolean }>({ queryKey: ["/api/intelligence/status"] });
   const [draft, setDraft] = useState<Criterion[]>([]);
   const criteria = draft.length ? draft : data?.criteria ?? [];
+  const readOnlyConfirmed = Boolean(data?.confirmedAt && !draft.length && !editingConfirmed);
 
-  const targetLabel = useMemo(() => positions.find((item) => item.id === targetPositionId)?.positionTitle || "Pass-level role", [positions, targetPositionId]);
+  const targetLabel = useMemo(() => positions.find((item) => item.id === targetPositionId)?.positionTitle || "Vacancy default role", [positions, targetPositionId]);
 
   const suggestMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/intelligence/passes/${passId}/criteria/suggest`, { positionId: targetPositionId })).json(),
@@ -37,6 +39,7 @@ export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: numb
     mutationFn: async () => (await apiRequest("POST", `/api/intelligence/passes/${passId}/criteria/confirm`, { positionId: targetPositionId, criteria })).json(),
     onSuccess: () => {
       setDraft([]);
+      setEditingConfirmed(false);
       queryClient.invalidateQueries({ queryKey: [queryKey] });
       queryClient.invalidateQueries({ queryKey: [`/api/intelligence/passes/${passId}/reviews`] });
     },
@@ -50,17 +53,32 @@ export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: numb
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold"><Sparkles className="h-5 w-5 text-primary" />AI Review Criteria</h2>
-        <p className="mt-1 text-sm text-muted-foreground">AI-assisted review - human decision required. Criteria define what the AI may evaluate.</p>
+        <p className="mt-1 text-sm text-muted-foreground">HirePass reviews candidates against this small confirmed set. AI assists; people decide.</p>
       </div>
-      {positions.length > 0 && <Select value={positionId} onValueChange={(value) => { setPositionId(value); setDraft([]); }}>
+      {positions.length > 0 && <Select value={positionId} onValueChange={(value) => { setPositionId(value); setDraft([]); setEditingConfirmed(false); }}>
         <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="pass">Pass-level role</SelectItem>{positions.map((position) => <SelectItem key={position.id} value={String(position.id)}>{position.positionTitle}</SelectItem>)}</SelectContent>
+        <SelectContent><SelectItem value="pass">Vacancy default role</SelectItem>{positions.map((position) => <SelectItem key={position.id} value={String(position.id)}>{position.positionTitle}</SelectItem>)}</SelectContent>
       </Select>}
     </div>
     <div className="flex flex-wrap items-center gap-2 text-sm">
       <Badge variant={data?.confirmedAt ? "default" : "outline"}>{data?.confirmedAt ? `Confirmed v${data.version}` : "Not confirmed"}</Badge>
       <span className="text-muted-foreground">{targetLabel}</span>
     </div>
+    {readOnlyConfirmed ? (
+      <div className="space-y-2">
+        {criteria.map((criterion, index) => (
+          <div key={criterion.id ?? index} className="rounded-lg border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">{criterion.title}</p>
+              <Badge variant="outline" className="capitalize">{criterion.importance}</Badge>
+            </div>
+            {criterion.evaluationInstruction && (
+              <p className="mt-2 text-sm text-muted-foreground">{criterion.evaluationInstruction}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    ) : (
     <div className="space-y-3">
       {criteria.map((criterion, index) => <div key={criterion.id ?? index} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_160px]">
         <div className="space-y-2">
@@ -76,10 +94,17 @@ export function AiReviewCriteriaPanel({ passId, positions = [] }: { passId: numb
         </div>
       </div>)}
     </div>
+    )}
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" onClick={() => setDraft([...criteria, { title: "", evaluationInstruction: "", importance: "required", source: "manual", sortOrder: criteria.length, isActive: true }])}>Add criterion</Button>
-      <Button type="button" variant="outline" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !aiStatus?.configured}>Generate suggestions</Button>
-      <Button type="button" onClick={() => confirmMutation.mutate()} disabled={!criteria.length || confirmMutation.isPending}>Confirm criteria</Button>
+      {readOnlyConfirmed ? (
+        <Button type="button" variant="outline" onClick={() => { setDraft(criteria); setEditingConfirmed(true); }}>Edit criteria</Button>
+      ) : (
+        <>
+          <Button type="button" variant="outline" onClick={() => setDraft([...criteria, { title: "", evaluationInstruction: "", importance: "required", source: "manual", sortOrder: criteria.length, isActive: true }])}>Add criterion</Button>
+          <Button type="button" variant="outline" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !aiStatus?.configured}>Generate suggestions</Button>
+          <Button type="button" onClick={() => confirmMutation.mutate()} disabled={!criteria.length || confirmMutation.isPending}>Confirm criteria</Button>
+        </>
+      )}
     </div>
     {!aiStatus?.configured && (
       <p className="text-xs text-muted-foreground">AI suggestions and automatic review are not configured for this deployment. You can still add criteria manually.</p>

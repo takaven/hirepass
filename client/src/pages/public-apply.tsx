@@ -10,7 +10,7 @@ import { getPublicSubmissionConfirmation, type PublicSubmissionResult } from "@/
 import { validateClientUpload } from "@/lib/upload-preflight";
 
 export type PublicPass = { id:number; positionTitle:string; department?:string; location?:string; employmentType?:string; experienceMin?:number; experienceMax?:number; jobDescriptionFinal?:string; status?:string };
-export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; privacyNoticeUrl:string; privacyNoticeVersion:string; aiEnabled?: boolean };
+export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; companyLogoUrl?: string; privacyNoticeUrl:string; privacyNoticeVersion:string; aiEnabled?: boolean };
 
 async function filePayload(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -22,7 +22,29 @@ async function filePayload(file: File) {
 }
 
 export function PublicBrand({ config }: { config?: PublicConfig }) {
-  return <div className="flex flex-col items-center gap-3 text-center"><img src="/brand/hirepass-endorsed-light.svg" alt="HirePass by TAKAVEN" className="h-auto w-40 dark:hidden"/><img src="/brand/hirepass-endorsed-dark.svg" alt="HirePass by TAKAVEN" className="hidden h-auto w-40 dark:block"/><p className="text-sm font-medium text-muted-foreground">Hiring for {config?.companyName || "the hiring company"}</p></div>;
+  const companyName = config?.companyName || "the hiring company";
+  return (
+    <div className="flex flex-col items-center gap-2 text-center">
+      {config?.companyLogoUrl ? (
+        <img src={config.companyLogoUrl} alt={companyName} className="max-h-16 max-w-48 object-contain" />
+      ) : (
+        <div className="rounded-2xl border border-border bg-white px-5 py-3 text-lg font-semibold text-[#20242B] shadow-sm">
+          {companyName}
+        </div>
+      )}
+      <p className="text-sm text-muted-foreground">Hiring for {companyName}</p>
+      <p className="text-xs text-muted-foreground">Powered by HirePass</p>
+    </div>
+  );
+}
+
+export function PublicFooter({ config }: { config?: PublicConfig }) {
+  return (
+    <footer className="mt-10 text-center text-xs text-muted-foreground">
+      Powered by HirePass
+      {config?.careersContactEmail ? <> · Questions: <a className="underline" href={`mailto:${config.careersContactEmail}`}>{config.careersContactEmail}</a></> : null}
+    </footer>
+  );
 }
 
 function Field({ label, name, type = "text", required = false, placeholder }: { label:string; name:string; type?:string; required?:boolean; placeholder?:string }) {
@@ -33,7 +55,7 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
   const [file, setFile] = useState<File | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [confirmation, setConfirmation] = useState<{ title:string; detail:string } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ title:string; detail:string; candidatePassUrl?: string | null } | null>(null);
   const [error, setError] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -55,11 +77,16 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
     finally { setBusy(false); }
   }
 
-  if (confirmation) return <GlassCard className="p-8 text-center sm:p-10" role="status"><CheckCircle className="mx-auto mb-4 h-10 w-10 text-green-600"/><h2 className="text-2xl font-semibold">{confirmation.title}</h2><p className="mt-2 text-muted-foreground">{confirmation.detail}</p><p className="mt-5 text-sm text-muted-foreground">The hiring team will manage any next step. No automatic response time is promised.</p></GlassCard>;
+  if (confirmation) return <GlassCard className="p-8 text-center sm:p-10" role="status"><CheckCircle className="mx-auto mb-4 h-10 w-10 text-[#01A31A]"/><h2 className="text-2xl font-semibold">{confirmation.title}</h2><p className="mt-2 text-muted-foreground">{confirmation.detail}</p>{confirmation.candidatePassUrl && <Button className="mt-5 bg-[#20242B] text-white hover:bg-[#42494D]" asChild><a href={confirmation.candidatePassUrl}>View application status</a></Button>}<p className="mt-5 text-sm text-muted-foreground">The hiring team will manage any next step. No automatic response time is promised.</p></GlassCard>;
   const privacyLink = config.privacyNoticeUrl ? <a className="font-medium underline underline-offset-4" href={config.privacyNoticeUrl} target="_blank" rel="noreferrer">Recruitment Privacy Notice</a> : "Recruitment Privacy Notice";
   const privacyAcknowledgement = pass
     ? <>I have read the {privacyLink} and understand how {config.companyName} will use my personal information in connection with my application, including its storage in the Candidate Library and, where enabled, AI-assisted review. I understand that recruitment decisions are made by authorised people and are not made solely by AI.</>
     : <>I have read the {privacyLink} and agree that {config.companyName} may store my candidate profile in the Candidate Library and consider it for suitable future opportunities. I understand that, where enabled, AI may assist authorised hiring users in identifying relevant evidence or potential vacancy matches, but recruitment decisions remain human decisions. I can contact {config.careersContactEmail || "the hiring organisation"} if I no longer wish to be considered for future opportunities.</>;
+  const submitHint = !file
+    ? "Add a PDF CV before submitting."
+    : !accepted
+      ? "Read and acknowledge the Recruitment Privacy Notice before submitting."
+      : "";
   return <GlassCard className="p-5 sm:p-7"><div className="mb-6"><h2 className="text-xl font-semibold">{pass ? "Apply for this vacancy" : "Share your profile"}</h2><p className="mt-1 text-sm text-muted-foreground">Fields marked * are required. Your PDF is stored privately with your candidate record.</p></div><form className="grid gap-5 sm:grid-cols-2" onSubmit={submit}>
     <Field label="Full name" name="name" required/>
     <Field label="Email" name="email" type="email" required/>
@@ -72,6 +99,7 @@ export function PublicCandidateForm({ pass, config }: { pass?: PublicPass; confi
     <label className="space-y-2 text-sm font-medium sm:col-span-2"><span>CV (PDF, maximum 10 MB) *</span><Input className="h-auto min-h-11 py-2" type="file" accept=".pdf,application/pdf" required onChange={(event) => { const selected = event.target.files?.[0] || null; const issue = selected ? validateClientUpload(selected, "cv") : null; setError(issue || ""); setFile(issue ? null : selected); if (issue) event.currentTarget.value = ""; }}/></label>
     <label className="flex items-start gap-3 rounded-xl border p-4 text-sm sm:col-span-2"><Checkbox aria-label="Acknowledge Recruitment Privacy Notice" checked={accepted} onCheckedChange={(value) => setAccepted(value === true)}/><span>{privacyAcknowledgement} <span className="text-muted-foreground">(version {config.privacyNoticeVersion}).</span></span></label>
     {config.aiEnabled && <p className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground sm:col-span-2">AI-assisted review may help the hiring team assess role-related information in your submission. Hiring decisions are made by people.</p>}
+    {submitHint && <p className="text-sm text-muted-foreground sm:col-span-2" data-testid="text-submit-hint">{submitHint}</p>}
     {error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive sm:col-span-2" role="alert">{error}</p>}
     <Button className="min-h-11 w-full sm:col-span-2" disabled={busy || !file || !accepted}>{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}{pass ? "Submit application" : "Submit CV"}</Button>
   </form></GlassCard>;
@@ -90,6 +118,6 @@ export default function PublicApply({ passIdParam }: { passIdParam?: string }) {
   const [selected, setSelected] = useState<number | null>(passIdParam ? Number(passIdParam) : null);
   return <div className="min-h-screen ios-gradient-bg"><main className="mx-auto max-w-4xl px-4 py-8 sm:py-12"><header className="mb-8"><PublicBrand config={config}/>{!passIdParam && <div className="mt-7 text-center"><h1 className="text-3xl font-semibold sm:text-4xl">Open vacancies</h1><p className="mt-2 text-muted-foreground">Review an opportunity before sharing your details.</p></div>}</header>
     {isLoading ? <div className="py-20 text-center"><Loader2 className="mx-auto animate-spin"/><p className="mt-3 text-sm text-muted-foreground">Loading vacancy…</p></div> : error || !passes.length ? <GlassCard className="p-8 text-center"><h1 className="text-xl font-semibold">This vacancy is not available</h1><p className="mt-2 text-muted-foreground">It may be closed or the link may be incorrect.</p></GlassCard> : passes.map((pass) => <div key={pass.id} className="mb-8"><VacancyCard pass={pass} expanded={selected === pass.id} onApply={!passIdParam ? () => setSelected(selected === pass.id ? null : pass.id) : undefined}/>{(passIdParam || selected === pass.id) && config && <div className="mt-5"><PublicCandidateForm pass={pass} config={config}/></div>}</div>)}
-    <footer className="mt-10 text-center text-xs text-muted-foreground">HirePass by TAKAVEN{config?.careersContactEmail ? <> · Questions: <a className="underline" href={`mailto:${config.careersContactEmail}`}>{config.careersContactEmail}</a></> : null}</footer>
+    <PublicFooter config={config} />
   </main></div>;
 }

@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Clean Minimal Design - Navy Accent Theme */
+/* HirePass V1 pilot system: white, soft mist, charcoal and signal lime */
 :root {
   --button-outline: rgba(0,0,0, .08);
   --badge-outline: rgba(0,0,0, .05);
@@ -10,71 +10,67 @@
   --elevate-1: rgba(0,0,0, .02);
   --elevate-2: rgba(0,0,0, .05);
   
-  /* Clean Light Gray-Blue Background */
-  --bg-main: #EDF1F7;
+  /* Clean Light Background */
+  --bg-main: #F4F6F8;
   --bg-card: rgba(255, 255, 255, 1);
   
-  /* Navy Color Palette */
-  --navy-900: 214 44% 20%;
-  --navy-800: 214 42% 26%;
-  --navy-700: 214 40% 32%;
-  --navy-600: 214 35% 40%;
-  --navy-500: 214 30% 50%;
-  --navy-400: 214 25% 60%;
-  --navy-300: 214 20% 75%;
-  --navy-200: 214 18% 88%;
-  --navy-100: 214 15% 94%;
+  /* HirePass core palette */
+  --charcoal: 220 15% 15%;
+  --graphite: 195 8% 28%;
+  --titanium: 220 9% 45%;
+  --mist: 210 22% 96%;
+  --signal-lime: 127 100% 50%;
   
-  /* Core Colors - Light Theme with Navy */
-  --background: 220 40% 96%;
-  --foreground: 214 44% 12%;
-  --border: 214 20% 88%;
+  /* Core Colors - Light Theme */
+  --background: 210 22% 96%;
+  --foreground: 220 15% 15%;
+  --border: 210 14% 88%;
   
   /* Cards */
   --card: 0 0% 100%;
-  --card-foreground: 214 44% 12%;
-  --card-border: 214 18% 88%;
+  --card-foreground: 220 15% 15%;
+  --card-border: 210 14% 88%;
   
-  /* Primary - Navy Accent */
-  --primary: 214 44% 24%;
+  /* Primary - Charcoal. Signal lime is a micro-signal via /10 backgrounds and borders. */
+  --primary: 220 15% 15%;
   --primary-foreground: 0 0% 100%;
   
   /* Secondary */
-  --secondary: 214 15% 94%;
-  --secondary-foreground: 214 44% 20%;
+  --secondary: 210 22% 96%;
+  --secondary-foreground: 220 15% 15%;
   
   /* Muted */
-  --muted: 214 15% 94%;
-  --muted-foreground: 214 20% 46%;
+  --muted: 210 22% 96%;
+  --muted-foreground: 220 9% 45%;
   
   /* Accent */
-  --accent: 214 15% 94%;
-  --accent-foreground: 214 44% 20%;
+  --accent: 127 100% 50%;
+  --accent-foreground: 220 15% 15%;
   
   /* Destructive */
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
   
   /* Input */
-  --input: 214 18% 88%;
-  --ring: 214 44% 24%;
+  --input: 210 14% 88%;
+  --ring: 220 15% 15%;
   
   /* Charts - Navy-based with neutral variety */
-  --chart-1: 214 44% 24%;
-  --chart-2: 200 70% 50%;
-  --chart-3: 214 20% 55%;
+  --chart-1: 220 15% 15%;
+  --chart-2: 127 100% 40%;
+  --chart-3: 220 9% 45%;
   --chart-4: 35 80% 50%;
   --chart-5: 190 60% 45%;
   
   /* Sidebar */
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 214 44% 12%;
-  --sidebar-border: 214 18% 90%;
-  --sidebar-primary: 214 44% 24%;
+  --sidebar-foreground: 220 15% 15%;
+  --sidebar-border: 210 14% 90%;
+  --sidebar-primary: 220 15% 15%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 214 30% 94%;
-  --sidebar-accent-foreground: 214 44% 20%;
-  --sidebar-ring: 214 44% 24%;
+  --sidebar-accent: 210 22% 96%;
+  --sidebar-accent-foreground: 220 15% 15%;
+  --sidebar-ring: 220 15% 15%;
   
   /* Popover */
   --popover: 0 0% 100%;
@@ -183,7 +179,7 @@
 
   body {
     @apply font-sans antialiased text-foreground;
-    background: #EDF1F7;
+    background: #F4F6F8;
     min-height: 100vh;
   }
 

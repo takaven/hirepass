@@ -7,13 +7,10 @@ export type CandidatePassActionState =
   | "REVOKED";
 
 export type CandidateHiringStage =
-  | "Application"
-  | "Screening"
+  | "Applied"
+  | "Review"
   | "Interview"
-  | "Assessment"
-  | "Decision"
-  | "Offer"
-  | "Handoff";
+  | "Decision";
 
 export type CandidateNextAction =
   | {

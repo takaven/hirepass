@@ -1,312 +1,111 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Users,
-  Briefcase,
-  Calendar,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  UserPlus,
-  FileText,
-  ChevronRight,
-} from "lucide-react";
-import { GlassCard, MetricCard } from "@/components/glass-card";
-import { StatusBadge, StageBadge } from "@/components/status-badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { Briefcase, Calendar, CheckCircle, ChevronRight, Clock, FileText, Users } from "lucide-react";
 import { Link } from "wouter";
-import type { Candidate, Pass, Interview } from "@shared/schema";
+import { GlassCard } from "@/components/glass-card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { Candidate, Interview, Pass } from "@shared/schema";
 
 interface DashboardStats {
   totalCandidates: number;
   activePasses: number;
   scheduledInterviews: number;
-  hiredThisMonth: number;
 }
 
-interface PipelineCounts {
-  new: number;
-  screening: number;
-  shortlisted: number;
-  interview: number;
-  offer: number;
-  hired: number;
-  rejected: number;
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return "Date to be confirmed";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date to be confirmed";
+  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/analytics/stats"],
-  });
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({ queryKey: ["/api/analytics/stats"] });
+  const { data: candidates, isLoading: candidatesLoading } = useQuery<Candidate[]>({ queryKey: ["/api/candidates"] });
+  const { data: passes, isLoading: passesLoading } = useQuery<Pass[]>({ queryKey: ["/api/passes"] });
+  const { data: interviews, isLoading: interviewsLoading } = useQuery<Interview[]>({ queryKey: ["/api/interviews/upcoming"] });
 
-  const { data: pipelineCounts } = useQuery<PipelineCounts>({
-    queryKey: ["/api/analytics/pipeline"],
-  });
-
-  const { data: candidates, isLoading: candidatesLoading } = useQuery<Candidate[]>({
-    queryKey: ["/api/candidates"],
-  });
-
-  const { data: passes, isLoading: passesLoading } = useQuery<Pass[]>({
-    queryKey: ["/api/passes"],
-  });
-
-  const { data: interviews, isLoading: interviewsLoading } = useQuery<Interview[]>({
-    queryKey: ["/api/interviews/upcoming"],
-  });
-
-  const getInitials = (name: string) => {
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  };
+  const loading = statsLoading || candidatesLoading || passesLoading || interviewsLoading;
+  const openVacancies = (passes || []).filter((pass) => ["active", "open", "in_progress", "screening", "sourcing"].includes(pass.status || ""));
+  const interviewItems = (interviews || []).slice(0, 3).map((interview) => ({
+    key: `interview-${interview.id}`,
+    href: "/interviews",
+    title: interview.roundName || `Interview round ${interview.roundNumber || ""}`.trim(),
+    detail: `Interview scheduled ${formatDate(interview.interviewDate)}`,
+    icon: Calendar,
+  }));
+  const vacancyItems = openVacancies.slice(0, Math.max(0, 5 - interviewItems.length)).map((pass) => ({
+    key: `vacancy-${pass.id}`,
+    href: `/vacancies/${pass.id}/candidates`,
+    title: pass.positionTitle,
+    detail: `${pass.department || "Vacancy"} · review candidates and next actions`,
+    icon: Briefcase,
+  }));
+  const attentionItems = [...interviewItems, ...vacancyItems];
 
   return (
-    <div className="space-y-3 pb-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+    <div className="space-y-6 pb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-base font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-[11px]">
-            Vacancies, candidates, interviews and Pass actions
-          </p>
+          <h1 className="text-3xl font-semibold tracking-tight">What needs your attention</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Open hiring work, interviews and next actions in one place.</p>
         </div>
-        <div className="flex gap-1.5">
-          <Link href="/passes/new">
-            <Button size="sm" variant="outline" className="rounded-xl gap-1 text-[11px] h-7 px-2.5" data-testid="button-new-pass">
-              <FileText className="w-3 h-3" strokeWidth={2} />
-              New Vacancy
-            </Button>
-          </Link>
-          <Link href="/candidates/new">
-            <Button size="sm" className="rounded-xl gap-1 text-[11px] h-7 px-2.5" data-testid="button-add-candidate">
-              <UserPlus className="w-3 h-3" strokeWidth={2} />
-              Add Candidate
-            </Button>
-          </Link>
-        </div>
+        <Button asChild className="bg-[#20242B] text-white hover:bg-[#42494D]" data-testid="button-new-vacancy">
+          <Link href="/vacancies/new"><FileText className="mr-2 h-4 w-4" />New vacancy</Link>
+        </Button>
       </div>
 
-      {/* Stats Grid - Compact */}
-      {statsLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-16 rounded-2xl" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <MetricCard
-            title="Total Candidates"
-            value={stats?.totalCandidates ?? 0}
-            icon={<Users className="w-4 h-4 text-primary" strokeWidth={2} />}
-          />
-          <MetricCard
-            title="Active Vacancies"
-            value={stats?.activePasses ?? 0}
-            icon={<Briefcase className="w-4 h-4 text-primary" strokeWidth={2} />}
-          />
-          <MetricCard
-            title="Interviews"
-            value={stats?.scheduledInterviews ?? 0}
-            icon={<Calendar className="w-4 h-4 text-primary" strokeWidth={2} />}
-          />
-          <MetricCard
-            title="Hired"
-            value={stats?.hiredThisMonth ?? 0}
-            icon={<TrendingUp className="w-4 h-4 text-primary" strokeWidth={2} />}
-          />
-        </div>
-      )}
-
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-        {/* Recent Candidates */}
-        <GlassCard className="p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold">Recent Candidates</h2>
-            <Link href="/candidates">
-              <Button variant="ghost" size="sm" className="text-primary rounded-lg text-[11px] h-6 px-2 gap-0.5" data-testid="link-view-all-candidates">
-                View all
-                <ChevronRight className="w-3 h-3" />
-              </Button>
-            </Link>
+      <GlassCard className="p-5">
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, index) => <Skeleton key={index} className="h-16 rounded-2xl" />)}
           </div>
-          
-          {candidatesLoading ? (
-            <div className="space-y-1.5">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-xl" />
-              ))}
-            </div>
-          ) : candidates?.length ? (
-            <div className="space-y-1.5">
-              {candidates.slice(0, 3).map((candidate) => (
-                <Link key={candidate.id} href={`/candidates/${candidate.id}`}>
-                  <div 
-                    className="flex items-center gap-2 p-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
-                    data-testid={`candidate-row-${candidate.id}`}
-                  >
-                    <Avatar className="h-7 w-7 border border-primary/30 bg-white dark:bg-black">
-                      <AvatarFallback className="bg-transparent text-primary text-[10px] font-semibold">
-                        {getInitials(candidate.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-medium truncate leading-tight">
-                        {candidate.name}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground truncate leading-tight">
-                        {candidate.currentTitle || candidate.email || 'No details'}
-                      </p>
+        ) : attentionItems.length ? (
+          <div className="space-y-3">
+            {attentionItems.map((item) => (
+              <Link key={item.key} href={item.href}>
+                <div className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-border bg-white p-4 transition-colors hover:bg-[#F4F6F8]" data-testid={`attention-${item.key}`}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="rounded-xl bg-[#01FF22]/10 p-2 text-[#20242B]"><item.icon className="h-5 w-5" /></div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#20242B]">{item.title}</p>
+                      <p className="truncate text-sm text-[#68707D]">{item.detail}</p>
                     </div>
-                    {candidate.source && (
-                      <span className="text-[9px] text-muted-foreground bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded-md flex-shrink-0">
-                        {candidate.source}
-                      </span>
-                    )}
                   </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-6 text-center">
-              <Users className="w-4 h-4 text-primary/40 mr-1.5" strokeWidth={2} />
-              <span className="text-[11px] text-muted-foreground">No candidates yet</span>
-            </div>
-          )}
-        </GlassCard>
-
-        {/* Active vacancies */}
-        <GlassCard className="p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold">Active Vacancies</h2>
-            <Link href="/passes">
-              <Button variant="ghost" size="sm" className="text-primary rounded-lg text-[11px] h-6 px-2 gap-0.5" data-testid="link-view-all-passes">
-                View all
-                <ChevronRight className="w-3 h-3" />
-              </Button>
-            </Link>
-          </div>
-          
-          {passesLoading ? (
-            <div className="space-y-1.5">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-xl" />
-              ))}
-            </div>
-          ) : passes?.length ? (
-            <div className="space-y-1.5">
-              {passes.slice(0, 3).map((pass) => (
-                <Link key={pass.id} href={`/passes/${pass.id}`}>
-                  <div 
-                    className="flex items-center gap-2 p-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
-                    data-testid={`pass-row-${pass.id}`}
-                  >
-                    <div className="p-1.5 rounded-lg bg-primary/10 flex-shrink-0">
-                      <FileText className="w-3 h-3 text-primary" strokeWidth={2} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-medium truncate leading-tight">
-                        {pass.positionTitle}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground truncate leading-tight">
-                        {pass.passId} - {pass.department}
-                      </p>
-                    </div>
-                    <StatusBadge status={pass.status as any} />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-6 text-center">
-              <FileText className="w-4 h-4 text-primary/40 mr-1.5" strokeWidth={2} />
-              <span className="text-[11px] text-muted-foreground">No active vacancies yet</span>
-            </div>
-          )}
-        </GlassCard>
-      </div>
-
-      {/* Upcoming Interviews */}
-      <GlassCard className="p-3">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-semibold">Upcoming Interviews</h2>
-          <Link href="/interviews">
-            <Button variant="ghost" size="sm" className="text-primary rounded-lg text-[11px] h-6 px-2 gap-0.5" data-testid="link-view-all-interviews">
-              View all
-              <ChevronRight className="w-3 h-3" />
-            </Button>
-          </Link>
-        </div>
-        
-        {interviewsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-10 rounded-xl" />
-            ))}
-          </div>
-        ) : interviews?.length ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
-            {interviews.slice(0, 3).map((interview) => (
-              <div 
-                key={interview.id}
-                className="flex items-center gap-2 p-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.02]"
-                data-testid={`interview-row-${interview.id}`}
-              >
-                <div className="p-1.5 rounded-lg bg-primary/10 flex-shrink-0">
-                  <Clock className="w-3 h-3 text-primary" strokeWidth={2} />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-[#68707D]" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-medium truncate leading-tight">
-                    {interview.roundName || `Round ${interview.roundNumber}`}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground truncate leading-tight">
-                    {interview.interviewDate}
-                  </p>
-                </div>
-              </div>
+              </Link>
             ))}
           </div>
         ) : (
-          <div className="flex items-center justify-center py-6 text-center">
-            <Calendar className="w-4 h-4 text-primary/40 mr-1.5" strokeWidth={2} />
-            <span className="text-[11px] text-muted-foreground">No interviews scheduled</span>
+          <div className="py-10 text-center" data-testid="home-up-to-date">
+            <CheckCircle className="mx-auto mb-3 h-9 w-9 text-[#01A31A]" />
+            <h2 className="text-lg font-semibold">You're up to date</h2>
+            <p className="mt-1 text-sm text-muted-foreground">No hiring action needs attention right now.</p>
           </div>
         )}
       </GlassCard>
 
-      {/* Pipeline Overview */}
-      <GlassCard className="p-3">
-        <h2 className="text-xs font-semibold mb-2">Pipeline Overview</h2>
-        <div className="grid grid-cols-7 gap-1.5">
-          {[
-            { status: "new", label: "Applied", icon: UserPlus },
-            { status: "screening", label: "Review", icon: Users },
-            { status: "shortlisted", label: "Shortlisted", icon: CheckCircle2 },
-            { status: "interview", label: "Interview", icon: Calendar },
-            { status: "offer", label: "Offer", icon: TrendingUp },
-            { status: "hired", label: "Hired", icon: CheckCircle2 },
-            { status: "rejected", label: "Rejected", icon: XCircle },
-          ].map((item) => (
-            <div 
-              key={item.status}
-              className="text-center p-2 rounded-xl bg-black/[0.02] dark:bg-white/[0.02]"
-              data-testid={`pipeline-${item.status}`}
-            >
-              <item.icon className="w-3.5 h-3.5 mx-auto mb-1 text-primary/60" strokeWidth={2} />
-              <p className="text-base font-semibold text-foreground">
-                {pipelineCounts?.[item.status as keyof PipelineCounts] ?? 0}
-              </p>
-              <p className="text-[9px] text-muted-foreground leading-none">{item.label}</p>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <GlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <Briefcase className="h-5 w-5 text-[#42494D]" />
+            <div><p className="text-sm text-muted-foreground">Open vacancies</p><p className="text-2xl font-semibold">{stats?.activePasses ?? openVacancies.length}</p></div>
+          </div>
+        </GlassCard>
+        <GlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-[#42494D]" />
+            <div><p className="text-sm text-muted-foreground">Candidates</p><p className="text-2xl font-semibold">{stats?.totalCandidates ?? candidates?.length ?? 0}</p></div>
+          </div>
+        </GlassCard>
+        <GlassCard className="p-4">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-[#42494D]" />
+            <div><p className="text-sm text-muted-foreground">Upcoming interviews</p><p className="text-2xl font-semibold">{stats?.scheduledInterviews ?? interviews?.length ?? 0}</p></div>
+          </div>
+        </GlassCard>
+      </div>
     </div>
   );
 }

@@ -33,10 +33,10 @@ const statusLabels: Record<string, string> = {
   closed_cancelled: "Cancelled",
   on_hold: "On Hold",
   new: "Applied",
-  shortlisted: "Shortlisted",
+  shortlisted: "Review",
   selected: "Selected",
   hired: "Hired",
-  rejected: "Rejected",
+  rejected: "Not selected",
 };
 
 const statusStyles: Record<string, string> = {

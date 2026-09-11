@@ -120,7 +120,7 @@ describe("Candidate Pass action state", () => {
     });
 
     assert.equal(state.actionState, "COMPLETED");
-    assert.equal(state.hiringStage, "Handoff");
+    assert.equal(state.hiringStage, "Decision");
   });
 
   it("updates the dominant action after a candidate books an interview slot", () => {
@@ -165,7 +165,7 @@ describe("Candidate Pass action state", () => {
 
     assert.equal(state.latestUpdate, "Hiring Manager submitted a decision · today, 10:32");
     assert.equal(state.latestUpdateAt, "2026-08-22T10:32:00.000Z");
-    assert.equal(state.passHandoff, "Pass Handoff: Hiring Manager -> Hiring team");
+    assert.equal(state.passHandoff, null);
     assert.equal(state.latestUpdate.includes("Private Manager Name"), false);
     assert.equal(state.latestUpdate.includes("internalScore"), false);
   });

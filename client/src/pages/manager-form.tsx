@@ -107,7 +107,7 @@ export default function ManagerForm() {
           ? "The stakeholder profile has been updated."
           : "The stakeholder has been added to the directory.",
       });
-      setLocation("/managers");
+      setLocation("/hiring-team");
     },
     onError: () => {
       toast({
@@ -129,7 +129,7 @@ export default function ManagerForm() {
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
       <div className="flex items-center gap-4">
-        <Link href="/managers">
+        <Link href="/hiring-team">
           <Button variant="ghost" size="icon" className="rounded-xl" data-testid="button-back">
             <ArrowLeft className="w-5 h-5" strokeWidth={1.5} />
           </Button>
@@ -290,7 +290,7 @@ export default function ManagerForm() {
             />
 
             <div className="flex justify-end gap-3 pt-4">
-              <Link href="/managers">
+              <Link href="/hiring-team">
                 <Button type="button" variant="outline" className="rounded-xl" data-testid="button-cancel">
                   Cancel
                 </Button>

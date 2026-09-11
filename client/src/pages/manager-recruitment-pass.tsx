@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared/schema";
 import type { ManagerPassActionState, ManagerPassViewState } from "@shared/pass-state";
+import { PublicBrand, type PublicConfig } from "./public-apply";
 
 type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
@@ -46,12 +47,12 @@ interface ManagerRecruitmentPassProps {
 }
 
 const stateStyles: Record<ManagerPassActionState, string> = {
-  ACTION_REQUIRED: "border-amber-400 bg-amber-400/10 text-amber-200",
-  WAITING: "border-sky-400 bg-sky-400/10 text-sky-200",
-  UPCOMING: "border-blue-400 bg-blue-400/10 text-blue-200",
-  COMPLETED: "border-emerald-400 bg-emerald-400/10 text-emerald-200",
-  EXPIRED: "border-slate-500 bg-slate-500/10 text-slate-200",
-  REVOKED: "border-red-400 bg-red-400/10 text-red-200",
+  ACTION_REQUIRED: "border-[#01FF22]/70 bg-[#01FF22]/10 text-[#20242B]",
+  WAITING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  UPCOMING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  COMPLETED: "border-[#20242B] bg-[#20242B] text-white",
+  EXPIRED: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
+  REVOKED: "border-red-300 bg-red-50 text-red-700",
 };
 
 function formatManagerDate(value: string | Date | null | undefined) {
@@ -84,14 +85,14 @@ function AccessState({ status, message }: { status?: number; message?: string })
   const isExpired = status === 410;
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
-      <Card className="mx-auto max-w-md border-slate-700 bg-slate-900">
+    <div className="min-h-screen bg-[#F4F6F8] px-4 py-10 text-[#20242B]">
+      <Card className="mx-auto max-w-md border-[#D8DEE5] bg-white">
         <CardContent className="pt-8 text-center">
-          <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-slate-400" : "text-red-300"}`} />
-          <h1 className="mb-2 text-xl font-semibold text-white">
+          <Lock className={`mx-auto mb-4 h-12 w-12 ${isExpired ? "text-[#68707D]" : "text-red-600"}`} />
+          <h1 className="mb-2 text-xl font-semibold text-[#20242B]">
             {isExpired ? "This Stakeholder Pass has expired" : "This Stakeholder Pass is not active"}
           </h1>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-[#68707D]">
             {message || "Ask the hiring team to issue a fresh Pass if your input is still required."}
           </p>
         </CardContent>
@@ -128,6 +129,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
     },
   });
+  const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const approveRequestMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/approve-jd`, {}),
@@ -223,10 +225,10 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] text-[#20242B]">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-300" />
-          <p className="text-sm text-slate-400">Opening Stakeholder Pass...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#20242B]" />
+          <p className="text-sm text-[#68707D]">Opening Stakeholder Pass...</p>
         </div>
       </div>
     );
@@ -245,11 +247,11 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const actionButton = (() => {
     switch (managerPassState.nextDecision.kind) {
       case "APPROVE_JD":
-        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowRequestDialog(true)}>Review hiring request</Button>;
+        return <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowRequestDialog(true)}>Review hiring request</Button>;
       case "REVIEW_CANDIDATE":
         return (
           <div className="grid gap-2 sm:grid-cols-2">
-            <Button className="min-h-11 bg-emerald-500 hover:bg-emerald-600" onClick={() => targetCandidate?.id && shortlistMutation.mutate(targetCandidate.id)}>
+            <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => targetCandidate?.id && shortlistMutation.mutate(targetCandidate.id)}>
               Advance candidate
             </Button>
             <Button variant="destructive" className="min-h-11" onClick={() => targetCandidate?.id && rejectMutation.mutate(targetCandidate.id)}>
@@ -258,29 +260,24 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
           </div>
         );
       case "SET_INTERVIEW_AVAILABILITY":
-        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowInterviewDialog(true)}>Set interview availability</Button>;
+        return <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowInterviewDialog(true)}>Set interview availability</Button>;
       case "SUBMIT_EVALUATION":
-        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowEvaluationDialog(true)}>Submit evaluation</Button>;
+        return <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowEvaluationDialog(true)}>Submit evaluation</Button>;
       case "MAKE_FINAL_DECISION":
-        return <Button className="min-h-11 bg-blue-500 hover:bg-blue-600" onClick={() => setShowFinalDecisionDialog(true)}>Make final decision</Button>;
+        return <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowFinalDecisionDialog(true)}>Make final decision</Button>;
       default:
         return <Button className="min-h-11" disabled>No decision required</Button>;
     }
   })();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+    <div className="min-h-screen bg-[#F4F6F8] text-[#20242B]">
+      <header className="sticky top-0 z-40 border-b border-[#D8DEE5] bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <img
-              src="/brand/hirepass-endorsed-dark.svg"
-              alt="HirePass by TAKAVEN"
-              className="h-auto w-24 shrink-0 sm:w-32"
-            />
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Hiring Stakeholder Pass</p>
-              <h1 className="truncate text-base font-semibold text-white">{pass.positionTitle}</h1>
+              <p className="text-xs uppercase tracking-wide text-[#68707D]">Hiring Stakeholder Pass</p>
+              <h1 className="truncate text-base font-semibold text-[#20242B]">{pass.positionTitle}</h1>
             </div>
           </div>
           <Badge className={`shrink-0 border ${stateStyles[managerPassState.actionState]}`}>{managerPassState.stateLabel}</Badge>
@@ -288,10 +285,11 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
+        <PublicBrand config={publicConfig} />
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className={`border ${stateStyles[managerPassState.actionState]} bg-slate-900`}>
+          <Card className={`border ${stateStyles[managerPassState.actionState]} bg-white`}>
             <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[#68707D]">
                 <span className="inline-flex items-center gap-1">
                   <Briefcase className="h-4 w-4" />
                   {pass.department || "Hiring request"}
@@ -304,52 +302,52 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
                 )}
               </div>
 
-              <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-4">
-                <p className="text-xs uppercase tracking-wide text-amber-200">What needs your input?</p>
+              <div className="rounded-lg border border-[#01FF22]/60 bg-[#01FF22]/10 p-4">
+                <p className="text-xs uppercase tracking-wide text-[#42494D]">What needs your input?</p>
                 <div className="mt-2 space-y-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-white">{managerPassState.nextDecision.label}</h3>
-                    <p className="mt-1 text-sm text-slate-300">{managerPassState.nextDecision.description}</p>
+                    <h3 className="text-lg font-semibold text-[#20242B]">{managerPassState.nextDecision.label}</h3>
+                    <p className="mt-1 text-sm text-[#42494D]">{managerPassState.nextDecision.description}</p>
                   </div>
                   {actionButton}
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Candidate / vacancy context</p>
-                  <p className="mt-1 text-sm font-medium text-white">{managerPassState.headline}</p>
-                  <p className="mt-1 text-xs text-slate-400">{managerPassState.summary}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate / vacancy context</p>
+                  <p className="mt-1 text-sm font-medium text-[#20242B]">{managerPassState.headline}</p>
+                  <p className="mt-1 text-xs text-[#68707D]">{managerPassState.summary}</p>
                 </div>
-                <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Next</p>
-                  <p className="mt-1 text-sm font-medium text-white">{managerPassState.next}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Next</p>
+                  <p className="mt-1 text-sm font-medium text-[#20242B]">{managerPassState.next}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <div className="space-y-5">
-            <Card className="border-slate-800 bg-slate-900/80">
+            <Card className="border-[#D8DEE5] bg-white">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Relevant evidence</CardTitle>
+                <CardTitle className="text-base text-[#20242B]">Relevant evidence</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-slate-300">
+              <CardContent className="space-y-3 text-sm text-[#42494D]">
                 <div className="flex items-start gap-3">
-                  {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-300" /> : <Clock className="h-5 w-5 text-sky-300" />}
+                  {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : <Clock className="h-5 w-5 text-[#68707D]" />}
                   <span>{managerPassState.latestUpdate}</span>
                 </div>
                 {managerPassState.passHandoff && (
-                  <p className="rounded-md border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-blue-100">{managerPassState.passHandoff}</p>
+                  <p className="rounded-md border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-2 text-[#42494D]">{managerPassState.passHandoff}</p>
                 )}
-                <p className="rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-slate-200">{managerPassState.expectedMovement}</p>
+                <p className="rounded-md border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-2 text-[#42494D]">{managerPassState.expectedMovement}</p>
               </CardContent>
             </Card>
-            <Card className="border-slate-800 bg-slate-900/80">
+            <Card className="border-[#D8DEE5] bg-white">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Hiring context</CardTitle>
+                <CardTitle className="text-base text-[#20242B]">Hiring context</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-slate-300">
+              <CardContent className="space-y-2 text-sm text-[#42494D]">
                 <p>Role: {managerPassState.evidence.role}</p>
                 <p>Active candidates: {managerPassState.evidence.activeCandidateCount}</p>
                 <p>Total candidates in this request: {managerPassState.evidence.candidateCount}</p>
@@ -359,12 +357,12 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         </section>
 
         {["WAITING", "COMPLETED"].includes(managerPassState.actionState) && (
-          <Card className="border-emerald-500/40 bg-emerald-500/10">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardContent className="flex items-start gap-4 p-5">
-              <CheckCircle className="mt-1 h-6 w-6 shrink-0 text-emerald-200" />
+              <CheckCircle className="mt-1 h-6 w-6 shrink-0 text-[#01A31A]" />
               <div>
-                <h3 className="font-semibold text-white">You're done for now</h3>
-                <p className="mt-1 text-sm leading-6 text-emerald-100/80">
+                <h3 className="font-semibold text-[#20242B]">You're done for now</h3>
+                <p className="mt-1 text-sm leading-6 text-[#42494D]">
                   The hiring team has your decision. This Pass will show a new action if your input is needed again.
                 </p>
               </div>
@@ -373,60 +371,60 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         )}
 
         <section className="grid gap-5 lg:grid-cols-2">
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <FileText className="h-5 w-5 text-blue-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <FileText className="h-5 w-5 text-[#42494D]" />
                 Decision evidence
               </CardTitle>
-              <CardDescription className="text-slate-400">Only the evidence needed for this decision is shown.</CardDescription>
+              <CardDescription className="text-[#68707D]">Only the evidence needed for this decision is shown.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-slate-300">
-              <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Role</p>
-                <p className="mt-1 font-medium text-white">{pass.positionTitle}</p>
+            <CardContent className="space-y-4 text-sm text-[#42494D]">
+              <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                <p className="text-xs uppercase tracking-wide text-[#68707D]">Role</p>
+                <p className="mt-1 font-medium text-[#20242B]">{pass.positionTitle}</p>
                 <p>{pass.department || "Department not specified"} · {pass.location || "Location not specified"}</p>
               </div>
               {targetCandidate && "candidate" in targetCandidate && targetCandidate.candidate && (
-                <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Candidate</p>
-                  <p className="mt-1 font-medium text-white">{targetCandidate.candidate.name}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate</p>
+                  <p className="mt-1 font-medium text-[#20242B]">{targetCandidate.candidate.name}</p>
                   <p>{targetCandidate.candidate.currentTitle || "Profile under review"}</p>
                   <p>{targetCandidate.candidate.experienceYears ? `${targetCandidate.candidate.experienceYears} years experience` : "Experience not specified"}</p>
-                  <p className="mt-2 text-slate-400">{targetCandidate.candidate.cvSummary || "No candidate summary is available yet."}</p>
+                  <p className="mt-2 text-[#68707D]">{targetCandidate.candidate.cvSummary || "No candidate summary is available yet."}</p>
                 </div>
               )}
               {managerPassState.evidence.topCandidate && !("candidate" in (targetCandidate || {})) && (
-                <div className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Candidate</p>
-                  <p className="mt-1 font-medium text-white">{managerPassState.evidence.topCandidate.name}</p>
+                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate</p>
+                  <p className="mt-1 font-medium text-[#20242B]">{managerPassState.evidence.topCandidate.name}</p>
                   <p>{managerPassState.evidence.topCandidate.title}</p>
-                  <p className="mt-2 text-slate-400">{managerPassState.evidence.topCandidate.summary}</p>
+                  <p className="mt-2 text-[#68707D]">{managerPassState.evidence.topCandidate.summary}</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Users className="h-5 w-5 text-sky-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <Users className="h-5 w-5 text-[#42494D]" />
                 Request candidates
               </CardTitle>
-              <CardDescription className="text-slate-400">Candidate details are scoped to this hiring request.</CardDescription>
+              <CardDescription className="text-[#68707D]">Candidate details are scoped to this hiring request.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {candidates.length === 0 ? (
-                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No candidates have been added to this request yet.</p>
+                <p className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4 text-sm text-[#68707D]">No candidates have been added to this request yet.</p>
               ) : (
                 candidates.slice(0, 4).map((passCandidate) => (
-                  <div key={passCandidate.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                  <div key={passCandidate.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{passCandidate.candidate?.name || "Candidate"}</p>
-                      <p className="truncate text-xs text-slate-500">{passCandidate.candidate?.currentTitle || "Profile under review"}</p>
+                      <p className="truncate font-medium text-[#20242B]">{passCandidate.candidate?.name || "Candidate"}</p>
+                      <p className="truncate text-xs text-[#68707D]">{passCandidate.candidate?.currentTitle || "Profile under review"}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="border-slate-600 text-slate-300">{statusLabel(passCandidate.status)}</Badge>
+                      <Badge variant="outline" className="border-[#D8DEE5] text-[#42494D]">{statusLabel(passCandidate.status)}</Badge>
                     </div>
                   </div>
                 ))
@@ -434,36 +432,36 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             </CardContent>
           </Card>
 
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Calendar className="h-5 w-5 text-blue-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <Calendar className="h-5 w-5 text-[#42494D]" />
                 Interview context
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {interviews.length === 0 ? (
-                <p className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">No interviews are scheduled for this request yet.</p>
+                <p className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4 text-sm text-[#68707D]">No interviews are scheduled for this request yet.</p>
               ) : (
                 interviews.slice(0, 3).map((interview) => (
-                  <div key={interview.id} className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                    <p className="font-medium text-white">{formatManagerDate(interview.interviewDate)}</p>
-                    <p className="text-sm text-slate-400">{interview.startTime} - {interview.endTime} ({interview.format})</p>
-                    <p className="text-xs text-slate-500">Status: {statusLabel(interview.status)}</p>
+                  <div key={interview.id} className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
+                    <p className="font-medium text-[#20242B]">{formatManagerDate(interview.interviewDate)}</p>
+                    <p className="text-sm text-[#68707D]">{interview.startTime} - {interview.endTime} ({interview.format})</p>
+                    <p className="text-xs text-[#68707D]">Status: {statusLabel(interview.status)}</p>
                   </div>
                 ))
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-slate-800 bg-slate-900/80">
+          <Card className="border-[#D8DEE5] bg-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <MessageSquare className="h-5 w-5 text-slate-300" />
+              <CardTitle className="flex items-center gap-2 text-[#20242B]">
+                <MessageSquare className="h-5 w-5 text-[#42494D]" />
                 What happens next
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm leading-6 text-slate-300">
+            <CardContent className="text-sm leading-6 text-[#42494D]">
               {managerPassState.actionState === "ACTION_REQUIRED"
                 ? "Submit the decision above. The hiring team receives it and the Pass will update to the next waiting or completion state."
                 : "No action is needed now. The hiring team will update this Pass when stakeholder input is needed again."}
@@ -473,19 +471,19 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </main>
 
       <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
-        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+        <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Review hiring request</DialogTitle>
-            <DialogDescription className="text-slate-400">Approve the request or ask the hiring team for specific changes.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Approve the request or ask the hiring team for specific changes.</DialogDescription>
           </DialogHeader>
           <Textarea
             value={decisionNotes}
             onChange={(event) => setDecisionNotes(event.target.value)}
             placeholder="Optional notes for the hiring team..."
-            className="border-slate-700 bg-slate-950 text-white"
+            className="border-[#D8DEE5] bg-white text-[#20242B]"
           />
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" className="border-slate-600 text-slate-200" onClick={() => requestChangesMutation.mutate()}>
+            <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => requestChangesMutation.mutate()}>
               Request changes
             </Button>
             <Button onClick={() => approveRequestMutation.mutate()}>Approve request</Button>
@@ -494,17 +492,17 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </Dialog>
 
       <Dialog open={showInterviewDialog} onOpenChange={setShowInterviewDialog}>
-        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+        <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Set interview availability</DialogTitle>
-            <DialogDescription className="text-slate-400">Share real availability so candidates can choose a valid slot.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Share real availability so candidates can choose a valid slot.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
-            <div><Label>Dates (comma-separated YYYY-MM-DD)</Label><Input value={availabilityDates} onChange={(e) => setAvailabilityDates(e.target.value)} placeholder="2026-10-05, 2026-10-06" className="mt-1 border-slate-700 bg-slate-950" /></div>
-            <div><Label>Start times (comma-separated HH:MM)</Label><Input value={availabilityTimes} onChange={(e) => setAvailabilityTimes(e.target.value)} placeholder="09:00, 14:30" className="mt-1 border-slate-700 bg-slate-950" /></div>
-            <div className="grid grid-cols-2 gap-3"><div><Label>Duration</Label><Select value={interviewDuration} onValueChange={setInterviewDuration}><SelectTrigger className="mt-1 border-slate-700 bg-slate-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">30 minutes</SelectItem><SelectItem value="45">45 minutes</SelectItem><SelectItem value="60">60 minutes</SelectItem><SelectItem value="90">90 minutes</SelectItem></SelectContent></Select></div><div><Label>Format</Label><Select value={interviewFormat} onValueChange={setInterviewFormat}><SelectTrigger className="mt-1 border-slate-700 bg-slate-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="in-person">In person</SelectItem><SelectItem value="hybrid">Hybrid</SelectItem></SelectContent></Select></div></div>
-            <div><Label>Location (if applicable)</Label><Input value={interviewLocation} onChange={(e) => setInterviewLocation(e.target.value)} className="mt-1 border-slate-700 bg-slate-950" /></div>
-            <div><Label>Meeting link (if applicable)</Label><Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="mt-1 border-slate-700 bg-slate-950" /></div>
+            <div><Label>Dates (comma-separated YYYY-MM-DD)</Label><Input value={availabilityDates} onChange={(e) => setAvailabilityDates(e.target.value)} placeholder="2026-10-05, 2026-10-06" className="mt-1 border-[#D8DEE5] bg-white" /></div>
+            <div><Label>Start times (comma-separated HH:MM)</Label><Input value={availabilityTimes} onChange={(e) => setAvailabilityTimes(e.target.value)} placeholder="09:00, 14:30" className="mt-1 border-[#D8DEE5] bg-white" /></div>
+            <div className="grid grid-cols-2 gap-3"><div><Label>Duration</Label><Select value={interviewDuration} onValueChange={setInterviewDuration}><SelectTrigger className="mt-1 border-[#D8DEE5] bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="30">30 minutes</SelectItem><SelectItem value="45">45 minutes</SelectItem><SelectItem value="60">60 minutes</SelectItem><SelectItem value="90">90 minutes</SelectItem></SelectContent></Select></div><div><Label>Format</Label><Select value={interviewFormat} onValueChange={setInterviewFormat}><SelectTrigger className="mt-1 border-[#D8DEE5] bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="online">Online</SelectItem><SelectItem value="in-person">In person</SelectItem><SelectItem value="hybrid">Hybrid</SelectItem></SelectContent></Select></div></div>
+            <div><Label>Location (if applicable)</Label><Input value={interviewLocation} onChange={(e) => setInterviewLocation(e.target.value)} className="mt-1 border-[#D8DEE5] bg-white" /></div>
+            <div><Label>Meeting link (if applicable)</Label><Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="mt-1 border-[#D8DEE5] bg-white" /></div>
           </div>
           <DialogFooter>
             <Button onClick={() => interviewSetupMutation.mutate()} disabled={interviewSetupMutation.isPending}>
@@ -515,16 +513,16 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </Dialog>
 
       <Dialog open={showEvaluationDialog} onOpenChange={setShowEvaluationDialog}>
-        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+        <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Submit structured evaluation</DialogTitle>
-            <DialogDescription className="text-slate-400">Keep the scorecard concise and decision-focused.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Keep the scorecard concise and decision-focused.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-slate-300">Recommendation</Label>
+              <Label className="text-[#42494D]">Recommendation</Label>
               <Select value={evaluationRecommendation} onValueChange={setEvaluationRecommendation}>
-                <SelectTrigger className="mt-2 border-slate-700 bg-slate-950">
+                <SelectTrigger className="mt-2 border-[#D8DEE5] bg-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -538,7 +536,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
               value={decisionNotes}
               onChange={(event) => setDecisionNotes(event.target.value)}
               placeholder="Evidence-based notes for the hiring team..."
-              className="border-slate-700 bg-slate-950 text-white"
+              className="border-[#D8DEE5] bg-white text-[#20242B]"
             />
           </div>
           <DialogFooter>
@@ -550,10 +548,10 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       </Dialog>
 
       <Dialog open={showFinalDecisionDialog} onOpenChange={setShowFinalDecisionDialog}>
-        <DialogContent className="border-slate-700 bg-slate-900 text-white">
+        <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Make final decision</DialogTitle>
-            <DialogDescription className="text-slate-400">Submit one clear decision for the hiring team to action.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Submit one clear decision for the hiring team to action.</DialogDescription>
           </DialogHeader>
           <RadioGroup value={finalDecision} onValueChange={setFinalDecision} className="grid gap-3">
             {[
@@ -561,7 +559,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
               ["reserve", "Reserve"],
               ["reject", "Reject"],
             ].map(([value, label]) => (
-              <Label key={value} className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
+              <Label key={value} className="flex items-center gap-3 rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
                 <RadioGroupItem value={value} />
                 {label}
               </Label>
@@ -571,7 +569,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             value={decisionNotes}
             onChange={(event) => setDecisionNotes(event.target.value)}
             placeholder="Optional decision notes..."
-            className="border-slate-700 bg-slate-950 text-white"
+            className="border-[#D8DEE5] bg-white text-[#20242B]"
           />
           <DialogFooter>
             <Button

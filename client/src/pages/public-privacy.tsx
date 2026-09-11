@@ -23,8 +23,9 @@ function BulletList({ children }: { children: React.ReactNode }) {
 export default function PublicPrivacy() {
   const { data: config } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
   const companyName = configured(config?.companyName, "the hiring organisation");
-  const companyLocation = configured(config?.companyLocation, "Not configured");
-  const careersContactEmail = configured(config?.careersContactEmail, "Not configured");
+  const companyLocation = config?.companyLocation?.trim();
+  const careersContactEmail = config?.careersContactEmail?.trim();
+  const contactLabel = careersContactEmail || "the hiring organisation";
   const noticeVersion = configured(config?.privacyNoticeVersion, "configured by the hiring organisation");
 
   return (
@@ -69,14 +70,14 @@ export default function PublicPrivacy() {
               for determining how your personal information is used for its recruitment activities.
             </p>
             <p>Where configured:</p>
-            <p><strong className="font-semibold text-foreground">Location:</strong> {companyLocation}</p>
+            {companyLocation && <p><strong className="font-semibold text-foreground">Location:</strong> {companyLocation}</p>}
             <p>
               <strong className="font-semibold text-foreground">Recruitment contact:</strong>{" "}
-              {config?.careersContactEmail ? (
-                <a className="font-medium text-primary underline underline-offset-4" href={`mailto:${config.careersContactEmail}`}>
-                  {careersContactEmail}
+              {careersContactEmail ? (
+                <a className="font-medium text-primary underline underline-offset-4" href={`mailto:${careersContactEmail}`}>
+                  {contactLabel}
                 </a>
-              ) : careersContactEmail}
+              ) : contactLabel}
             </p>
             <p>
               For questions about how your recruitment information is used, or to exercise an applicable data-protection
@@ -304,7 +305,7 @@ export default function PublicPrivacy() {
             <p>You also have the right, subject to applicable law, not to be subject to a decision based solely on automated processing, including profiling, where that decision produces legal effects concerning you or otherwise significantly affects you.</p>
             <p>Because HirePass is designed to support human recruitment decisions rather than replace them, final recruitment decisions remain the responsibility of authorised people.</p>
             <p>To exercise an applicable right, contact:</p>
-            <p><strong className="font-semibold text-foreground">{careersContactEmail}</strong></p>
+            <p><strong className="font-semibold text-foreground">{contactLabel}</strong></p>
             <p>We may need to take reasonable steps to verify your identity before responding to a request.</p>
           </Section>
 
@@ -373,8 +374,8 @@ export default function PublicPrivacy() {
           <Section title="18. Contact">
             <p>For questions about this notice, your recruitment information or an applicable data-protection right, contact:</p>
             <p><strong className="font-semibold text-foreground">{companyName}</strong></p>
-            <p><strong className="font-semibold text-foreground">{companyLocation}</strong></p>
-            <p><strong className="font-semibold text-foreground">{careersContactEmail}</strong></p>
+            {companyLocation && <p><strong className="font-semibold text-foreground">{companyLocation}</strong></p>}
+            <p><strong className="font-semibold text-foreground">{contactLabel}</strong></p>
           </Section>
 
           <div className="border-t pt-6">

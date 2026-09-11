@@ -90,7 +90,7 @@ export default function Managers() {
             People who can own vacancies, review candidates or conduct interviews
           </p>
         </div>
-        <Link href="/managers/new">
+        <Link href="/hiring-team/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-manager">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
             Add Stakeholder
@@ -146,7 +146,7 @@ export default function Managers() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="rounded-xl">
                     <DropdownMenuItem asChild>
-                      <Link href={`/managers/${manager.id}/edit`}>
+                      <Link href={`/hiring-team/${manager.id}/edit`}>
                         <Edit className="w-4 h-4 mr-2" strokeWidth={1.5} />
                         Edit
                       </Link>
@@ -207,7 +207,7 @@ export default function Managers() {
               }
             </p>
             {!searchQuery && (
-              <Link href="/managers/new">
+              <Link href="/hiring-team/new">
                 <Button className="mt-6 rounded-xl gap-2" data-testid="button-add-first-manager">
                   <Plus className="w-4 h-4" strokeWidth={1.5} />
                   Add First Stakeholder

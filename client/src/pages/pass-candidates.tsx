@@ -63,7 +63,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Pass, Candidate, PassPosition, Manager } from "@shared/schema";
-import { configuredStages } from "@shared/hiring-workflow";
+import { presentHiringStage, presentHiringStatusLabel } from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -110,11 +110,8 @@ type PipelineData = Record<string, PassCandidate[]>;
 const STAGES = [
   { key: "new", label: "Applied", color: "bg-gray-500" },
   { key: "screening", label: "Review", color: "bg-blue-500" },
-  { key: "shortlisted", label: "Shortlisted", color: "bg-indigo-500" },
   { key: "interview", label: "Interview", color: "bg-purple-500" },
-  { key: "offer", label: "Offer", color: "bg-amber-500" },
-  { key: "hired", label: "Hired", color: "bg-green-500" },
-  { key: "rejected", label: "Rejected", color: "bg-red-500" },
+  { key: "offer", label: "Decision", color: "bg-amber-500" },
 ];
 
 const POSITION_COLORS = [
@@ -128,7 +125,8 @@ const POSITION_COLORS = [
 
 export default function PassCandidates() {
   const [, params] = useRoute("/passes/:passId/candidates");
-  const passId = params?.passId;
+  const [, vacancyParams] = useRoute("/vacancies/:passId/candidates");
+  const passId = vacancyParams?.passId || params?.passId;
   const { toast } = useToast();
 
   const [selectedCandidates, setSelectedCandidates] = useState<number[]>([]);
@@ -157,7 +155,7 @@ export default function PassCandidates() {
   useEffect(() => {
     if (!selectedStakeholderId && pass?.hiringManagerId) setSelectedStakeholderId(String(pass.hiringManagerId));
   }, [pass?.hiringManagerId, selectedStakeholderId]);
-  const visibleStages = STAGES.filter((stage) => stage.key === "rejected" || configuredStages(pass?.enabledStages).includes(stage.key as any));
+  const visibleStages = STAGES;
 
   const { data: pipeline, isLoading: pipelineLoading } = useQuery<PipelineData>({
     queryKey: ["/api/passes", passId, "candidates", "pipeline"],
@@ -293,6 +291,13 @@ export default function PassCandidates() {
     }
     return filtered;
   }, [pipeline, filterPositionId]);
+
+  const candidatesForVisibleStage = (stageKey: string) => {
+    if (!filteredPipeline) return [];
+    return Object.values(filteredPipeline)
+      .flat()
+      .filter((pc) => presentHiringStage(pc.status).step === presentHiringStage(stageKey).step);
+  };
 
   const positionBreakdown = useMemo(() => {
     if (!pipeline || !positions) return null;
@@ -479,8 +484,8 @@ export default function PassCandidates() {
     return (
       <GlassCard className="p-12 text-center">
         <Users className="w-16 h-16 mx-auto text-primary/30" strokeWidth={1} />
-        <h3 className="mt-4 text-lg font-medium">Pass not found</h3>
-        <Link href="/passes">
+        <h3 className="mt-4 text-lg font-medium">Vacancy not found</h3>
+        <Link href="/vacancies">
           <Button variant="outline" className="mt-4 rounded-xl">
             Back to Vacancies
           </Button>
@@ -493,7 +498,7 @@ export default function PassCandidates() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <Link href={`/passes/${passId}`}>
+          <Link href={`/vacancies/${passId}`}>
             <Button variant="ghost" size="icon" className="rounded-xl" data-testid="button-back">
               <ArrowLeft className="w-5 h-5" strokeWidth={2} />
             </Button>
@@ -660,7 +665,7 @@ export default function PassCandidates() {
                 data-testid="button-bulk-reject"
               >
                 <X className="w-4 h-4" strokeWidth={2} />
-                Reject All
+                Mark not selected
               </Button>
             </div>
           </div>
@@ -669,7 +674,7 @@ export default function PassCandidates() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         {visibleStages.map(stage => {
-          const candidates = filteredPipeline?.[stage.key] || [];
+          const candidates = candidatesForVisibleStage(stage.key);
           const isOver = dragOverColumn === stage.key;
           
           return (
@@ -769,6 +774,9 @@ export default function PassCandidates() {
                               )}
                               <Badge variant="secondary" className="mt-2 text-[10px]">
                                 {reviewLabel(pc.id)}
+                              </Badge>
+                              <Badge variant="outline" className="ml-1 mt-2 text-[10px]">
+                                {presentHiringStatusLabel(pc.status)}
                               </Badge>
                             </div>
                           </div>
@@ -1041,7 +1049,7 @@ export default function PassCandidates() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="rounded-2xl sm:max-w-md" data-testid="add-candidate-dialog">
           <DialogHeader>
-            <DialogTitle>Add Candidate to Pass</DialogTitle>
+            <DialogTitle>Add Candidate to Vacancy</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="relative">
@@ -1294,7 +1302,7 @@ export default function PassCandidates() {
                 <SelectContent>
                   {pipeline && Object.values(pipeline).flat().map((pc) => (
                     <SelectItem key={pc.id} value={String(pc.id)}>
-                      {pc.candidate?.name} ({pc.status})
+                      {pc.candidate?.name} ({presentHiringStatusLabel(pc.status)})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1346,7 +1354,7 @@ export default function PassCandidates() {
                   ) : (
                     <LinkIcon className="w-4 h-4" strokeWidth={2} />
                   )}
-                  Generate Candidate Link
+                  Generate Candidate Pass
                 </Button>
               )}
             </div>
