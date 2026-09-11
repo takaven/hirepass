@@ -135,7 +135,7 @@ function PassJourney({ state }: { state: CandidatePassViewState }) {
           <li key={step.stage} className="relative min-w-0 text-center" aria-current={step.status === "current" ? "step" : undefined}>
             {index > 0 && (
               <span
-                className={`absolute left-0 top-3 h-px w-1/2 ${step.status === "upcoming" ? "bg-[#D8DEE5]" : "bg-[#42494D]"}`}
+                className={`absolute left-0 top-3 h-px w-1/2 ${["completed", "current"].includes(step.status) ? "bg-[#42494D]" : "bg-[#D8DEE5]"}`}
                 aria-hidden="true"
               />
             )}
@@ -147,14 +147,24 @@ function PassJourney({ state }: { state: CandidatePassViewState }) {
             )}
             <span
               className={`relative z-10 mx-auto flex h-6 w-6 items-center justify-center rounded-full border-2 bg-white ${
-                step.status === "completed" ? "border-[#42494D] bg-[#42494D] text-white" : step.status === "upcoming" ? "border-[#C8CED5] text-[#68707D]" : "text-[#20242B]"
+                step.status === "completed"
+                  ? "border-[#42494D] bg-[#42494D] text-white"
+                  : step.status === "current"
+                    ? "text-[#20242B]"
+                    : "border-[#C8CED5] text-[#68707D]"
               }`}
               style={step.status === "current" ? { borderColor: "var(--customer-accent)" } : undefined}
               aria-hidden="true"
             >
-              {step.status === "completed" ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : step.status === "current" ? <span className="h-2 w-2 rounded-full bg-[#20242B]" /> : <span className="h-1.5 w-1.5 rounded-full bg-[#C8CED5]" />}
+              {step.status === "completed"
+                ? <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                : step.status === "current"
+                  ? <span className="h-2 w-2 rounded-full bg-[#20242B]" />
+                  : step.status === "upcoming"
+                    ? <span className="h-1.5 w-1.5 rounded-full bg-[#C8CED5]" />
+                    : null}
             </span>
-            <span className={`mt-2 block px-0.5 text-[12px] leading-4 sm:text-sm ${step.status === "upcoming" ? "text-[#68707D]" : "font-medium text-[#20242B]"}`}>
+            <span className={`mt-2 block px-0.5 text-[12px] leading-4 sm:text-sm ${["upcoming", "neutral"].includes(step.status) ? "text-[#68707D]" : "font-medium text-[#20242B]"}`}>
               {step.stage}
             </span>
           </li>

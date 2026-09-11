@@ -59,6 +59,10 @@ describe("external Pass customer branding", () => {
     assert.match(candidatePass, /externalPassAccentStyle\(publicConfig\)/);
     assert.match(stakeholderPass, /externalPassAccentStyle\(publicConfig\)/);
     assert.match(candidatePass, /Applied|state\.journey/);
+    assert.match(candidatePass, /\["upcoming", "neutral"\]\.includes\(step\.status\)/);
+    assert.match(candidatePass, /step\.status === "completed"\s*\? <Check/);
+    assert.match(candidatePass, /style=\{step\.status === "current" \?/);
+    assert.match(candidatePass, /currentStep \? `\$\{currentStep\.stage\} · Current` : state\.stateLabel/);
     assert.doesNotMatch(candidatePass, /fit score|match percentage|candidate rank/i);
     assert.doesNotMatch(stakeholderPass, /<nav|<aside/);
   });

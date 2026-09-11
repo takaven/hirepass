@@ -68,7 +68,7 @@ export function mapCandidateHiringStage(status?: string | null): CandidateHiring
 function buildJourney(
   currentStage: CandidateHiringStage,
   enabledStages: unknown,
-  mode: "active" | "access_unavailable" | "completed" = "active",
+  mode: "active" | "neutral" | "completed" = "active",
 ): CandidateJourneyStep[] {
   const stages = uniqueVisibleHiringPhases(enabledStages).map((phase) => phase.label);
   const currentIndex = stages.indexOf(currentStage);
@@ -76,11 +76,13 @@ function buildJourney(
     stage,
     status: mode === "completed"
       ? "completed"
-      : index < currentIndex
-        ? "completed"
-        : mode === "active" && index === currentIndex
-          ? "current"
-          : "upcoming",
+      : mode === "neutral"
+        ? "neutral"
+        : index < currentIndex
+          ? "completed"
+          : mode === "active" && index === currentIndex
+            ? "current"
+            : "upcoming",
   }));
 }
 
@@ -270,7 +272,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
   const upcomingInterview = hasUpcomingInterview(input.interviews, now);
   const buildConfiguredJourney = (
     stage: CandidateHiringStage,
-    mode: "active" | "access_unavailable" | "completed" = "active",
+    mode: "active" | "neutral" | "completed" = "active",
   ) => buildJourney(stage, input.pass?.enabledStages, mode);
 
   if (!input.link?.isActive) {
@@ -283,7 +285,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "Contact hiring team", description: "This Pass cannot accept actions.", target: "none" },
       latestUpdate: "Pass access is not active.",
-      journey: buildConfiguredJourney(hiringStage, "access_unavailable"),
+      journey: buildConfiguredJourney(hiringStage, "neutral"),
     }, input, now);
   }
 
@@ -297,7 +299,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "Request a new Pass", description: "This Pass cannot accept actions.", target: "none" },
       latestUpdate: "Pass access expired.",
-      journey: buildConfiguredJourney(hiringStage, "access_unavailable"),
+      journey: buildConfiguredJourney(hiringStage, "neutral"),
     }, input, now);
   }
 
@@ -325,7 +327,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Process closed",
       nextAction: { kind: "NONE", label: "No action required", description: "This Candidate Pass is closed.", target: "none" },
       latestUpdate: "",
-      journey: buildConfiguredJourney(hiringStage, "completed"),
+      journey: buildConfiguredJourney(hiringStage, "neutral"),
     }, input, now);
   }
 
