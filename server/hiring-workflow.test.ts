@@ -47,14 +47,26 @@ describe("bounded hiring workflows", () => {
   });
 
   it("uses an operational open-vacancy definition that excludes draft and closed states", () => {
-    assert.equal(isOperationallyOpenVacancy("active"), true);
-    assert.equal(isOperationallyOpenVacancy("open"), true);
-    assert.equal(isOperationallyOpenVacancy("sourcing"), true);
+    for (const status of [
+      "active",
+      "open",
+      "in_progress",
+      "awaiting_jd_approval",
+      "sourcing",
+      "screening",
+      "interviewing",
+      "decision",
+      "offer_pending",
+    ]) {
+      assert.equal(isOperationallyOpenVacancy(status), true);
+    }
     assert.equal(isOperationallyOpenVacancy("draft"), false);
     assert.equal(isOperationallyOpenVacancy("on_hold"), false);
     assert.equal(isOperationallyOpenVacancy("filled"), false);
     assert.equal(isOperationallyOpenVacancy("closed_hired"), false);
     assert.equal(isOperationallyOpenVacancy("closed_cancelled"), false);
+    assert.equal(isOperationallyOpenVacancy("cancelled"), false);
+    assert.equal(isOperationallyOpenVacancy(undefined), false);
   });
 
   it("supports a no-HR owner and waits for real interview completion before evaluation", () => {

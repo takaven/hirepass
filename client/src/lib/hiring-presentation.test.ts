@@ -136,7 +136,17 @@ describe("hiring workflow presentation", () => {
   });
 
   it("uses one open vacancy definition for Home and Analytics", () => {
-    for (const status of ["active", "open", "in_progress", "screening", "sourcing"]) {
+    for (const status of [
+      "active",
+      "open",
+      "in_progress",
+      "awaiting_jd_approval",
+      "sourcing",
+      "screening",
+      "interviewing",
+      "decision",
+      "offer_pending",
+    ]) {
       assert.equal(isOperationallyOpenVacancy(status), true);
     }
     for (const status of ["draft", "on_hold", "filled", "closed_hired", "closed_cancelled", "cancelled", undefined]) {

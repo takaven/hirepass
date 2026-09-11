@@ -3,7 +3,17 @@ export type HiringStage = (typeof HIRING_STAGES)[number];
 
 export const DEFAULT_HIRING_STAGES: HiringStage[] = [...HIRING_STAGES];
 export const TERMINAL_CANDIDATE_STATUSES = ["rejected", "withdrawn"] as const;
-export const OPEN_VACANCY_STATUSES = ["active", "open", "in_progress", "screening", "sourcing"] as const;
+export const OPEN_VACANCY_STATUSES = [
+  "active",
+  "open",
+  "in_progress",
+  "awaiting_jd_approval",
+  "sourcing",
+  "screening",
+  "interviewing",
+  "decision",
+  "offer_pending",
+] as const;
 
 export const HIRING_STAGE_LABELS: Record<HiringStage, string> = {
   new: "Applied",
