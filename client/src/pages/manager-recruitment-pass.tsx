@@ -15,18 +15,16 @@ import {
   AlertTriangle,
   Briefcase,
   Calendar,
-  CheckCircle,
   Clock,
   FileText,
   Lock,
-  MessageSquare,
   UserCheck,
   Users,
-  XCircle,
 } from "lucide-react";
 import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared/schema";
-import type { ManagerPassActionState, ManagerPassViewState } from "@shared/pass-state";
-import { PublicBrand, type PublicConfig } from "./public-apply";
+import type { ManagerPassViewState } from "@shared/pass-state";
+import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
+import type { PublicConfig } from "./public-apply";
 
 type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
@@ -45,15 +43,6 @@ interface ManagerPassData {
 interface ManagerRecruitmentPassProps {
   token: string;
 }
-
-const stateStyles: Record<ManagerPassActionState, string> = {
-  ACTION_REQUIRED: "border-[#01FF22]/70 bg-[#01FF22]/10 text-[#20242B]",
-  WAITING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  UPCOMING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  COMPLETED: "border-[#20242B] bg-[#20242B] text-white",
-  EXPIRED: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  REVOKED: "border-red-300 bg-red-50 text-red-700",
-};
 
 function formatManagerDate(value: string | Date | null | undefined) {
   if (!value) return "Date to be confirmed";
@@ -243,6 +232,11 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const nextDecisionCandidateId = "candidateId" in managerPassState.nextDecision ? managerPassState.nextDecision.candidateId : undefined;
   const targetCandidate = candidates.find((candidate) => candidate.id === nextDecisionCandidateId) || managerPassState.evidence.topCandidate;
   const targetInterview = interviews.find((interview) => interview.passCandidateId === nextDecisionCandidateId) || interviews[0];
+  const assignmentCandidateName = targetCandidate
+    ? "candidate" in targetCandidate
+      ? targetCandidate.candidate?.name
+      : targetCandidate.name
+    : null;
 
   const actionButton = (() => {
     switch (managerPassState.nextDecision.kind) {
@@ -254,7 +248,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => targetCandidate?.id && shortlistMutation.mutate(targetCandidate.id)}>
               Advance candidate
             </Button>
-            <Button variant="destructive" className="min-h-11" onClick={() => targetCandidate?.id && rejectMutation.mutate(targetCandidate.id)}>
+            <Button variant="outline" className="min-h-11 border-red-300 text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => targetCandidate?.id && rejectMutation.mutate(targetCandidate.id)}>
               Reject candidate
             </Button>
           </div>
@@ -266,109 +260,97 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       case "MAKE_FINAL_DECISION":
         return <Button className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => setShowFinalDecisionDialog(true)}>Make final decision</Button>;
       default:
-        return <Button className="min-h-11" disabled>No decision required</Button>;
+        return null;
     }
   })();
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#20242B]">
-      <header className="sticky top-0 z-40 border-b border-[#D8DEE5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
+    <div
+      className="min-h-screen bg-[#F1F3F5] text-[#20242B] [color-scheme:light]"
+      style={externalPassAccentStyle(publicConfig)}
+      data-testid="stakeholder-pass-root"
+    >
+      <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-10">
+        <header className="flex min-w-0 items-center justify-between gap-4">
+          <ExternalPassBrand config={publicConfig} descriptor="Stakeholder Pass" />
+          <span className="hidden shrink-0 items-center gap-2 rounded-full border border-[#D8DEE5] bg-white px-3 py-1.5 text-xs font-medium text-[#42494D] shadow-sm sm:inline-flex">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+            {managerPassState.stateLabel}
+          </span>
+        </header>
+
+        <section
+          className="relative overflow-hidden rounded-[2rem] border border-[#CFD5DB] bg-white shadow-[0_18px_55px_rgba(32,36,43,0.08)]"
+          data-testid="stakeholder-pass-assignment"
+          aria-labelledby="stakeholder-assignment-title"
+        >
+          <div className="h-1.5 w-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+          <div className="grid gap-6 p-5 sm:p-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-[#68707D]">Hiring Stakeholder Pass</p>
-              <h1 className="truncate text-base font-semibold text-[#20242B]">{pass.positionTitle}</h1>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#68707D]">Your hiring assignment</p>
+              <h1 id="stakeholder-assignment-title" className="mt-2 break-words text-2xl font-semibold tracking-[-0.025em] text-[#20242B] sm:text-3xl">{pass.positionTitle}</h1>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#68707D]">
+                <span className="inline-flex items-center gap-1.5"><Briefcase className="h-4 w-4" aria-hidden="true" />{pass.department || "Hiring request"}</span>
+                {assignmentCandidateName && <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" aria-hidden="true" />{assignmentCandidateName}</span>}
+                {manager?.name && <span className="inline-flex items-center gap-1.5"><UserCheck className="h-4 w-4" aria-hidden="true" />For {manager.name}</span>}
+              </div>
             </div>
-          </div>
-          <Badge className={`shrink-0 border ${stateStyles[managerPassState.actionState]}`}>{managerPassState.stateLabel}</Badge>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
-        <PublicBrand config={publicConfig} />
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className={`border ${stateStyles[managerPassState.actionState]} bg-white`}>
-            <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[#68707D]">
-                <span className="inline-flex items-center gap-1">
-                  <Briefcase className="h-4 w-4" />
-                  {pass.department || "Hiring request"}
-                </span>
-                {manager?.name && (
-                  <span className="inline-flex items-center gap-1">
-                    <UserCheck className="h-4 w-4" />
-                    {manager.name}
-                  </span>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-[#01FF22]/60 bg-[#01FF22]/10 p-4">
-                <p className="text-xs uppercase tracking-wide text-[#42494D]">What needs your input?</p>
-                <div className="mt-2 space-y-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-[#20242B]">{managerPassState.nextDecision.label}</h3>
-                    <p className="mt-1 text-sm text-[#42494D]">{managerPassState.nextDecision.description}</p>
-                  </div>
-                  {actionButton}
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
-                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate / vacancy context</p>
-                  <p className="mt-1 text-sm font-medium text-[#20242B]">{managerPassState.headline}</p>
-                  <p className="mt-1 text-xs text-[#68707D]">{managerPassState.summary}</p>
-                </div>
-                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-3">
-                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Next</p>
-                  <p className="mt-1 text-sm font-medium text-[#20242B]">{managerPassState.next}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-5">
-            <Card className="border-[#D8DEE5] bg-white">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-[#20242B]">Relevant evidence</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-[#42494D]">
-                <div className="flex items-start gap-3">
-                  {managerPassState.urgency === "attention" ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : <Clock className="h-5 w-5 text-[#68707D]" />}
-                  <span>{managerPassState.latestUpdate}</span>
-                </div>
-                {managerPassState.passHandoff && (
-                  <p className="rounded-md border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-2 text-[#42494D]">{managerPassState.passHandoff}</p>
-                )}
-                <p className="rounded-md border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-2 text-[#42494D]">{managerPassState.expectedMovement}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-[#D8DEE5] bg-white">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-[#20242B]">Hiring context</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-[#42494D]">
-                <p>Role: {managerPassState.evidence.role}</p>
-                <p>Active candidates: {managerPassState.evidence.activeCandidateCount}</p>
-                <p>Total candidates in this request: {managerPassState.evidence.candidateCount}</p>
-              </CardContent>
-            </Card>
+            <div className="border-t border-[#E2E6EA] pt-4 text-sm text-[#42494D] md:max-w-xs md:border-l md:border-t-0 md:pl-6 md:pt-0 md:text-right">
+              <p className="font-medium">{managerPassState.headline}</p>
+              <p className="mt-1 text-[#68707D]">{managerPassState.summary}</p>
+              <p className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-[#42494D]">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+                {managerPassState.stateLabel}
+              </p>
+            </div>
           </div>
         </section>
 
-        {["WAITING", "COMPLETED"].includes(managerPassState.actionState) && (
-          <Card className="border-[#D8DEE5] bg-white">
-            <CardContent className="flex items-start gap-4 p-5">
-              <CheckCircle className="mt-1 h-6 w-6 shrink-0 text-[#01A31A]" />
-              <div>
-                <h3 className="font-semibold text-[#20242B]">You're done for now</h3>
-                <p className="mt-1 text-sm leading-6 text-[#42494D]">
-                  The hiring team has your decision. This Pass will show a new action if your input is needed again.
-                </p>
+        <section
+          className="relative overflow-hidden rounded-[2rem] border border-[#CFD5DB] bg-white shadow-[0_18px_55px_rgba(32,36,43,0.07)]"
+          data-testid="stakeholder-pass-primary-action"
+          aria-labelledby="stakeholder-action-title"
+        >
+          <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+          <div className="p-5 pl-7 sm:p-8 sm:pl-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#68707D]">What needs your input?</p>
+            <div className="mt-3 grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(220px,auto)] md:items-end">
+              <div className="max-w-2xl">
+                <h2 id="stakeholder-action-title" className="text-2xl font-semibold tracking-[-0.02em] text-[#20242B] sm:text-3xl">{managerPassState.nextDecision.label}</h2>
+                <p className="mt-2 text-sm leading-6 text-[#42494D] sm:text-base">{managerPassState.nextDecision.description}</p>
+              </div>
+              {actionButton}
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-2">
+          <Card className="rounded-[1.5rem] border-[#D8DEE5] bg-white shadow-[0_10px_35px_rgba(32,36,43,0.04)]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-[#20242B]">Relevant evidence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-[#42494D]">
+              <div className="flex items-start gap-3">
+                {managerPassState.urgency === "attention" ? <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /> : <Clock className="mt-0.5 h-5 w-5 shrink-0 text-[#68707D]" />}
+                <span>{managerPassState.latestUpdate}</span>
+              </div>
+              {managerPassState.passHandoff && <p className="border-t border-[#E2E6EA] pt-3">{managerPassState.passHandoff}</p>}
+              <p className="border-t border-[#E2E6EA] pt-3">{managerPassState.expectedMovement}</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-[1.5rem] border-[#D8DEE5] bg-white shadow-[0_10px_35px_rgba(32,36,43,0.04)]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-[#20242B]">What happens next</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm leading-6 text-[#42494D]">
+              <p>{managerPassState.next}</p>
+              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#E2E6EA] pt-4 text-xs text-[#68707D]">
+                <span>Active candidates<br /><strong className="text-base font-semibold text-[#20242B]">{managerPassState.evidence.activeCandidateCount}</strong></span>
+                <span>Request total<br /><strong className="text-base font-semibold text-[#20242B]">{managerPassState.evidence.candidateCount}</strong></span>
               </div>
             </CardContent>
           </Card>
-        )}
+        </section>
 
         <section className="grid gap-5 lg:grid-cols-2">
           <Card className="border-[#D8DEE5] bg-white">
@@ -454,20 +436,9 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             </CardContent>
           </Card>
 
-          <Card className="border-[#D8DEE5] bg-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-[#20242B]">
-                <MessageSquare className="h-5 w-5 text-[#42494D]" />
-                What happens next
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm leading-6 text-[#42494D]">
-              {managerPassState.actionState === "ACTION_REQUIRED"
-                ? "Submit the decision above. The hiring team receives it and the Pass will update to the next waiting or completion state."
-                : "No action is needed now. The hiring team will update this Pass when stakeholder input is needed again."}
-            </CardContent>
-          </Card>
         </section>
+
+        <ExternalPassFooter config={publicConfig} />
       </main>
 
       <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
@@ -486,7 +457,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             <Button variant="outline" className="border-[#D8DEE5] text-[#20242B]" onClick={() => requestChangesMutation.mutate()}>
               Request changes
             </Button>
-            <Button onClick={() => approveRequestMutation.mutate()}>Approve request</Button>
+            <Button className="bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => approveRequestMutation.mutate()}>Approve request</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -505,7 +476,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             <div><Label>Meeting link (if applicable)</Label><Input value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} className="mt-1 border-[#D8DEE5] bg-white" /></div>
           </div>
           <DialogFooter>
-            <Button onClick={() => interviewSetupMutation.mutate()} disabled={interviewSetupMutation.isPending}>
+            <Button className="bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => interviewSetupMutation.mutate()} disabled={interviewSetupMutation.isPending}>
               Submit availability
             </Button>
           </DialogFooter>
@@ -516,7 +487,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
         <DialogContent className="border-[#D8DEE5] bg-white text-[#20242B]">
           <DialogHeader>
             <DialogTitle>Submit structured evaluation</DialogTitle>
-            <DialogDescription className="text-[#68707D]">Keep the scorecard concise and decision-focused.</DialogDescription>
+            <DialogDescription className="text-[#68707D]">Keep the evaluation concise and decision-focused.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -540,7 +511,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
             />
           </div>
           <DialogFooter>
-            <Button onClick={() => targetInterview?.id && evaluationMutation.mutate(targetInterview.id)} disabled={!targetInterview?.id || evaluationMutation.isPending}>
+            <Button className="bg-[#20242B] text-white hover:bg-[#42494D]" onClick={() => targetInterview?.id && evaluationMutation.mutate(targetInterview.id)} disabled={!targetInterview?.id || evaluationMutation.isPending}>
               Submit evaluation
             </Button>
           </DialogFooter>
@@ -573,6 +544,7 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
           />
           <DialogFooter>
             <Button
+              className="bg-[#20242B] text-white hover:bg-[#42494D]"
               onClick={() => targetCandidate?.id && finalDecisionMutation.mutate({ candidateId: targetCandidate.id, decision: finalDecision })}
               disabled={!targetCandidate?.id || finalDecisionMutation.isPending}
             >

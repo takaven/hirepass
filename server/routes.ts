@@ -48,6 +48,7 @@ import { processPendingAiReviews, queueLibraryMatchReview, queueReviewForApplica
 import { wakeAiReviewWorker } from "./ai/worker";
 import { enqueueEmail, type EmailIntent } from "./email/outbox";
 import { getEmailConfig, publicAppUrl } from "./email/config";
+import { resolveCompanyAccentColor } from "@shared/public-branding";
 
 function publicCompanyLogoUrl() {
   const value = process.env.HIREPASS_COMPANY_LOGO_URL || "";
@@ -65,6 +66,7 @@ const publicPrivacyConfig = () => ({
   companyLocation: process.env.HIREPASS_COMPANY_LOCATION || "",
   careersContactEmail: process.env.HIREPASS_CAREERS_CONTACT_EMAIL || "",
   companyLogoUrl: publicCompanyLogoUrl(),
+  companyAccentColor: resolveCompanyAccentColor(process.env.HIREPASS_COMPANY_ACCENT_COLOR),
   privacyNoticeUrl: process.env.HIREPASS_PRIVACY_NOTICE_URL || "",
   privacyNoticeVersion: process.env.HIREPASS_PRIVACY_NOTICE_VERSION || "launch-v1",
   aiEnabled: getAiConfig().enabled,

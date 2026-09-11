@@ -7,7 +7,7 @@
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "test": "tsx --test server/pass-access.test.ts server/external-pass-routes.test.ts server/hr-pass-control.test.ts server/production-envelope.test.ts server/candidate-privacy.test.ts server/hiring-workflow.test.ts server/ai-intelligence.test.ts client/src/lib/save-candidate.test.ts client/src/lib/public-submission.test.ts client/src/lib/upload-preflight.test.ts client/src/lib/hiring-presentation.test.ts",
+    "test": "tsx --test server/pass-access.test.ts server/external-pass-routes.test.ts server/hr-pass-control.test.ts server/production-envelope.test.ts server/candidate-privacy.test.ts server/hiring-workflow.test.ts server/ai-intelligence.test.ts client/src/lib/save-candidate.test.ts client/src/lib/public-submission.test.ts client/src/lib/upload-preflight.test.ts client/src/lib/hiring-presentation.test.ts client/src/lib/public-branding.test.tsx",
     "test:db": "npm run test:db:phase0 && npm run test:db:phase1 && npm run test:db:phase2 && npm run test:db:phase4",
     "test:db:phase0": "tsx --test server/phase-zero-postgres.test.ts",
     "test:db:phase1": "tsx --test server/phase-one-postgres.test.ts",

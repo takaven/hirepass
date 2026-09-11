@@ -10,7 +10,7 @@ import { getPublicSubmissionConfirmation, type PublicSubmissionResult } from "@/
 import { validateClientUpload } from "@/lib/upload-preflight";
 
 export type PublicPass = { id:number; positionTitle:string; department?:string; location?:string; employmentType?:string; experienceMin?:number; experienceMax?:number; jobDescriptionFinal?:string; status?:string };
-export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; companyLogoUrl?: string; privacyNoticeUrl:string; privacyNoticeVersion:string; aiEnabled?: boolean };
+export type PublicConfig = { companyName:string; companyLocation:string; careersContactEmail:string; companyLogoUrl?: string; companyAccentColor?: string; privacyNoticeUrl:string; privacyNoticeVersion:string; aiEnabled?: boolean };
 
 async function filePayload(file: File) {
   return new Promise<string>((resolve, reject) => {
