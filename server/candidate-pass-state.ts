@@ -5,7 +5,7 @@ import type {
   CandidatePassActionState,
   CandidatePassViewState,
 } from "@shared/pass-state";
-import { presentHiringStage } from "@shared/hiring-workflow";
+import { presentHiringStage, uniqueVisibleHiringPhases } from "@shared/hiring-workflow";
 
 export type {
   CandidateHiringStage,
@@ -24,6 +24,7 @@ export type CandidatePassStateInput = {
     technicalCompletedAt?: Date | string | null;
   };
   pass?: {
+    enabledStages?: unknown;
     targetHireDate?: Date | string | null;
     softSkillsAssessmentUrl?: string | null;
     technicalAssessmentUrl?: string | null;
@@ -54,8 +55,6 @@ export type CandidatePassStateInput = {
   now?: Date;
 };
 
-const stageOrder: CandidateHiringStage[] = ["Applied", "Review", "Interview", "Decision"];
-
 function toDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -66,11 +65,22 @@ export function mapCandidateHiringStage(status?: string | null): CandidateHiring
   return presentHiringStage((status || "new").toLowerCase()).label;
 }
 
-function buildJourney(currentStage: CandidateHiringStage): CandidateJourneyStep[] {
-  const currentIndex = stageOrder.indexOf(currentStage);
-  return stageOrder.map((stage, index) => ({
+function buildJourney(
+  currentStage: CandidateHiringStage,
+  enabledStages: unknown,
+  mode: "active" | "access_unavailable" | "completed" = "active",
+): CandidateJourneyStep[] {
+  const stages = uniqueVisibleHiringPhases(enabledStages).map((phase) => phase.label);
+  const currentIndex = stages.indexOf(currentStage);
+  return stages.map((stage, index) => ({
     stage,
-    status: index < currentIndex ? "completed" : index === currentIndex ? "current" : "upcoming",
+    status: mode === "completed"
+      ? "completed"
+      : index < currentIndex
+        ? "completed"
+        : mode === "active" && index === currentIndex
+          ? "current"
+          : "upcoming",
   }));
 }
 
@@ -258,6 +268,10 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
   const needsTechnicalAssessment = Boolean(input.pass?.technicalAssessmentUrl && !input.passCandidate.technicalCompletedAt);
   const availableInterviewSlots = input.interviewSlots?.length ?? 0;
   const upcomingInterview = hasUpcomingInterview(input.interviews, now);
+  const buildConfiguredJourney = (
+    stage: CandidateHiringStage,
+    mode: "active" | "access_unavailable" | "completed" = "active",
+  ) => buildJourney(stage, input.pass?.enabledStages, mode);
 
   if (!input.link?.isActive) {
     return withPassState({
@@ -269,7 +283,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "Contact hiring team", description: "This Pass cannot accept actions.", target: "none" },
       latestUpdate: "Pass access is not active.",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage, "access_unavailable"),
     }, input, now);
   }
 
@@ -283,7 +297,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "Request a new Pass", description: "This Pass cannot accept actions.", target: "none" },
       latestUpdate: "Pass access expired.",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage, "access_unavailable"),
     }, input, now);
   }
 
@@ -297,7 +311,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Hiring team",
       nextAction: { kind: "NONE", label: "No action required", description: "Your Candidate Pass work is complete.", target: "none" },
       latestUpdate: "",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage, "completed"),
     }, input, now);
   }
 
@@ -311,7 +325,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       waitingOn: "Process closed",
       nextAction: { kind: "NONE", label: "No action required", description: "This Candidate Pass is closed.", target: "none" },
       latestUpdate: "",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage, "completed"),
     }, input, now);
   }
 
@@ -330,7 +344,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "offer",
       },
       latestUpdate: "An offer has been issued.",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage),
     }, input, now);
   }
 
@@ -349,7 +363,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "assessment",
       },
       latestUpdate: "",
-      journey: buildJourney("Review"),
+      journey: buildConfiguredJourney("Review"),
     }, input, now);
   }
 
@@ -368,7 +382,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "interview",
       },
       latestUpdate: "Interview slots are available.",
-      journey: buildJourney("Interview"),
+      journey: buildConfiguredJourney("Interview"),
     }, input, now);
   }
 
@@ -388,7 +402,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "documents",
       },
       latestUpdate: "",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage),
     }, input, now);
   }
 
@@ -407,7 +421,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "messages",
       },
       latestUpdate: "The hiring team sent a message.",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage),
     }, input, now);
   }
 
@@ -426,7 +440,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "none",
       },
       latestUpdate: "",
-      journey: buildJourney("Interview"),
+      journey: buildConfiguredJourney("Interview"),
     }, input, now);
   }
 
@@ -446,7 +460,7 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
         target: "none",
       },
       latestUpdate: "",
-      journey: buildJourney(hiringStage),
+      journey: buildConfiguredJourney(hiringStage),
     }, input, now);
   }
 
@@ -464,6 +478,6 @@ export function resolveCandidatePassState(input: CandidatePassStateInput): Candi
       target: "none",
     },
     latestUpdate: "",
-    journey: buildJourney(hiringStage),
+    journey: buildConfiguredJourney(hiringStage),
   }, input, now);
 }

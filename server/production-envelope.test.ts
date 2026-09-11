@@ -618,7 +618,8 @@ describe("HirePass production envelope", () => {
     assert.doesNotMatch(candidateSource, /Dominant next action/);
     assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
     assert.doesNotMatch(candidateSource, /Latest update/);
-    assert.match(candidateStateSource, /const stageOrder: CandidateHiringStage\[\] = \["Applied", "Review", "Interview", "Decision"\]/);
+    assert.match(candidateStateSource, /uniqueVisibleHiringPhases\(enabledStages\)/);
+    assert.doesNotMatch(candidateStateSource, /const stageOrder/);
     assert.doesNotMatch(candidateStateSource, /"Handoff"/);
 
     const stakeholderSource = await readFile(path.join(process.cwd(), "client/src/pages/manager-recruitment-pass.tsx"), "utf8");

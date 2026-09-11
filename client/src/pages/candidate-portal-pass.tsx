@@ -116,12 +116,14 @@ function AccessState({ status, message }: { status?: number; message?: string })
 }
 
 function PassJourney({ state }: { state: CandidatePassViewState }) {
+  const currentStep = state.journey.find((step) => step.status === "current");
+
   return (
     <section className="rounded-[1.75rem] border border-[#D8DEE5] bg-white px-4 py-5 shadow-[0_12px_40px_rgba(32,36,43,0.05)] sm:px-6" aria-labelledby="candidate-journey-title">
       <div className="mb-5 flex items-center justify-between gap-3">
         <h2 id="candidate-journey-title" className="text-sm font-semibold text-[#20242B]">Your journey</h2>
         <span className="rounded-full border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-1 text-xs font-medium text-[#42494D]">
-          {state.hiringStage} · Current
+          {currentStep ? `${currentStep.stage} · Current` : state.stateLabel}
         </span>
       </div>
       <ol
