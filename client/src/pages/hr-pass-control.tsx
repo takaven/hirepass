@@ -64,9 +64,9 @@ const waitingLabels: Record<WaitingOn, string> = {
 
 const waitingStyles: Record<WaitingOn, string> = {
   candidate: "bg-amber-50 text-amber-700 border-amber-200",
-  manager: "bg-blue-50 text-blue-700 border-blue-200",
+  manager: "bg-[#F4F6F8] text-[#20242B] border-[#D8DEE4]",
   hr: "bg-rose-50 text-rose-700 border-rose-200",
-  upcoming_event: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  upcoming_event: "bg-[#F4F6F8] text-[#42494D] border-[#D8DEE4]",
   no_action: "bg-slate-50 text-slate-700 border-slate-200",
   completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
   expired_revoked: "bg-zinc-100 text-zinc-700 border-zinc-300",
@@ -74,6 +74,12 @@ const waitingStyles: Record<WaitingOn, string> = {
 
 function passUrl(type: "candidate" | "manager", token: string) {
   return type === "candidate" ? `/candidate-pass/${token}` : `/manager-pass/${token}`;
+}
+
+function nextOwnerLabel(passHandoff: string | null) {
+  if (!passHandoff) return null;
+  const owner = passHandoff.split("->").at(-1)?.trim();
+  return owner ? `Next owner: ${owner}` : `Next owner: ${passHandoff.replace(/^.*?:\s*/, "")}`;
 }
 
 export default function HrPassControl() {
@@ -92,10 +98,10 @@ export default function HrPassControl() {
     },
     onSuccess: () => {
       invalidate();
-      toast({ title: "Pass control updated" });
+      toast({ title: "Hiring control updated" });
     },
     onError: (error: Error) => {
-      toast({ title: "Unable to update Pass control", description: error.message, variant: "destructive" });
+      toast({ title: "Unable to update hiring control", description: error.message, variant: "destructive" });
     },
   });
 
@@ -113,28 +119,29 @@ export default function HrPassControl() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Internal Pass Control</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Live action workspace</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Hiring Control</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            See who is waiting on whom, refresh controlled links, record nudges and inspect recent Pass activity.
+            See what is waiting, who needs to act, and manage secure candidate or stakeholder access.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Input className="h-9 w-40" type="date" value={extendDate} onChange={(event) => setExtendDate(event.target.value)} aria-label="Extend expiry date" />
+        <div className="space-y-1">
+          <label htmlFor="extend-access-until" className="text-sm font-medium">Extend access until</label>
+          <Input id="extend-access-until" className="h-9 w-40" type="date" value={extendDate} onChange={(event) => setExtendDate(event.target.value)} />
+          <p className="text-xs text-muted-foreground">Used when extending Candidate or Stakeholder access.</p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Candidate actions</p><p className="text-2xl font-semibold">{counts.candidate}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stakeholder decisions</p><p className="text-2xl font-semibold">{counts.manager}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stalled Passes</p><p className="text-2xl font-semibold">{counts.stalled}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stalled actions</p><p className="text-2xl font-semibold">{counts.stalled}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Expired / revoked</p><p className="text-2xl font-semibold">{counts.expired}</p></CardContent></Card>
       </div>
 
       {isLoading ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading Pass controls...</CardContent></Card>
+        <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading hiring controls...</CardContent></Card>
       ) : items.length === 0 ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">No hiring Passes require attention.</CardContent></Card>
+        <Card><CardContent className="p-6 text-sm text-muted-foreground">No hiring actions require attention.</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
@@ -156,13 +163,13 @@ export default function HrPassControl() {
                   <div className="rounded-md border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-sm font-medium">Next Pass action</p>
+                        <p className="text-sm font-medium">Next action</p>
                         <p className="text-sm text-muted-foreground">{item.nextAction}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {item.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${item.waitingAgeDays} day${item.waitingAgeDays === 1 ? "" : "s"}`}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">{item.expectedMovement}</p>
-                        {item.passHandoff && <p className="mt-2 text-xs font-medium text-blue-700">{item.passHandoff}</p>}
+                        {item.passHandoff && <p className="mt-2 text-xs font-medium text-[#42494D]">{nextOwnerLabel(item.passHandoff)}</p>}
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
                         <Button
@@ -170,7 +177,7 @@ export default function HrPassControl() {
                           variant="outline"
                           onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/manager-link` })}
                         >
-                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Issue Stakeholder Pass
+                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Send stakeholder access
                         </Button>
                         {item.activeManagerLink && (
                           <>
@@ -229,7 +236,7 @@ export default function HrPassControl() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {candidate.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${candidate.waitingAgeDays} day${candidate.waitingAgeDays === 1 ? "" : "s"}`} · {candidate.expectedMovement}
                         </p>
-                        {candidate.passHandoff && <p className="mt-1 text-xs font-medium text-blue-700">{candidate.passHandoff}</p>}
+                        {candidate.passHandoff && <p className="mt-1 text-xs font-medium text-[#42494D]">{nextOwnerLabel(candidate.passHandoff)}</p>}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -237,7 +244,7 @@ export default function HrPassControl() {
                           variant="outline"
                           onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/candidates/${candidate.id}/candidate-link` })}
                         >
-                          <UserCheck className="mr-1 h-3.5 w-3.5" /> Issue Candidate Pass
+                          <UserCheck className="mr-1 h-3.5 w-3.5" /> Send candidate access
                         </Button>
                         {candidate.activeCandidateLink && (
                           <>

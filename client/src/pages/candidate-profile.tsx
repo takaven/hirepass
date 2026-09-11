@@ -121,7 +121,7 @@ export default function CandidateProfile() {
             <h2 className="text-lg font-semibold">Library status</h2>
             <div className="mt-4 flex flex-wrap gap-2">
               <Badge variant="outline">{presentCandidateSource(candidate.source)}</Badge>
-              {candidate.inTalentPool && <Badge variant="secondary">Talent pool</Badge>}
+              {candidate.inTalentPool && presentCandidateSource(candidate.source) !== "Talent pool" && <Badge variant="secondary">Talent pool</Badge>}
               {candidate.isAnonymized && <Badge variant="destructive">Erased profile</Badge>}
               {candidate.privacyNoticeVersion && <Badge variant="outline">Privacy notice {candidate.privacyNoticeVersion}</Badge>}
             </div>

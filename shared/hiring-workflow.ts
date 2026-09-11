@@ -3,6 +3,7 @@ export type HiringStage = (typeof HIRING_STAGES)[number];
 
 export const DEFAULT_HIRING_STAGES: HiringStage[] = [...HIRING_STAGES];
 export const TERMINAL_CANDIDATE_STATUSES = ["rejected", "withdrawn"] as const;
+export const OPEN_VACANCY_STATUSES = ["active", "open", "in_progress", "screening", "sourcing"] as const;
 
 export const HIRING_STAGE_LABELS: Record<HiringStage, string> = {
   new: "Applied",
@@ -17,6 +18,26 @@ export const SIMPLE_HIRING_JOURNEY = ["applied", "review", "interview", "decisio
 export type SimpleHiringJourneyStep = (typeof SIMPLE_HIRING_JOURNEY)[number];
 
 export type PresentedCandidateOutcome = "hired" | "not_selected" | "withdrawn" | null;
+export type VisibleHiringLabel = "Applied" | "Review" | "Interview" | "Decision";
+export type CandidateStatusOption = {
+  value: HiringStage | "rejected" | "withdrawn";
+  label: VisibleHiringLabel | "Hired" | "Not selected" | "Withdrawn";
+  kind: "phase" | "outcome";
+  fixed?: boolean;
+};
+
+export const VISIBLE_HIRING_PHASES: Array<{ step: SimpleHiringJourneyStep; value: HiringStage; label: VisibleHiringLabel; fixed: boolean; optional?: boolean }> = [
+  { step: "applied", value: "new", label: "Applied", fixed: true },
+  { step: "review", value: "screening", label: "Review", fixed: true },
+  { step: "interview", value: "interview", label: "Interview", fixed: false, optional: true },
+  { step: "decision", value: "offer", label: "Decision", fixed: true },
+];
+
+export const TERMINAL_HIRING_OUTCOMES: CandidateStatusOption[] = [
+  { value: "hired", label: "Hired", kind: "outcome", fixed: true },
+  { value: "rejected", label: "Not selected", kind: "outcome" },
+  { value: "withdrawn", label: "Withdrawn", kind: "outcome" },
+];
 
 export function presentHiringStage(status: string | null | undefined): {
   step: SimpleHiringJourneyStep;
@@ -49,6 +70,53 @@ export function presentHiringStage(status: string | null | undefined): {
 export function presentHiringStatusLabel(status: string | null | undefined): string {
   const presented = presentHiringStage(status);
   return presented.outcomeLabel ?? presented.label;
+}
+
+export function uniqueVisibleHiringPhases(stages: unknown = DEFAULT_HIRING_STAGES) {
+  const configured = configuredStages(stages);
+  return VISIBLE_HIRING_PHASES.filter((phase) => phase.fixed || configured.includes(phase.value));
+}
+
+export function candidateStatusOptions(stages: unknown = DEFAULT_HIRING_STAGES): CandidateStatusOption[] {
+  const configured = configuredStages(stages);
+  const phaseOptions = VISIBLE_HIRING_PHASES
+    .filter((phase) => phase.fixed || configured.includes(phase.value))
+    .map((phase) => ({ value: phase.value, label: phase.label, kind: "phase" as const, fixed: phase.fixed }));
+  return [...phaseOptions, ...TERMINAL_HIRING_OUTCOMES];
+}
+
+export function visibleStatusValue(status: string | null | undefined): CandidateStatusOption["value"] {
+  switch (status) {
+    case "shortlisted":
+    case "assessment":
+      return "screening";
+    case "handoff":
+      return "hired";
+    case "rejected":
+    case "withdrawn":
+    case "new":
+    case "screening":
+    case "interview":
+    case "offer":
+    case "hired":
+      return status;
+    default:
+      return "new";
+  }
+}
+
+export function stagesFromVisibleWorkflow({ interviewEnabled }: { interviewEnabled: boolean }): HiringStage[] {
+  return interviewEnabled
+    ? ["new", "screening", "shortlisted", "interview", "offer", "hired"]
+    : ["new", "screening", "shortlisted", "offer", "hired"];
+}
+
+export function isInterviewEnabled(stages: unknown): boolean {
+  return configuredStages(stages).includes("interview");
+}
+
+export function isOperationallyOpenVacancy(status: string | null | undefined): boolean {
+  return OPEN_VACANCY_STATUSES.includes(status as typeof OPEN_VACANCY_STATUSES[number]);
 }
 
 export function presentCandidateSource(source: string | null | undefined): string {

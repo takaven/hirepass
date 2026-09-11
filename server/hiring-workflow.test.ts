@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { allowedCandidateStatus, configuredStages, HIRING_STAGE_LABELS, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
+import { allowedCandidateStatus, configuredStages, HIRING_STAGE_LABELS, isOperationallyOpenVacancy, nextConfiguredStage, validateConfiguredStages } from "@shared/hiring-workflow";
 import { resolveManagerPassState } from "./manager-pass-state";
 
 describe("bounded hiring workflows", () => {
@@ -18,6 +18,17 @@ describe("bounded hiring workflows", () => {
   it("advances reduced workflows without disabled stages", () => {
     assert.equal(nextConfiguredStage("new", ["new", "interview", "hired"]), "interview");
     assert.equal(nextConfiguredStage("interview", ["new", "interview", "hired"]), "hired");
+  });
+
+  it("uses an operational open-vacancy definition that excludes draft and closed states", () => {
+    assert.equal(isOperationallyOpenVacancy("active"), true);
+    assert.equal(isOperationallyOpenVacancy("open"), true);
+    assert.equal(isOperationallyOpenVacancy("sourcing"), true);
+    assert.equal(isOperationallyOpenVacancy("draft"), false);
+    assert.equal(isOperationallyOpenVacancy("on_hold"), false);
+    assert.equal(isOperationallyOpenVacancy("filled"), false);
+    assert.equal(isOperationallyOpenVacancy("closed_hired"), false);
+    assert.equal(isOperationallyOpenVacancy("closed_cancelled"), false);
   });
 
   it("supports a no-HR owner and waits for real interview completion before evaluation", () => {

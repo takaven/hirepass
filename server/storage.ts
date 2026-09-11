@@ -1,5 +1,6 @@
 import { eq, desc, asc, and, gte, sql, inArray, or, isNull } from "drizzle-orm";
 import { db } from "./db";
+import { isOperationallyOpenVacancy } from "@shared/hiring-workflow";
 import {
   managers, passes, candidates, passCandidates, interviews, 
   interviewEvaluations, offers, shareLinks, candidateLinks,
@@ -1125,9 +1126,7 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const activePasses = allPasses.filter(p => 
-      !['closed_hired', 'closed_cancelled', 'on_hold'].includes(p.status || '')
-    ).length;
+    const activePasses = allPasses.filter((p) => isOperationallyOpenVacancy(p.status)).length;
 
     const scheduledInterviews = allInterviews.filter(i => 
       i.status === "scheduled"
