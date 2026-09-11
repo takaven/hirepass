@@ -147,6 +147,26 @@ export function visibleStatusValue(status: string | null | undefined, stages: un
   }
 }
 
+export function shouldChangeVisibleCandidateStatus(
+  currentStatus: string | null | undefined,
+  targetStatus: CandidateStatusOption["value"],
+  stages: unknown = DEFAULT_HIRING_STAGES,
+): boolean {
+  return visibleStatusValue(currentStatus, stages) !== targetStatus;
+}
+
+export function candidatesRequiringVisibleStatusChange<T extends { id: number; status: string | null | undefined }>(
+  candidates: T[],
+  selectedIds: number[],
+  targetStatus: CandidateStatusOption["value"],
+  stages: unknown = DEFAULT_HIRING_STAGES,
+): T[] {
+  const selected = new Set(selectedIds);
+  return candidates.filter((candidate) =>
+    selected.has(candidate.id) && shouldChangeVisibleCandidateStatus(candidate.status, targetStatus, stages)
+  );
+}
+
 export function stagesFromVisibleWorkflow({ interviewEnabled }: { interviewEnabled: boolean }): HiringStage[] {
   return interviewEnabled
     ? ["new", "screening", "shortlisted", "interview", "offer", "hired"]

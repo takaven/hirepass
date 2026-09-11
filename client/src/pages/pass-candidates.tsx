@@ -63,7 +63,16 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Pass, Candidate, PassPosition, Manager } from "@shared/schema";
-import { candidateStatusOptions, presentHiringStage, presentHiringStatusLabel, uniqueVisibleHiringPhases, visibleStatusValue } from "@shared/hiring-workflow";
+import {
+  type CandidateStatusOption,
+  candidateStatusOptions,
+  candidatesRequiringVisibleStatusChange,
+  presentHiringStage,
+  presentHiringStatusLabel,
+  shouldChangeVisibleCandidateStatus,
+  uniqueVisibleHiringPhases,
+  visibleStatusValue,
+} from "@shared/hiring-workflow";
 
 interface PassCandidate {
   id: number;
@@ -440,11 +449,12 @@ export default function PassCandidates() {
   const handleDrop = useCallback((e: React.DragEvent, stageKey: string) => {
     e.preventDefault();
     setDragOverColumn(null);
-    if (draggedItem && draggedItem.status !== stageKey) {
-      updateStatusMutation.mutate({ id: draggedItem.id, status: stageKey });
+    const targetStatus = stageKey as CandidateStatusOption["value"];
+    if (draggedItem && shouldChangeVisibleCandidateStatus(draggedItem.status, targetStatus, pass?.enabledStages)) {
+      updateStatusMutation.mutate({ id: draggedItem.id, status: targetStatus });
     }
     setDraggedItem(null);
-  }, [draggedItem, updateStatusMutation]);
+  }, [draggedItem, pass?.enabledStages, updateStatusMutation]);
 
   const toggleSelection = (id: number) => {
     setSelectedCandidates(prev => 
@@ -453,8 +463,13 @@ export default function PassCandidates() {
   };
 
   const handleBulkMove = (status: string) => {
-    if (selectedCandidates.length > 0) {
-      bulkUpdateMutation.mutate({ ids: selectedCandidates, status });
+    const candidates = Object.values(pipeline || {}).flat();
+    const targetStatus = status as CandidateStatusOption["value"];
+    const ids = candidatesRequiringVisibleStatusChange(candidates, selectedCandidates, targetStatus, pass?.enabledStages).map((candidate) => candidate.id);
+    if (ids.length > 0) {
+      bulkUpdateMutation.mutate({ ids, status });
+    } else if (selectedCandidates.length > 0) {
+      setSelectedCandidates([]);
     }
   };
 
@@ -1010,8 +1025,11 @@ export default function PassCandidates() {
                   <Select
                     value={visibleStatusValue(detailCandidate.status, pass?.enabledStages)}
                     onValueChange={(status) => {
-                      updateStatusMutation.mutate({ id: detailCandidate.id, status });
-                      setDetailCandidate({ ...detailCandidate, status });
+                      const targetStatus = status as CandidateStatusOption["value"];
+                      if (shouldChangeVisibleCandidateStatus(detailCandidate.status, targetStatus, pass?.enabledStages)) {
+                        updateStatusMutation.mutate({ id: detailCandidate.id, status });
+                        setDetailCandidate({ ...detailCandidate, status });
+                      }
                     }}
                   >
                     <SelectTrigger className="rounded-xl" data-testid="select-detail-status">

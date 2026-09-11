@@ -6,6 +6,7 @@ import {
   backendStatusForVisiblePhase,
   canonicalVisibleHiringPhases,
   candidateStatusOptions,
+  candidatesRequiringVisibleStatusChange,
   isInterviewEnabled,
   isOperationallyOpenVacancy,
   presentCandidateSource,
@@ -13,6 +14,7 @@ import {
   presentHiringStatusLabel,
   stagesFromVisibleWorkflow,
   TERMINAL_HIRING_OUTCOMES,
+  shouldChangeVisibleCandidateStatus,
   uniqueVisibleHiringPhases,
   visibleStatusValue,
 } from "../../../shared/hiring-workflow";
@@ -99,6 +101,38 @@ describe("hiring workflow presentation", () => {
     assert.deepEqual(uniqueVisibleHiringPhases(stages).map((phase) => phase.label), ["Applied", "Review", "Decision"]);
     assert.equal(candidateStatusOptions(stages).some((option) => option.label === "Interview"), false);
     assert.equal(candidateStatusOptions(stages).every((option) => allowedCandidateStatus(option.value, stages)), true);
+  });
+
+  it("does not mutate candidates already inside the same visible Review phase", () => {
+    const canonical = ["new", "screening", "shortlisted", "interview", "offer", "hired"];
+    assert.equal(shouldChangeVisibleCandidateStatus("shortlisted", "screening", canonical), false);
+    assert.equal(shouldChangeVisibleCandidateStatus("screening", "screening", canonical), false);
+    assert.equal(shouldChangeVisibleCandidateStatus("shortlisted", "interview", canonical), true);
+    assert.equal(shouldChangeVisibleCandidateStatus("screening", "offer", canonical), true);
+  });
+
+  it("does not mutate legacy shortlisted-only candidates already inside Review", () => {
+    const stages = ["new", "shortlisted", "interview", "hired"];
+    assert.equal(shouldChangeVisibleCandidateStatus("shortlisted", "shortlisted", stages), false);
+    assert.equal(shouldChangeVisibleCandidateStatus("shortlisted", "interview", stages), true);
+  });
+
+  it("filters bulk moves to candidates whose visible status actually changes", () => {
+    const stages = ["new", "screening", "shortlisted", "interview", "offer", "hired"];
+    const selected = [
+      { id: 1, status: "screening" },
+      { id: 2, status: "shortlisted" },
+      { id: 3, status: "interview" },
+    ];
+
+    assert.deepEqual(
+      candidatesRequiringVisibleStatusChange(selected, [1, 2, 3], "screening", stages).map((candidate) => candidate.id),
+      [3],
+    );
+    assert.deepEqual(
+      candidatesRequiringVisibleStatusChange(selected, [1, 2], "screening", stages).map((candidate) => candidate.id),
+      [],
+    );
   });
 
   it("uses one open vacancy definition for Home and Analytics", () => {
