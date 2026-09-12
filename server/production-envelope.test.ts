@@ -213,10 +213,11 @@ async function login(baseUrl: string) {
 }
 
 async function exchangeCandidateSession(baseUrl: string) {
+  const contextId = "A".repeat(22);
   const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: baseUrl },
-    body: JSON.stringify({ token: candidateToken }),
+    headers: { "content-type": "application/json", origin: baseUrl, "x-hirepass-context": contextId },
+    body: JSON.stringify({ token: candidateToken, contextId }),
   });
   assert.equal(response.status, 204);
   const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
@@ -227,6 +228,7 @@ async function exchangeCandidateSession(baseUrl: string) {
 function candidatePassFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("cookie", cookie);
+  headers.set("x-hirepass-context", "A".repeat(22));
   if ((init.method || "GET").toUpperCase() !== "GET") headers.set("origin", baseUrl);
   return fetch(`${baseUrl}/api/external/candidate-pass${path}`, { ...init, headers });
 }
@@ -402,8 +404,8 @@ describe("HirePass production envelope", () => {
     }, async (baseUrl) => {
       const revoked = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: baseUrl },
-        body: JSON.stringify({ token: candidateToken }),
+        headers: { "content-type": "application/json", origin: baseUrl, "x-hirepass-context": "A".repeat(22) },
+        body: JSON.stringify({ token: candidateToken, contextId: "A".repeat(22) }),
       });
       assert.equal(revoked.status, 404);
     });
@@ -664,7 +666,11 @@ describe("HirePass production envelope", () => {
     assert.doesNotMatch(appSourceForPasses, /candidate-pass\/:token|manager-pass\/:token/);
     assert.match(bootstrapSource, /window\.location\.hash/);
     assert.match(bootstrapSource, /history\.replaceState/);
-    assert.match(bootstrapSource, /JSON\.stringify\(\{ token \}\)/);
+    assert.match(bootstrapSource, /sessionStorage\.setItem/);
+    assert.match(bootstrapSource, /crypto\.getRandomValues\(new Uint8Array\(16\)\)/);
+    assert.match(bootstrapSource, /EXTERNAL_PASS_CONTEXT_HEADER/);
+    assert.match(bootstrapSource, /JSON\.stringify\(\{ token, contextId \}\)/);
+    assert.match(bootstrapSource, /externalPassFetch/);
     assert.doesNotMatch(bootstrapSource, /\?token=/);
     assert.match(candidateStateSource, /uniqueVisibleHiringPhases\(enabledStages\)/);
     assert.doesNotMatch(candidateStateSource, /const stageOrder/);

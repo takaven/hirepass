@@ -1,7 +1,11 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import type { CandidateLink, ShareLink } from "@shared/schema";
-import type { ExternalPassKind } from "@shared/external-pass-links";
+import {
+  EXTERNAL_PASS_CONTEXT_HEADER,
+  isExternalPassContextId,
+  type ExternalPassKind,
+} from "@shared/external-pass-links";
 import { resolvePassAccess } from "./pass-access";
 import { storage } from "./storage";
 
@@ -11,6 +15,7 @@ const SESSION_VERSION = 1;
 type ExternalSessionPayload = {
   v: typeof SESSION_VERSION;
   kind: ExternalPassKind;
+  contextId: string;
   linkId: number;
   expiresAt: number;
 };
@@ -35,7 +40,7 @@ function encodeSession(payload: ExternalSessionPayload) {
   return `${body}.${signature(body)}`;
 }
 
-function decodeSession(value: string | undefined, kind: ExternalPassKind): ExternalSessionPayload | null {
+function decodeSession(value: string | undefined, kind: ExternalPassKind, contextId: string): ExternalSessionPayload | null {
   if (!value) return null;
   const [body, providedSignature, extra] = value.split(".");
   if (!body || !providedSignature || extra) return null;
@@ -47,6 +52,7 @@ function decodeSession(value: string | undefined, kind: ExternalPassKind): Exter
     if (
       payload.v !== SESSION_VERSION ||
       payload.kind !== kind ||
+      payload.contextId !== contextId ||
       !Number.isInteger(payload.linkId) ||
       payload.linkId < 1 ||
       !Number.isFinite(payload.expiresAt) ||
@@ -58,9 +64,10 @@ function decodeSession(value: string | undefined, kind: ExternalPassKind): Exter
   }
 }
 
-function cookieName(kind: ExternalPassKind) {
+function cookieName(kind: ExternalPassKind, contextId: string) {
   const base = kind === "candidate" ? "hirepass-candidate-pass" : "hirepass-stakeholder-pass";
-  return process.env.NODE_ENV === "production" ? `__Secure-${base}` : base;
+  const name = `${base}-${contextId}`;
+  return process.env.NODE_ENV === "production" ? `__Secure-${name}` : name;
 }
 
 function cookiePath(kind: ExternalPassKind) {
@@ -91,10 +98,20 @@ function sessionExpiry(linkExpiry: Date | string | null | undefined) {
   return Number.isFinite(value) ? Math.min(value, upperBound) : upperBound;
 }
 
-export function setExternalPassSession(res: Response, kind: ExternalPassKind, link: CandidateLink | ShareLink) {
+export function externalPassContextId(req: Request): string | null {
+  const value = req.get(EXTERNAL_PASS_CONTEXT_HEADER);
+  return isExternalPassContextId(value) ? value : null;
+}
+
+export function setExternalPassSession(
+  res: Response,
+  kind: ExternalPassKind,
+  contextId: string,
+  link: CandidateLink | ShareLink,
+) {
   const expiresAt = sessionExpiry(link.expiresAt);
   const maxAge = Math.max(0, expiresAt - Date.now());
-  res.cookie(cookieName(kind), encodeSession({ v: SESSION_VERSION, kind, linkId: link.id, expiresAt }), {
+  res.cookie(cookieName(kind, contextId), encodeSession({ v: SESSION_VERSION, kind, contextId, linkId: link.id, expiresAt }), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
@@ -103,8 +120,8 @@ export function setExternalPassSession(res: Response, kind: ExternalPassKind, li
   });
 }
 
-export function clearExternalPassSession(res: Response, kind: ExternalPassKind) {
-  res.clearCookie(cookieName(kind), {
+export function clearExternalPassSession(res: Response, kind: ExternalPassKind, contextId: string) {
+  res.clearCookie(cookieName(kind, contextId), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
@@ -136,7 +153,9 @@ export function requireSameOrigin(req: Request, res: Response, next: NextFunctio
 }
 
 async function resolveSessionLink(req: Request, kind: ExternalPassKind) {
-  const payload = decodeSession(readCookie(req, cookieName(kind)), kind);
+  const contextId = externalPassContextId(req);
+  if (!contextId) return null;
+  const payload = decodeSession(readCookie(req, cookieName(kind, contextId)), kind, contextId);
   if (!payload) return null;
   return kind === "candidate"
     ? storage.getCandidateLink(payload.linkId)
@@ -145,10 +164,11 @@ async function resolveSessionLink(req: Request, kind: ExternalPassKind) {
 
 export function requireExternalCandidateSession() {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const contextId = externalPassContextId(req);
     const candidateLink = await resolveSessionLink(req, "candidate") as CandidateLink | undefined;
     const access = resolvePassAccess(candidateLink, { inactive: "Invalid or inactive link", expired: "Link has expired" });
     if (!access.allowed) {
-      clearExternalPassSession(res, "candidate");
+      if (contextId) clearExternalPassSession(res, "candidate", contextId);
       return res.status(access.status).json({ error: access.error });
     }
     (res.locals as ExternalSessionLocals).candidateLink = access.link;
@@ -158,10 +178,11 @@ export function requireExternalCandidateSession() {
 
 export function requireExternalStakeholderSession() {
   return async (req: Request, res: Response, next: NextFunction) => {
+    const contextId = externalPassContextId(req);
     const stakeholderLink = await resolveSessionLink(req, "stakeholder") as ShareLink | undefined;
     const access = resolvePassAccess(stakeholderLink, { inactive: "Invalid share link", expired: "Share link has expired" });
     if (!access.allowed) {
-      clearExternalPassSession(res, "stakeholder");
+      if (contextId) clearExternalPassSession(res, "stakeholder", contextId);
       return res.status(access.status).json({ error: access.error });
     }
     (res.locals as ExternalSessionLocals).stakeholderLink = access.link;

@@ -49,9 +49,10 @@ import { wakeAiReviewWorker } from "./ai/worker";
 import { enqueueEmail, type EmailIntent } from "./email/outbox";
 import { getEmailConfig, publicAppUrl } from "./email/config";
 import { resolveCompanyAccentColor } from "@shared/public-branding";
-import { externalPassLandingPath, isExternalPassToken } from "@shared/external-pass-links";
+import { externalPassLandingPath, isExternalPassContextId, isExternalPassToken } from "@shared/external-pass-links";
 import {
   candidateSessionLink,
+  externalPassContextId,
   requireExternalCandidateSession,
   requireExternalStakeholderSession,
   requireSameOrigin,
@@ -1958,11 +1959,15 @@ export async function registerRoutes(
 
   app.post("/api/external/stakeholder-pass/session", requireSameOrigin, async (req, res) => {
     const token = req.body?.token;
+    const contextId = req.body?.contextId;
+    if (!isExternalPassContextId(contextId) || externalPassContextId(req) !== contextId) {
+      return res.status(400).json({ error: "Invalid external Pass context" });
+    }
     if (!isExternalPassToken("stakeholder", token)) return res.status(404).json({ error: "Invalid share link" });
     const shareLink = await storage.getShareLinkByToken(token);
     const access = resolvePassAccess(shareLink, { inactive: "Invalid share link", expired: "Share link has expired" });
     if (!access.allowed) return res.status(access.status).json({ error: access.error });
-    setExternalPassSession(res, "stakeholder", access.link);
+    setExternalPassSession(res, "stakeholder", contextId, access.link);
     res.status(204).end();
   });
   app.use("/api/external/stakeholder-pass", requireExternalStakeholderSession());
@@ -2333,11 +2338,15 @@ export async function registerRoutes(
 
   app.post("/api/external/candidate-pass/session", requireSameOrigin, async (req, res) => {
     const token = req.body?.token;
+    const contextId = req.body?.contextId;
+    if (!isExternalPassContextId(contextId) || externalPassContextId(req) !== contextId) {
+      return res.status(400).json({ error: "Invalid external Pass context" });
+    }
     if (!isExternalPassToken("candidate", token)) return res.status(404).json({ error: "Invalid or inactive link" });
     const candidateLink = await storage.getCandidateLinkByToken(token);
     const access = resolvePassAccess(candidateLink, { inactive: "Invalid or inactive link", expired: "Link has expired" });
     if (!access.allowed) return res.status(access.status).json({ error: access.error });
-    setExternalPassSession(res, "candidate", access.link);
+    setExternalPassSession(res, "candidate", contextId, access.link);
     res.status(204).end();
   });
   app.use("/api/external/candidate-pass", requireExternalCandidateSession());

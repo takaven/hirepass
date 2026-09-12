@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,7 @@ import type { CandidatePassViewState } from "@shared/pass-state";
 import { validateClientUpload } from "@/lib/upload-preflight";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
 import type { PublicConfig } from "./public-apply";
-import { bootstrapExternalPassSession } from "@/lib/external-pass-session";
+import { bootstrapExternalPassSession, externalPassFetch, externalPassRequest } from "@/lib/external-pass-session";
 
 const CANDIDATE_PASS_API = "/api/external/candidate-pass";
 
@@ -91,7 +91,7 @@ function formatCandidateDate(value: string | Date | null | undefined) {
 }
 
 async function fetchCandidatePass(): Promise<CandidatePassData> {
-  const response = await fetch(CANDIDATE_PASS_API, { credentials: "include" });
+  const response = await externalPassFetch("candidate");
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -218,7 +218,7 @@ export default function CandidatePortalPass() {
   const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const sendMessageMutation = useMutation({
-    mutationFn: (message: string) => apiRequest("POST", `${CANDIDATE_PASS_API}/messages`, { message }),
+    mutationFn: (message: string) => externalPassRequest("candidate", "POST", "/messages", { message }),
     onSuccess: () => {
       toast({ title: "Message sent" });
       setMessageText("");
@@ -228,7 +228,7 @@ export default function CandidatePortalPass() {
   });
 
   const bookSlotMutation = useMutation({
-    mutationFn: (slotId: number) => apiRequest("POST", `${CANDIDATE_PASS_API}/interview-slot`, { slotId }),
+    mutationFn: (slotId: number) => externalPassRequest("candidate", "POST", "/interview-slot", { slotId }),
     onSuccess: () => {
       toast({ title: "Interview slot confirmed", description: "Your Candidate Pass has been updated." });
       setShowSlotDialog(false);
@@ -240,7 +240,7 @@ export default function CandidatePortalPass() {
 
   const respondOfferMutation = useMutation({
     mutationFn: (response: { response: string; reason?: string; message?: string }) =>
-      apiRequest("POST", `${CANDIDATE_PASS_API}/offer-response`, response),
+      externalPassRequest("candidate", "POST", "/offer-response", response),
     onSuccess: () => {
       toast({ title: "Offer response submitted", description: "Your Candidate Pass has been updated." });
       setOfferResponseMode(null);
@@ -251,7 +251,7 @@ export default function CandidatePortalPass() {
   });
 
   const confirmAssessmentMutation = useMutation({
-    mutationFn: (assessmentType: string) => apiRequest("POST", `${CANDIDATE_PASS_API}/assessment-complete`, { assessmentType }),
+    mutationFn: (assessmentType: string) => externalPassRequest("candidate", "POST", "/assessment-complete", { assessmentType }),
     onSuccess: () => {
       toast({ title: "Assessment completion recorded", description: "Your Candidate Pass has been updated." });
       queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
@@ -261,7 +261,7 @@ export default function CandidatePortalPass() {
 
   const submitDocumentMutation = useMutation({
     mutationFn: async ({ documentId, file }: { documentId: number; file: File }) =>
-      apiRequest("POST", `${CANDIDATE_PASS_API}/documents`, {
+      externalPassRequest("candidate", "POST", "/documents", {
         documentId,
         fileName: file.name,
         mimeType: file.type,

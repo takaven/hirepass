@@ -219,18 +219,20 @@ async function json(response: Response) {
 }
 
 async function exchangeSession(baseUrl: string, kind: "candidate" | "stakeholder", token: string) {
+  const contextId = kind === "candidate" ? "A".repeat(22) : "B".repeat(22);
   const response = await fetch(`${baseUrl}/api/external/${kind === "candidate" ? "candidate-pass" : "stakeholder-pass"}/session`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: baseUrl },
-    body: JSON.stringify({ token }),
+    headers: { "content-type": "application/json", origin: baseUrl, "x-hirepass-context": contextId },
+    body: JSON.stringify({ token, contextId }),
   });
   const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
-  return { response, cookie };
+  return { response, cookie, contextId };
 }
 
-function passFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}) {
+function passFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}, contextId = path.includes("stakeholder-pass") ? "B".repeat(22) : "A".repeat(22)) {
   const headers = new Headers(init.headers);
   headers.set("cookie", cookie);
+  headers.set("x-hirepass-context", contextId);
   if ((init.method || "GET").toUpperCase() !== "GET") headers.set("origin", baseUrl);
   return fetch(`${baseUrl}${path}`, { ...init, headers });
 }

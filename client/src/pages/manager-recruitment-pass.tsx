@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared
 import type { ManagerPassViewState } from "@shared/pass-state";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
 import type { PublicConfig } from "./public-apply";
-import { bootstrapExternalPassSession } from "@/lib/external-pass-session";
+import { bootstrapExternalPassSession, externalPassFetch, externalPassRequest } from "@/lib/external-pass-session";
 
 const STAKEHOLDER_PASS_API = "/api/external/stakeholder-pass";
 
@@ -57,7 +57,7 @@ function formatManagerDate(value: string | Date | null | undefined) {
 }
 
 async function fetchManagerPass(): Promise<ManagerPassData> {
-  const response = await fetch(STAKEHOLDER_PASS_API, { credentials: "include" });
+  const response = await externalPassFetch("stakeholder");
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -137,7 +137,7 @@ export default function ManagerRecruitmentPass() {
   const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const approveRequestMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `${STAKEHOLDER_PASS_API}/approve-jd`, {}),
+    mutationFn: () => externalPassRequest("stakeholder", "POST", "/approve-jd", {}),
     onSuccess: () => {
       toast({ title: "Hiring request approved", description: "The hiring team has your decision." });
       setShowRequestDialog(false);
@@ -147,7 +147,7 @@ export default function ManagerRecruitmentPass() {
   });
 
   const requestChangesMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `${STAKEHOLDER_PASS_API}/request-jd-changes`, { feedback: decisionNotes }),
+    mutationFn: () => externalPassRequest("stakeholder", "POST", "/request-jd-changes", { feedback: decisionNotes }),
     onSuccess: () => {
       toast({ title: "Changes requested", description: "The hiring team has your feedback." });
       setDecisionNotes("");
@@ -158,7 +158,7 @@ export default function ManagerRecruitmentPass() {
   });
 
   const shortlistMutation = useMutation({
-    mutationFn: (candidateId: number) => apiRequest("POST", `${STAKEHOLDER_PASS_API}/candidates/${candidateId}/shortlist`),
+    mutationFn: (candidateId: number) => externalPassRequest("stakeholder", "POST", `/candidates/${candidateId}/shortlist`),
     onSuccess: () => {
       toast({ title: "Candidate advanced", description: "Your Stakeholder Pass has been updated." });
       queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
@@ -167,7 +167,7 @@ export default function ManagerRecruitmentPass() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (candidateId: number) => apiRequest("POST", `${STAKEHOLDER_PASS_API}/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
+    mutationFn: (candidateId: number) => externalPassRequest("stakeholder", "POST", `/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
     onSuccess: () => {
       toast({ title: "Candidate rejected", description: "Your Stakeholder Pass has been updated." });
       setDecisionNotes("");
@@ -178,7 +178,7 @@ export default function ManagerRecruitmentPass() {
 
   const interviewSetupMutation = useMutation({
     mutationFn: () =>
-      apiRequest("POST", `${STAKEHOLDER_PASS_API}/interview-setup`, {
+      externalPassRequest("stakeholder", "POST", "/interview-setup", {
         technicalAssessmentRequired: false,
         interviewFormat,
         interviewRounds: 1,
@@ -199,7 +199,7 @@ export default function ManagerRecruitmentPass() {
 
   const evaluationMutation = useMutation({
     mutationFn: (interviewId: number) =>
-      apiRequest("POST", `${STAKEHOLDER_PASS_API}/evaluations`, {
+      externalPassRequest("stakeholder", "POST", "/evaluations", {
         interviewId,
         recommendation: evaluationRecommendation,
         notesObservations: decisionNotes,
@@ -216,7 +216,7 @@ export default function ManagerRecruitmentPass() {
 
   const finalDecisionMutation = useMutation({
     mutationFn: ({ candidateId, decision }: { candidateId: number; decision: string }) =>
-      apiRequest("POST", `${STAKEHOLDER_PASS_API}/final-decisions`, {
+      externalPassRequest("stakeholder", "POST", "/final-decisions", {
         decisions: [{ passCandidateId: candidateId, decision, notes: decisionNotes }],
       }),
     onSuccess: () => {
