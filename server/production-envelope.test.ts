@@ -33,6 +33,8 @@ const future = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 const oldDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 const validPdf = "%PDF-1.4\nfictional hirepass test document\n%%EOF";
 const pdfBase64 = Buffer.from(validPdf).toString("base64");
+const candidateToken = `cand_${"E".repeat(43)}`;
+const stakeholderToken = "44444444-4444-4444-8444-444444444444";
 
 const pass = {
   id: 10,
@@ -83,7 +85,7 @@ const passCandidate = {
 
 const candidateLink = {
   id: 21,
-  token: "candidate-token",
+  token: candidateToken,
   passCandidateId: 101,
   canFillApplication: true,
   canTakeAssessment: true,
@@ -157,7 +159,9 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getPassCandidateById: async (id: number) => (id === 101 ? passCandidate : undefined),
     getShareLinksByPass: async () => [],
     getCandidateLinksByPassCandidate: async () => [candidateLink],
-    getCandidateLinkByToken: async (token: string) => (token === "candidate-token" ? candidateLink : undefined),
+    getCandidateLinkByToken: async (token: string) => (token === candidateToken ? candidateLink : undefined),
+    getCandidateLink: async (id: number) => id === candidateLink.id ? candidateLink : undefined,
+    getShareLink: async () => undefined,
     getCandidate: async (id: number) => (id === 201 ? candidate : undefined),
     getInterviewsByPass: async () => [],
     getInterviewsByPassCandidate: async () => [],
@@ -206,6 +210,25 @@ async function login(baseUrl: string) {
   });
   assert.equal(response.status, 200);
   return response.headers.get("set-cookie")?.split(";")[0] || "";
+}
+
+async function exchangeCandidateSession(baseUrl: string) {
+  const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: baseUrl },
+    body: JSON.stringify({ token: candidateToken }),
+  });
+  assert.equal(response.status, 204);
+  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+  assert(cookie);
+  return cookie;
+}
+
+function candidatePassFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("cookie", cookie);
+  if ((init.method || "GET").toUpperCase() !== "GET") headers.set("origin", baseUrl);
+  return fetch(`${baseUrl}/api/external/candidate-pass${path}`, { ...init, headers });
 }
 
 describe("HirePass production envelope", () => {
@@ -264,7 +287,8 @@ describe("HirePass production envelope", () => {
       assert.equal((await fetch(`${baseUrl}/api/candidates`)).status, 401);
       assert.equal((await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidate-links/21/revoke`, { method: "POST" })).status, 401);
 
-      const external = await fetch(`${baseUrl}/api/candidate-pass/candidate-token`);
+      const externalCookie = await exchangeCandidateSession(baseUrl);
+      const external = await candidatePassFetch(baseUrl, "", externalCookie);
       assert.equal(external.status, 200);
 
       const cookie = await login(baseUrl);
@@ -281,7 +305,8 @@ describe("HirePass production envelope", () => {
 
   it("stores valid Candidate Pass document bytes and requires auth for HR retrieval", async () => {
     await withServer({}, async (baseUrl) => {
-      const upload = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const externalCookie = await exchangeCandidateSession(baseUrl);
+      const upload = await candidatePassFetch(baseUrl, "/documents", externalCookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -315,7 +340,7 @@ describe("HirePass production envelope", () => {
   it("issues every generic Candidate and Stakeholder Pass with finite default expiry", async () => {
     const issued: any[] = [];
     await withServer({
-      createShareLink: async (data: any) => { issued.push(data); return { id: 1, token: "manager", ...data }; },
+      createShareLink: async (data: any) => { issued.push(data); return { id: 1, token: stakeholderToken, ...data }; },
       createCandidateLink: async (data: any) => { issued.push(data); return { id: 2, ...data }; },
       getPassCandidate: async () => passCandidate,
       getCandidateLinksByPassCandidate: async () => [],
@@ -348,7 +373,8 @@ describe("HirePass production envelope", () => {
         return undefined;
       },
     }, async (baseUrl) => {
-      const spoofed = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const externalCookie = await exchangeCandidateSession(baseUrl);
+      const spoofed = await candidatePassFetch(baseUrl, "/documents", externalCookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ documentId: 701, fileName: "passport.pdf", mimeType: "application/pdf", fileDataBase64: Buffer.from("not a pdf").toString("base64") }),
@@ -356,14 +382,14 @@ describe("HirePass production envelope", () => {
       assert.equal(spoofed.status, 400);
       assert.equal(updated, false);
 
-      const pngAsPdf = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const pngAsPdf = await candidatePassFetch(baseUrl, "/documents", externalCookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ documentId: 701, fileName: "passport.pdf", mimeType: "application/pdf", fileDataBase64: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64") }),
       });
       assert.equal(pngAsPdf.status, 400);
 
-      const oversize = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const oversize = await candidatePassFetch(baseUrl, "/documents", externalCookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ documentId: 701, fileName: "large.pdf", mimeType: "application/pdf", fileDataBase64: Buffer.concat([Buffer.from("%PDF"), Buffer.alloc(10 * 1024 * 1024 + 1)]).toString("base64") }),
@@ -374,10 +400,10 @@ describe("HirePass production envelope", () => {
     await withServer({
       getCandidateLinkByToken: async () => ({ ...candidateLink, isActive: false }),
     }, async (baseUrl) => {
-      const revoked = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const revoked = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documentId: 701, fileName: "passport.pdf", mimeType: "application/pdf", fileDataBase64: pdfBase64 }),
+        headers: { "content-type": "application/json", origin: baseUrl },
+        body: JSON.stringify({ token: candidateToken }),
       });
       assert.equal(revoked.status, 404);
     });
@@ -404,33 +430,33 @@ describe("HirePass production envelope", () => {
     }
   });
 
-  it("never logs Candidate or Stakeholder Pass bearer tokens for representative outcomes and nested routes", async () => {
+  it("never places Candidate or Stakeholder bearer tokens in logged request URLs", async () => {
     const token = "known_bearer_token_must_not_appear";
     const lines: string[] = [];
     const app = express();
     app.use(express.json());
     app.use(safeApiRequestLogger((message) => lines.push(message)));
-    app.get("/api/candidate-pass/:token", (req, res) => res.status(req.params.token === token ? 200 : 404).json({ ok: true }));
-    app.post("/api/candidate-pass/:token/messages", (_req, res) => res.status(410).json({ error: "expired" }));
-    app.post("/api/candidate-pass/:token/documents/:id/review", (_req, res) => res.status(404).json({ error: "revoked" }));
-    app.get("/api/manager-pass/:token", (_req, res) => res.status(200).json({ ok: true }));
-    app.post("/api/manager-pass/:token/candidates/:id/decision", (_req, res) => res.status(401).json({ error: "invalid" }));
+    app.post("/api/external/candidate-pass/session", (req, res) => res.status(req.body.token === token ? 204 : 404).end());
+    app.get("/api/external/candidate-pass", (_req, res) => res.status(200).json({ ok: true }));
+    app.post("/api/external/candidate-pass/messages", (_req, res) => res.status(410).json({ error: "expired" }));
+    app.get("/api/external/stakeholder-pass", (_req, res) => res.status(200).json({ ok: true }));
+    app.post("/api/external/stakeholder-pass/final-decisions", (_req, res) => res.status(401).json({ error: "invalid" }));
     const server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const address = server.address();
     assert(address && typeof address === "object");
     try {
       const base = `http://127.0.0.1:${address.port}`;
-      await fetch(`${base}/api/candidate-pass/${token}`);
-      await fetch(`${base}/api/candidate-pass/${token}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      await fetch(`${base}/api/candidate-pass/${token}/documents/7/review`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-      await fetch(`${base}/api/manager-pass/${token}`);
-      await fetch(`${base}/api/manager-pass/${token}/candidates/9/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      await fetch(`${base}/api/external/candidate-pass/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+      await fetch(`${base}/api/external/candidate-pass`);
+      await fetch(`${base}/api/external/candidate-pass/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      await fetch(`${base}/api/external/stakeholder-pass`);
+      await fetch(`${base}/api/external/stakeholder-pass/final-decisions`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       assert.equal(lines.length, 5);
       assert.equal(lines.some((line) => line.includes(token)), false);
-      assert(lines.some((line) => line.includes("GET /api/candidate-pass/:token 200")));
-      assert(lines.some((line) => line.includes("POST /api/candidate-pass/:token/messages 410")));
-      assert(lines.some((line) => line.includes("POST /api/manager-pass/:token/candidates/:id/decision 401")));
+      assert(lines.some((line) => line.includes("GET /api/external/candidate-pass 200")));
+      assert(lines.some((line) => line.includes("POST /api/external/candidate-pass/messages 410")));
+      assert(lines.some((line) => line.includes("POST /api/external/stakeholder-pass/final-decisions 401")));
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
     }
@@ -524,6 +550,7 @@ describe("HirePass production envelope", () => {
     const app = express();
     app.use(persistentRateLimit());
     app.post("/api/auth/login", (_req, res) => res.json({ ok: true }));
+    app.post("/api/external/candidate-pass/session", (_req, res) => res.status(204).end());
     const server = createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const address = server.address();
@@ -535,13 +562,17 @@ describe("HirePass production envelope", () => {
       assert.equal(blocked.status, 429);
       assert.equal(blocked.headers.get("ratelimit-limit"), "10");
       assert(blocked.headers.get("retry-after"));
+      count = 0;
+      const exchange = await fetch(`http://127.0.0.1:${address.port}/api/external/candidate-pass/session`, { method: "POST" });
+      assert.equal(exchange.status, 204);
+      assert.equal(exchange.headers.get("ratelimit-limit"), "60");
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
       await new Promise<void>((resolve, reject) => server.close((error?: Error) => error ? reject(error) : resolve()));
     }
   });
 
-  it("production-disables legacy AI and onboarding token routes", async () => {
+  it("production-disables legacy AI, onboarding, and bearer-token path routes", async () => {
     const { disableOutOfScopeProductionRoutes } = await import("./auth");
     const previousNodeEnv = process.env.NODE_ENV;
     const blockedStatuses: number[] = [];
@@ -560,7 +591,13 @@ describe("HirePass production envelope", () => {
       disableOutOfScopeProductionRoutes({ path: "/api/onboarding-portal/onb_token" } as any, response as any, () => {
         nextCalled = true;
       });
-      assert.deepEqual(blockedStatuses, [404, 404]);
+      disableOutOfScopeProductionRoutes({ path: `/api/candidate-pass/${candidateToken}` } as any, response as any, () => {
+        nextCalled = true;
+      });
+      disableOutOfScopeProductionRoutes({ path: `/api/manager-pass/${stakeholderToken}` } as any, response as any, () => {
+        nextCalled = true;
+      });
+      assert.deepEqual(blockedStatuses, [404, 404, 404, 404]);
       assert.equal(nextCalled, false);
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
@@ -603,6 +640,8 @@ describe("HirePass production envelope", () => {
     assert.match(publicApplySource, /I can contact \{config\.careersContactEmail \|\| "the hiring organisation"\} if I no longer wish to be considered for future opportunities/);
 
     const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
+    const appSourceForPasses = await readFile(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
+    const bootstrapSource = await readFile(path.join(process.cwd(), "client/src/lib/external-pass-session.ts"), "utf8");
     const candidateStateSource = await readFile(path.join(process.cwd(), "server/candidate-pass-state.ts"), "utf8");
     assert.match(candidateSource, />Candidate<\/p>/);
     assert.match(candidateSource, /Your next step/);
@@ -618,6 +657,15 @@ describe("HirePass production envelope", () => {
     assert.doesNotMatch(candidateSource, /Dominant next action/);
     assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
     assert.doesNotMatch(candidateSource, /Latest update/);
+    assert.match(candidateSource, /\/api\/external\/candidate-pass/);
+    assert.doesNotMatch(candidateSource, /\/api\/candidate-pass\/\$\{/);
+    assert.match(appSourceForPasses, /location === "\/candidate-pass"/);
+    assert.match(appSourceForPasses, /location === "\/manager-pass"/);
+    assert.doesNotMatch(appSourceForPasses, /candidate-pass\/:token|manager-pass\/:token/);
+    assert.match(bootstrapSource, /window\.location\.hash/);
+    assert.match(bootstrapSource, /history\.replaceState/);
+    assert.match(bootstrapSource, /JSON\.stringify\(\{ token \}\)/);
+    assert.doesNotMatch(bootstrapSource, /\?token=/);
     assert.match(candidateStateSource, /uniqueVisibleHiringPhases\(enabledStages\)/);
     assert.doesNotMatch(candidateStateSource, /const stageOrder/);
     assert.doesNotMatch(candidateStateSource, /"Handoff"/);
@@ -628,6 +676,8 @@ describe("HirePass production envelope", () => {
     assert.match(stakeholderSource, /Relevant evidence/);
     assert.match(stakeholderSource, /<ExternalPassBrand config=\{publicConfig\} descriptor="Stakeholder Pass" \/>/);
     assert.match(stakeholderSource, /stakeholder-pass-primary-action/);
+    assert.match(stakeholderSource, /\/api\/external\/stakeholder-pass/);
+    assert.doesNotMatch(stakeholderSource, /\/api\/manager-pass\/\$\{/);
     assert.doesNotMatch(stakeholderSource, /bg-slate-950/);
     assert.doesNotMatch(stakeholderSource, /\["Now", managerPassState\.headline\]/);
   });
@@ -789,11 +839,11 @@ describe("HirePass production envelope", () => {
       process.env.NODE_ENV = "production";
       process.env.HIREPASS_EMAIL_ENABLED = "true";
       process.env.HIREPASS_PUBLIC_BASE_URL = "http://example.test";
-      assert.equal(publicAppUrl("/candidate-pass/token"), null);
+      assert.equal(publicAppUrl(`/candidate-pass#${candidateToken}`), null);
       process.env.HIREPASS_PUBLIC_BASE_URL = "https://careers.example.test/path?ignored=true";
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
-      assert.equal(publicAppUrl("/candidate-pass/token"), "https://careers.example.test/candidate-pass/token");
+      assert.equal(publicAppUrl(`/candidate-pass#${candidateToken}`), `https://careers.example.test/candidate-pass#${candidateToken}`);
       process.env.NODE_ENV = "test";
 
       await withServer({
@@ -832,7 +882,7 @@ describe("HirePass production envelope", () => {
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
       await withServer({
-        createShareLink: async (data: any) => ({ id: 11, token: "stakeholder-token", ...data }),
+        createShareLink: async (data: any) => ({ id: 11, token: stakeholderToken, ...data }),
         createCandidateLink: async (data: any) => ({ id: 12, token: data.token, ...data }),
         enqueueEmail: async (email: any) => {
           emails.push(email);
@@ -844,8 +894,8 @@ describe("HirePass production envelope", () => {
         assert.equal((await fetch(`${baseUrl}/api/candidate-links`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passCandidateId: 101 }) })).status, 201);
       });
       assert.equal(emails.length, 2);
-      assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/manager-pass\/stakeholder-token/);
-      assert.match(emails[1].bodyText, /https:\/\/careers\.example\.test\/candidate-pass\//);
+      assert.match(emails[0].bodyText, new RegExp(`https://careers\\.example\\.test/manager-pass#${stakeholderToken}`));
+      assert.match(emails[1].bodyText, /https:\/\/careers\.example\.test\/candidate-pass#cand_/);
     } finally {
       if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
       if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;

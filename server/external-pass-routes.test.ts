@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { afterEach, before, describe, it } from "node:test";
 import express from "express";
+import { externalPassLandingPath } from "@shared/external-pass-links";
 
 process.env.ANTHROPIC_API_KEY ||= "test-key";
 process.env.DATABASE_URL ||= "postgres://hirepass_test:hirepass_test@127.0.0.1:1/hirepass_test";
@@ -20,10 +21,14 @@ function daysFromNow(days: number) {
 
 const future = daysFromNow(7);
 const past = daysFromNow(-7);
+const candidateToken = `cand_${"A".repeat(43)}`;
+const expiredCandidateToken = `cand_${"B".repeat(43)}`;
+const inactiveCandidateToken = `cand_${"C".repeat(43)}`;
+const stakeholderToken = "11111111-1111-4111-8111-111111111111";
 
 const activeCandidateLink = {
   id: 1,
-  token: "candidate-active",
+  token: candidateToken,
   passCandidateId: 101,
   canFillApplication: true,
   canTakeAssessment: true,
@@ -34,8 +39,8 @@ const activeCandidateLink = {
   createdAt: new Date("2026-08-22T08:00:00.000Z"),
 };
 
-const expiredCandidateLink = { ...activeCandidateLink, token: "candidate-expired", expiresAt: past };
-const inactiveCandidateLink = { ...activeCandidateLink, token: "candidate-inactive", isActive: false };
+const expiredCandidateLink = { ...activeCandidateLink, id: 2, token: expiredCandidateToken, expiresAt: past };
+const inactiveCandidateLink = { ...activeCandidateLink, id: 3, token: inactiveCandidateToken, isActive: false };
 
 const passCandidate = {
   id: 101,
@@ -243,11 +248,12 @@ afterEach(() => {
 async function withServer(overrides: StorageOverrides, callback: (baseUrl: string) => Promise<void>) {
   overrideStorage({
     getCandidateLinkByToken: async (token: string) => {
-      if (token === "candidate-active") return activeCandidateLink;
-      if (token === "candidate-expired") return expiredCandidateLink;
-      if (token === "candidate-inactive") return inactiveCandidateLink;
+      if (token === candidateToken) return activeCandidateLink;
+      if (token === expiredCandidateToken) return expiredCandidateLink;
+      if (token === inactiveCandidateToken) return inactiveCandidateLink;
       return undefined;
     },
+    getCandidateLink: async (id: number) => [activeCandidateLink, expiredCandidateLink, inactiveCandidateLink].find((link) => link.id === id),
     getPassCandidateById: async () => passCandidate,
     getCandidate: async () => candidate,
     getPass: async () => pass,
@@ -271,7 +277,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     markMessageAsRead: async () => undefined,
     getShareLinkByToken: async () => ({
       id: 11,
-      token: "manager-active",
+      token: stakeholderToken,
       passId: 10,
       managerId: 301,
       linkType: "manager",
@@ -282,6 +288,19 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
       isActive: true,
       createdAt: new Date("2026-08-22T08:00:00.000Z"),
     }),
+    getShareLink: async (id: number) => id === 11 ? ({
+      id: 11,
+      token: stakeholderToken,
+      passId: 10,
+      managerId: 301,
+      linkType: "manager",
+      permissions: null,
+      expiresAt: future,
+      accessCount: 0,
+      lastAccessedAt: null,
+      isActive: true,
+      createdAt: new Date("2026-08-22T08:00:00.000Z"),
+    }) : undefined,
     updateShareLink: async (_id: number, data: unknown) => data,
     getPassWithDetails: async () => pass,
     getPassCandidatesWithDetails: async () => [{ ...passCandidate, candidate }],
@@ -314,6 +333,27 @@ async function json(response: Response) {
   return response.json() as Promise<any>;
 }
 
+type TestPassKind = "candidate" | "stakeholder";
+
+async function exchangeSession(baseUrl: string, kind: TestPassKind, token: string) {
+  const response = await fetch(`${baseUrl}/api/external/${kind === "candidate" ? "candidate-pass" : "stakeholder-pass"}/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: baseUrl },
+    body: JSON.stringify({ token }),
+  });
+  assert.equal(response.status, 204);
+  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+  assert(cookie);
+  return cookie;
+}
+
+function passFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("cookie", cookie);
+  if ((init.method || "GET").toUpperCase() !== "GET") headers.set("origin", baseUrl);
+  return fetch(`${baseUrl}${path}`, { ...init, headers });
+}
+
 function assertAbsent(value: unknown, fields: string[]) {
   if (!value || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -329,13 +369,182 @@ function assertAbsent(value: unknown, fields: string[]) {
 }
 
 describe("external Candidate Pass route security", () => {
+  it("generates fragment-only Candidate and Stakeholder landing URLs", () => {
+    for (const [kind, token, expectedPath] of [
+      ["candidate", candidateToken, "/candidate-pass"],
+      ["stakeholder", stakeholderToken, "/manager-pass"],
+    ] as const) {
+      const url = new URL(`https://careers.example.test${externalPassLandingPath(kind, token)}`);
+      assert.equal(url.pathname, expectedPath);
+      assert.equal(url.search, "");
+      assert.equal(url.hash, `#${token}`);
+      assert.equal(`${url.pathname}${url.search}`.includes(token), false);
+    }
+  });
+
+  it("exchanges bearer bodies for scoped HttpOnly cookies without echoing the bearer", async () => {
+    await withServer({}, async (baseUrl) => {
+      const candidate = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: baseUrl },
+        body: JSON.stringify({ token: candidateToken }),
+      });
+      assert.equal(candidate.status, 204);
+      assert.equal(candidate.headers.get("cache-control"), "no-store");
+      assert.equal(candidate.headers.get("referrer-policy"), "no-referrer");
+      const candidateCookie = candidate.headers.get("set-cookie") || "";
+      assert.match(candidateCookie, /HttpOnly/i);
+      assert.match(candidateCookie, /SameSite=Strict/i);
+      assert.match(candidateCookie, /Path=\/api\/external\/candidate-pass/i);
+      assert.match(candidateCookie, /Max-Age=/i);
+      assert.equal(candidateCookie.includes(candidateToken), false);
+
+      const stakeholder = await fetch(`${baseUrl}/api/external/stakeholder-pass/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: baseUrl },
+        body: JSON.stringify({ token: stakeholderToken }),
+      });
+      assert.equal(stakeholder.status, 204);
+      const stakeholderCookie = stakeholder.headers.get("set-cookie") || "";
+      assert.match(stakeholderCookie, /Path=\/api\/external\/stakeholder-pass/i);
+      assert.equal(stakeholderCookie.includes(stakeholderToken), false);
+    });
+  });
+
+  it("marks production external-session cookies Secure and caps them below Pass expiry", async () => {
+    const previous = {
+      nodeEnv: process.env.NODE_ENV,
+      secret: process.env.HIREPASS_SESSION_SECRET,
+      publicBase: process.env.HIREPASS_PUBLIC_BASE_URL,
+    };
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.HIREPASS_SESSION_SECRET = "production-test-session-secret-at-least-32-characters";
+      await withServer({}, async (baseUrl) => {
+        process.env.HIREPASS_PUBLIC_BASE_URL = baseUrl;
+        const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: baseUrl },
+          body: JSON.stringify({ token: candidateToken }),
+        });
+        assert.equal(response.status, 204);
+        const cookie = response.headers.get("set-cookie") || "";
+        assert.match(cookie, /^__Secure-hirepass-candidate-pass=/);
+        assert.match(cookie, /; Secure/i);
+        assert.match(cookie, /; HttpOnly/i);
+        assert.match(cookie, /; SameSite=Strict/i);
+        const maxAge = Number(/Max-Age=(\d+)/i.exec(cookie)?.[1]);
+        assert(maxAge > 0 && maxAge <= 8 * 60 * 60);
+      });
+    } finally {
+      if (previous.nodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous.nodeEnv;
+      if (previous.secret === undefined) delete process.env.HIREPASS_SESSION_SECRET; else process.env.HIREPASS_SESSION_SECRET = previous.secret;
+      if (previous.publicBase === undefined) delete process.env.HIREPASS_PUBLIC_BASE_URL; else process.env.HIREPASS_PUBLIC_BASE_URL = previous.publicBase;
+    }
+  });
+
+  it("keeps Candidate and Stakeholder external sessions isolated", async () => {
+    await withServer({}, async (baseUrl) => {
+      const candidateCookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const stakeholderCookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+      assert.equal((await passFetch(baseUrl, "/api/external/stakeholder-pass", candidateCookie)).status, 404);
+      assert.equal((await passFetch(baseUrl, "/api/external/candidate-pass", stakeholderCookie)).status, 404);
+      assert.equal((await passFetch(baseUrl, "/api/external/candidate-pass", candidateCookie)).status, 200);
+      assert.equal((await passFetch(baseUrl, "/api/external/stakeholder-pass", stakeholderCookie)).status, 200);
+    });
+  });
+
+  it("rejects a tampered external-session cookie", async () => {
+    await withServer({}, async (baseUrl) => {
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const tampered = `${cookie.slice(0, -1)}${cookie.endsWith("A") ? "B" : "A"}`;
+      assert.equal((await passFetch(baseUrl, "/api/external/candidate-pass", tampered)).status, 404);
+    });
+  });
+
+  it("rejects cross-site or originless external-session mutations", async () => {
+    let created = false;
+    await withServer({ createCandidateMessage: async () => { created = true; } }, async (baseUrl) => {
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      for (const origin of [undefined, "https://attacker.example"]) {
+        const headers = new Headers({ cookie, "content-type": "application/json" });
+        if (origin) headers.set("origin", origin);
+        const response = await fetch(`${baseUrl}/api/external/candidate-pass/messages`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ message: "Hello" }),
+        });
+        assert.equal(response.status, 403);
+      }
+      assert.equal(created, false);
+    });
+  });
+
+  it("rejects a cross-site bearer exchange before issuing a session", async () => {
+    await withServer({}, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://attacker.example" },
+        body: JSON.stringify({ token: candidateToken }),
+      });
+      assert.equal(response.status, 403);
+      assert.equal(response.headers.get("set-cookie"), null);
+    });
+  });
+
+  it("rechecks expiry after an external session has been issued", async () => {
+    let mutableLink = { ...activeCandidateLink };
+    await withServer({
+      getCandidateLinkByToken: async (token: string) => token === candidateToken ? mutableLink : undefined,
+      getCandidateLink: async (id: number) => id === mutableLink.id ? mutableLink : undefined,
+    }, async (baseUrl) => {
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      mutableLink = { ...mutableLink, expiresAt: past };
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass", cookie);
+      assert.equal(response.status, 410);
+    });
+  });
+
+  it("rejects expired and revoked Stakeholder token exchanges", async () => {
+    for (const link of [
+      { id: 11, token: stakeholderToken, passId: 10, managerId: 301, linkType: "manager", expiresAt: past, isActive: true },
+      { id: 11, token: stakeholderToken, passId: 10, managerId: 301, linkType: "manager", expiresAt: future, isActive: false },
+    ]) {
+      await withServer({ getShareLinkByToken: async () => link }, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/external/stakeholder-pass/session`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: baseUrl },
+          body: JSON.stringify({ token: stakeholderToken }),
+        });
+        assert.equal(response.status, link.isActive ? 410 : 404);
+      });
+    }
+  });
+
+  it("does not register the legacy token-in-path APIs", async () => {
+    await withServer({}, async (baseUrl) => {
+      assert.equal((await fetch(`${baseUrl}/api/candidate-pass/${candidateToken}`)).status, 404);
+      assert.equal((await fetch(`${baseUrl}/api/manager-pass/${stakeholderToken}`)).status, 404);
+    });
+  });
+
+  it("sets no-referrer and no-store policy on external Pass landing paths", async () => {
+    await withServer({}, async (baseUrl) => {
+      for (const path of ["/candidate-pass", "/manager-pass"]) {
+        const response = await fetch(`${baseUrl}${path}`);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      }
+    });
+  });
+
   it("rejects expired Candidate Pass mutations", async () => {
     let createMessageCalled = false;
     await withServer({ createCandidateMessage: async () => { createMessageCalled = true; } }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-expired/messages`, {
+      const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Hello" }),
+        headers: { "content-type": "application/json", origin: baseUrl },
+        body: JSON.stringify({ token: expiredCandidateToken }),
       });
 
       assert.equal(response.status, 410);
@@ -346,10 +555,10 @@ describe("external Candidate Pass route security", () => {
   it("rejects inactive Candidate Pass mutations", async () => {
     let createDocumentCalled = false;
     await withServer({ createCandidateDocument: async () => { createDocumentCalled = true; } }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-inactive/documents`, {
+      const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ docType: "passport", label: "Passport", fileName: "passport.pdf", filePath: "/tmp/passport.pdf", fileSize: 10 }),
+        headers: { "content-type": "application/json", origin: baseUrl },
+        body: JSON.stringify({ token: inactiveCandidateToken }),
       });
 
       assert.equal(response.status, 404);
@@ -366,7 +575,8 @@ describe("external Candidate Pass route security", () => {
         return { slot: { ...interviewSlot, isBooked: true, bookedBy: 101, bookedAt: new Date() }, interview: { id: 1 } };
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, {
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/interview-slot", cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slotId: 501 }),
@@ -386,7 +596,8 @@ describe("external Candidate Pass route security", () => {
         return undefined;
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, {
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/interview-slot", cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ slotId: 999 }),
@@ -405,7 +616,8 @@ describe("external Candidate Pass route security", () => {
         markedMessageId = messageId;
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/messages/701/read`, { method: "PATCH" });
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/messages/701/read", cookie, { method: "PATCH" });
 
       assert.equal(response.status, 200);
       assert.equal(markedMessageId, 701);
@@ -420,7 +632,8 @@ describe("external Candidate Pass route security", () => {
         marked = true;
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/messages/888/read`, { method: "PATCH" });
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/messages/888/read", cookie, { method: "PATCH" });
 
       assert.equal(response.status, 404);
       assert.equal(marked, false);
@@ -429,7 +642,8 @@ describe("external Candidate Pass route security", () => {
 
   it("does not expose internal Candidate Pass fields", async () => {
     await withServer({}, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active`);
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass", cookie);
       const payload = await json(response);
 
       assert.equal(response.status, 200);
@@ -497,7 +711,8 @@ describe("internal interview route invariants", () => {
       getPass: async () => ({ ...pass, enabledStages: ["new", "screening", "hired"] }),
       bookInterviewSlotAndCreateInterview: async () => { booked = true; return undefined; },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/interview-slot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slotId: 501 }) });
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/interview-slot", cookie, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slotId: 501 }) });
       assert.equal(response.status, 409);
       assert.equal(booked, false);
     });
@@ -520,7 +735,8 @@ describe("Stakeholder Pass interview setup integrity", () => {
   it("accepts an eligible stakeholder and persists the fully validated slot set once", async () => {
     let persisted: any = null;
     await withServer({ configureInterviewSetup: async (passId: number, changes: any, slots: any[]) => { persisted = { passId, changes, slots }; return slots; } }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+      const cookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+      const response = await passFetch(baseUrl, "/api/external/stakeholder-pass/interview-setup", cookie, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
       assert.equal(response.status, 200);
       assert.equal(persisted.changes.interviewSetupCompleted, true);
       assert.deepEqual(persisted.slots.map((slot: any) => [slot.startTime, slot.endTime, slot.interviewerId]), [["09:00", "09:45", 301], ["11:15", "12:00", 301]]);
@@ -531,7 +747,8 @@ describe("Stakeholder Pass interview setup integrity", () => {
     for (const stakeholder of [{ ...manager, isActive: false }, { ...manager, canBeInterviewer: false }]) {
       let mutated = false;
       await withServer({ getManager: async () => stakeholder, configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
-        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
+        const cookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+        const response = await passFetch(baseUrl, "/api/external/stakeholder-pass/interview-setup", cookie, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(validSetup) });
         assert.equal(response.status, 403);
         assert.equal(mutated, false);
       });
@@ -549,7 +766,8 @@ describe("Stakeholder Pass interview setup integrity", () => {
     for (const invalid of invalidCases) {
       let mutated = false;
       await withServer({ configureInterviewSetup: async () => { mutated = true; return []; } }, async (baseUrl) => {
-        const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/interview-setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...validSetup, ...invalid }) });
+        const cookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+        const response = await passFetch(baseUrl, "/api/external/stakeholder-pass/interview-setup", cookie, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...validSetup, ...invalid }) });
         assert.equal(response.status, 400);
         assert.equal(mutated, false);
       });
@@ -569,7 +787,8 @@ describe("Candidate Pass offer responses", () => {
         return mutableOffer;
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-active/offer-response`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const cookie = await exchangeSession(baseUrl, "candidate", candidateToken);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/offer-response", cookie, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       persisted = { ...persisted, httpStatus: response.status };
     });
     return persisted;
@@ -593,10 +812,10 @@ describe("Candidate Pass offer responses", () => {
   });
 
   it("retains Candidate Pass expiry and revocation enforcement", async () => {
-    for (const token of ["candidate-expired", "candidate-inactive"]) {
+    for (const token of [expiredCandidateToken, inactiveCandidateToken]) {
       await withServer({}, async (baseUrl) => {
-        const response = await fetch(`${baseUrl}/api/candidate-pass/${token}/offer-response`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "accept" }) });
-        assert.equal(response.status, token === "candidate-expired" ? 410 : 404);
+        const response = await fetch(`${baseUrl}/api/external/candidate-pass/session`, { method: "POST", headers: { "content-type": "application/json", origin: baseUrl }, body: JSON.stringify({ token }) });
+        assert.equal(response.status, token === expiredCandidateToken ? 410 : 404);
       });
     }
   });
@@ -605,7 +824,8 @@ describe("Candidate Pass offer responses", () => {
 describe("external Manager Pass route privacy", () => {
   it("returns a decision-evidence DTO instead of raw candidate records", async () => {
     await withServer({}, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active`);
+      const cookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+      const response = await passFetch(baseUrl, "/api/external/stakeholder-pass", cookie);
       const payload = await json(response);
 
       assert.equal(response.status, 200);
@@ -627,7 +847,8 @@ describe("external Manager Pass route privacy", () => {
         return { id: 1, ...data, averageScore: null };
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/manager-pass/manager-active/evaluations`, {
+      const cookie = await exchangeSession(baseUrl, "stakeholder", stakeholderToken);
+      const response = await passFetch(baseUrl, "/api/external/stakeholder-pass/evaluations", cookie, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ interviewId: interview.id, recommendation: "proceed", notesObservations: "Observed evidence", educationalBackground: 4, averageScore: "4.00" }),
       });

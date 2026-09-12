@@ -144,6 +144,7 @@ export interface IStorage {
   updateOnboardingRecord(id: number, record: Partial<InsertOnboardingRecord>): Promise<OnboardingRecord | undefined>;
 
   // Share Links
+  getShareLink(id: number): Promise<ShareLink | undefined>;
   getShareLinkByToken(token: string): Promise<ShareLink | undefined>;
   getShareLinksByPass(passId: number): Promise<ShareLink[]>;
   createShareLink(shareLink: InsertShareLink): Promise<ShareLink>;
@@ -206,6 +207,7 @@ export interface IStorage {
   createInterviewEvaluation(data: InsertInterviewEvaluation): Promise<InterviewEvaluation>;
 
   // Candidate Pass methods
+  getCandidateLink(id: number): Promise<any | undefined>;
   getCandidateLinkByToken(token: string): Promise<any | undefined>;
   getCandidateLinksByPassCandidate(passCandidateId: number): Promise<any[]>;
   updateCandidateLink(id: number, data: Partial<typeof candidateLinks.$inferSelect>): Promise<any | undefined>;
@@ -965,6 +967,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Share Links
+  async getShareLink(id: number): Promise<ShareLink | undefined> {
+    const [link] = await db.select().from(shareLinks).where(eq(shareLinks.id, id));
+    return link;
+  }
+
   async getShareLinkByToken(token: string): Promise<ShareLink | undefined> {
     const [link] = await db.select().from(shareLinks).where(eq(shareLinks.token, token));
     return link;
@@ -1299,6 +1306,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ============ Candidate Pass Methods ============
+
+  async getCandidateLink(id: number): Promise<any | undefined> {
+    const [link] = await db.select().from(candidateLinks).where(eq(candidateLinks.id, id));
+    return link;
+  }
 
   async getCandidateLinkByToken(token: string): Promise<any | undefined> {
     const [link] = await db.select().from(candidateLinks).where(eq(candidateLinks.token, token));

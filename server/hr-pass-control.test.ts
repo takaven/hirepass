@@ -25,6 +25,9 @@ const future = daysFromNow(7);
 const past = daysFromNow(-7);
 const oldDate = daysFromNow(-12);
 const futureDateOnly = future.toISOString().slice(0, 10);
+const managerToken = "22222222-2222-4222-8222-222222222222";
+const nextManagerToken = "33333333-3333-4333-8333-333333333333";
+const candidateToken = `cand_${"D".repeat(43)}`;
 
 const pass = {
   id: 10,
@@ -76,7 +79,7 @@ const passCandidate = {
 
 const managerLink = {
   id: 11,
-  token: "manager-token",
+  token: managerToken,
   passId: 10,
   managerId: 301,
   linkType: "manager",
@@ -89,7 +92,7 @@ const managerLink = {
 
 const candidateLink = {
   id: 21,
-  token: "candidate-token",
+  token: candidateToken,
   passCandidateId: 101,
   canFillApplication: true,
   canTakeAssessment: true,
@@ -145,8 +148,9 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     getPassCandidateById: async (id: number) => (id === 101 ? passCandidate : id === 999 ? { ...passCandidate, id: 999, passId: 20 } : undefined),
     getShareLinksByPass: async (passId: number) => (passId === 10 ? [mutableManagerLink] : []),
     getShareLinkByToken: async (token: string) => (token === mutableManagerLink.token ? mutableManagerLink : undefined),
+    getShareLink: async (id: number) => id === mutableManagerLink.id ? mutableManagerLink : undefined,
     createShareLink: async (data: any) => {
-      mutableManagerLink = { ...managerLink, id: 12, token: "new-manager-token", ...data };
+      mutableManagerLink = { ...managerLink, id: 12, token: nextManagerToken, ...data };
       return mutableManagerLink;
     },
     updateShareLink: async (id: number, data: any) => {
@@ -155,6 +159,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
     },
     getCandidateLinksByPassCandidate: async (passCandidateId: number) => (passCandidateId === 101 ? [mutableCandidateLink] : []),
     getCandidateLinkByToken: async (token: string) => (token === mutableCandidateLink.token ? mutableCandidateLink : undefined),
+    getCandidateLink: async (id: number) => id === mutableCandidateLink.id ? mutableCandidateLink : undefined,
     createCandidateLink: async (data: any) => {
       mutableCandidateLink = { ...candidateLink, id: 22, token: data.token, ...data };
       return mutableCandidateLink;
@@ -211,6 +216,23 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
 
 async function json(response: Response) {
   return response.json() as Promise<any>;
+}
+
+async function exchangeSession(baseUrl: string, kind: "candidate" | "stakeholder", token: string) {
+  const response = await fetch(`${baseUrl}/api/external/${kind === "candidate" ? "candidate-pass" : "stakeholder-pass"}/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: baseUrl },
+    body: JSON.stringify({ token }),
+  });
+  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+  return { response, cookie };
+}
+
+function passFetch(baseUrl: string, path: string, cookie: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("cookie", cookie);
+  if ((init.method || "GET").toUpperCase() !== "GET") headers.set("origin", baseUrl);
+  return fetch(`${baseUrl}${path}`, { ...init, headers });
 }
 
 describe("HR Pass Control state", () => {
@@ -399,23 +421,29 @@ describe("HR Pass Control state", () => {
 describe("HR Pass Control lifecycle routes", () => {
   it("revokes a Manager Pass and denies external access after revocation", async () => {
     await withServer({}, async (baseUrl) => {
+      const session = await exchangeSession(baseUrl, "stakeholder", managerToken);
+      assert.equal(session.response.status, 204);
+      assert(session.cookie);
       const revoke = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-links/11/revoke`, { method: "POST" });
       assert.equal(revoke.status, 200);
 
-      const external = await fetch(`${baseUrl}/api/manager-pass/manager-token`);
+      const external = await passFetch(baseUrl, "/api/external/stakeholder-pass", session.cookie);
       assert.equal(external.status, 404);
     });
   });
 
   it("revokes a Candidate Pass and denies external access and mutations afterward", async () => {
     await withServer({}, async (baseUrl) => {
+      const session = await exchangeSession(baseUrl, "candidate", candidateToken);
+      assert.equal(session.response.status, 204);
+      assert(session.cookie);
       const revoke = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidate-links/21/revoke`, { method: "POST" });
       assert.equal(revoke.status, 200);
 
-      const external = await fetch(`${baseUrl}/api/candidate-pass/candidate-token`);
+      const external = await passFetch(baseUrl, "/api/external/candidate-pass", session.cookie);
       assert.equal(external.status, 404);
 
-      const mutation = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/messages`, {
+      const mutation = await passFetch(baseUrl, "/api/external/candidate-pass/messages", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "Hello" }),
@@ -425,13 +453,15 @@ describe("HR Pass Control lifecycle routes", () => {
   });
 
   it("extends an expired Manager Pass and restores scoped external access", async () => {
+    let currentLink = { ...managerLink, expiresAt: past };
     await withServer({
-      getShareLinkByToken: async (token: string) => token === "manager-token" ? { ...managerLink, expiresAt: past } : undefined,
-      getShareLinksByPass: async () => [{ ...managerLink, expiresAt: past }],
-      updateShareLink: async (_id: number, data: any) => ({ ...managerLink, ...data }),
+      getShareLinkByToken: async (token: string) => token === managerToken ? currentLink : undefined,
+      getShareLink: async (id: number) => id === currentLink.id ? currentLink : undefined,
+      getShareLinksByPass: async () => [currentLink],
+      updateShareLink: async (_id: number, data: any) => (currentLink = { ...currentLink, ...data }),
     }, async (baseUrl) => {
-      const before = await fetch(`${baseUrl}/api/manager-pass/manager-token`);
-      assert.equal(before.status, 410);
+      const before = await exchangeSession(baseUrl, "stakeholder", managerToken);
+      assert.equal(before.response.status, 410);
 
       const extended = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-links/11/extend`, {
         method: "POST",
@@ -442,6 +472,8 @@ describe("HR Pass Control lifecycle routes", () => {
 
       assert.equal(extended.status, 200);
       assert.equal(new Date(payload.expiresAt).toISOString(), future.toISOString());
+      const after = await exchangeSession(baseUrl, "stakeholder", managerToken);
+      assert.equal(after.response.status, 204);
     });
   });
 
@@ -585,7 +617,7 @@ describe("HR Pass Control lifecycle routes", () => {
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
       await withServer({
-        createCandidateLink: async (data: any) => ({ ...data, id: 33, token: "pass-control-candidate-token" }),
+        createCandidateLink: async (data: any) => ({ ...data, id: 33, token: candidateToken }),
         enqueueEmail: async (email: any) => {
           emails.push(email);
           return { created: true, email: { id: emails.length, ...email } };
@@ -598,7 +630,7 @@ describe("HR Pass Control lifecycle routes", () => {
         assert.equal(emails.length, 1);
         assert.equal(emails[0].eventKey, "candidate-pass-issued:33");
         assert.equal(emails[0].recipientEmail, "candidate@example.com");
-        assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/candidate-pass\/pass-control-candidate-token/);
+        assert.match(emails[0].bodyText, new RegExp(`https://careers\\.example\\.test/candidate-pass#${candidateToken}`));
       });
     } finally {
       if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
@@ -621,7 +653,7 @@ describe("HR Pass Control lifecycle routes", () => {
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
       await withServer({
-        createCandidateLink: async (data: any) => ({ ...data, id: 34, token: "nonblocking-candidate-token" }),
+        createCandidateLink: async (data: any) => ({ ...data, id: 34, token: candidateToken }),
         enqueueEmail: async () => { throw new Error("simulated enqueue failure"); },
       }, async (baseUrl) => {
         const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/candidates/101/candidate-link`, { method: "POST" });
@@ -679,7 +711,7 @@ describe("HR Pass Control lifecycle routes", () => {
     const issued: number[] = [];
     await withServer({
       getManager: async (id: number) => id === 301 ? manager : id === 302 ? second : undefined,
-      createShareLink: async (data: any) => { issued.push(data.managerId); return { ...managerLink, id: 20 + issued.length, token: `stakeholder-${issued.length}`, ...data }; },
+      createShareLink: async (data: any) => { issued.push(data.managerId); return { ...managerLink, id: 20 + issued.length, token: issued.length === 1 ? managerToken : nextManagerToken, ...data }; },
     }, async (baseUrl) => {
       const primary = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       const additional = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ managerId: 302 }) });
@@ -703,7 +735,7 @@ describe("HR Pass Control lifecycle routes", () => {
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
       await withServer({
-        createShareLink: async (data: any) => ({ ...managerLink, id: 44, token: "pass-control-stakeholder-token", ...data }),
+        createShareLink: async (data: any) => ({ ...managerLink, id: 44, token: managerToken, ...data }),
         enqueueEmail: async (email: any) => {
           emails.push(email);
           return { created: true, email: { id: emails.length, ...email } };
@@ -716,7 +748,7 @@ describe("HR Pass Control lifecycle routes", () => {
         assert.equal(emails.length, 1);
         assert.equal(emails[0].eventKey, "stakeholder-pass-issued:44");
         assert.equal(emails[0].recipientEmail, "manager@example.com");
-        assert.match(emails[0].bodyText, /https:\/\/careers\.example\.test\/manager-pass\/pass-control-stakeholder-token/);
+        assert.match(emails[0].bodyText, new RegExp(`https://careers\\.example\\.test/manager-pass#${managerToken}`));
       });
     } finally {
       if (previous.emailEnabled === undefined) delete process.env.HIREPASS_EMAIL_ENABLED; else process.env.HIREPASS_EMAIL_ENABLED = previous.emailEnabled;
@@ -739,7 +771,7 @@ describe("HR Pass Control lifecycle routes", () => {
       process.env.HIREPASS_SMTP_HOST = "smtp.example.test";
       process.env.HIREPASS_EMAIL_FROM = "HirePass <noreply@example.test>";
       await withServer({
-        createShareLink: async (data: any) => ({ ...managerLink, id: 45, token: "nonblocking-stakeholder-token", ...data }),
+        createShareLink: async (data: any) => ({ ...managerLink, id: 45, token: managerToken, ...data }),
         enqueueEmail: async () => { throw new Error("simulated enqueue failure"); },
       }, async (baseUrl) => {
         const response = await fetch(`${baseUrl}/api/hr-pass-control/passes/10/manager-link`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -784,7 +816,9 @@ describe("HR Pass Control lifecycle routes", () => {
       const before = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
       assert.equal(before.items[0].candidateActions, 1);
 
-      const complete = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/assessment-complete`, {
+      const session = await exchangeSession(baseUrl, "candidate", candidateToken);
+      assert(session.cookie);
+      const complete = await passFetch(baseUrl, "/api/external/candidate-pass/assessment-complete", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ assessmentType: "softSkills" }),
@@ -808,18 +842,20 @@ describe("HR Pass Control lifecycle routes", () => {
         return mutablePassCandidate;
       },
     }, async (baseUrl) => {
-      const beforeManager = await json(await fetch(`${baseUrl}/api/manager-pass/manager-token`));
+      const session = await exchangeSession(baseUrl, "stakeholder", managerToken);
+      assert(session.cookie);
+      const beforeManager = await json(await passFetch(baseUrl, "/api/external/stakeholder-pass", session.cookie));
       assert.equal(beforeManager.managerPassState.actionState, "ACTION_REQUIRED");
       assert.equal(beforeManager.managerPassState.nextDecision.kind, "MAKE_FINAL_DECISION");
 
-      const decision = await fetch(`${baseUrl}/api/manager-pass/manager-token/final-decisions`, {
+      const decision = await passFetch(baseUrl, "/api/external/stakeholder-pass/final-decisions", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ decisions: [{ passCandidateId: 101, decision: "hire", notes: "Proceed" }] }),
       });
       assert.equal(decision.status, 200);
 
-      const afterManager = await json(await fetch(`${baseUrl}/api/manager-pass/manager-token`));
+      const afterManager = await json(await passFetch(baseUrl, "/api/external/stakeholder-pass", session.cookie));
       assert.equal(afterManager.managerPassState.actionState, "COMPLETED");
 
       const hr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
@@ -909,7 +945,9 @@ describe("HR Pass Control lifecycle routes", () => {
       assert.equal(before.items[0].candidateActions, 1);
       assert.equal(before.items[0].candidates[0].nextAction, "Upload document");
 
-      const upload = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const session = await exchangeSession(baseUrl, "candidate", candidateToken);
+      assert(session.cookie);
+      const upload = await passFetch(baseUrl, "/api/external/candidate-pass/documents", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -922,7 +960,7 @@ describe("HR Pass Control lifecycle routes", () => {
       assert.equal(upload.status, 201);
       assert.equal(mutableDocuments[0].status, "uploaded");
 
-      const afterCandidate = await json(await fetch(`${baseUrl}/api/candidate-pass/candidate-token`));
+      const afterCandidate = await json(await passFetch(baseUrl, "/api/external/candidate-pass", session.cookie));
       assert.equal(afterCandidate.passState.nextAction.kind, "NONE");
       const afterHr = await json(await fetch(`${baseUrl}/api/hr-pass-control`));
       assert.equal(afterHr.items[0].candidateActions, 0);
@@ -940,7 +978,9 @@ describe("HR Pass Control lifecycle routes", () => {
         status: "pending",
       }],
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/documents`, {
+      const session = await exchangeSession(baseUrl, "candidate", candidateToken);
+      assert(session.cookie);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/documents", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -977,14 +1017,16 @@ describe("HR Pass Control lifecycle routes", () => {
         return mutableOffer;
       },
     }, async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/api/candidate-pass/candidate-token/offer-response`, {
+      const session = await exchangeSession(baseUrl, "candidate", candidateToken);
+      assert(session.cookie);
+      const response = await passFetch(baseUrl, "/api/external/candidate-pass/offer-response", session.cookie, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ response: "accept" }),
       });
       assert.equal(response.status, 200);
 
-      const candidatePayload = await json(await fetch(`${baseUrl}/api/candidate-pass/candidate-token`));
+      const candidatePayload = await json(await passFetch(baseUrl, "/api/external/candidate-pass", session.cookie));
       assert.equal(candidatePayload.passState.actionState, "COMPLETED");
       assert.equal(candidatePayload.passState.hiringStage, "Decision");
 

@@ -49,6 +49,15 @@ import { wakeAiReviewWorker } from "./ai/worker";
 import { enqueueEmail, type EmailIntent } from "./email/outbox";
 import { getEmailConfig, publicAppUrl } from "./email/config";
 import { resolveCompanyAccentColor } from "@shared/public-branding";
+import { externalPassLandingPath, isExternalPassToken } from "@shared/external-pass-links";
+import {
+  candidateSessionLink,
+  requireExternalCandidateSession,
+  requireExternalStakeholderSession,
+  requireSameOrigin,
+  setExternalPassSession,
+  stakeholderSessionLink,
+} from "./external-pass-session";
 
 function publicCompanyLogoUrl() {
   const value = process.env.HIREPASS_COMPANY_LOGO_URL || "";
@@ -86,7 +95,7 @@ async function enqueueEmailSafely(intent: EmailIntent) {
 async function candidatePassUrlForApplication(passCandidateId: number): Promise<string | null> {
   const links = await storage.getCandidateLinksByPassCandidate(passCandidateId);
   const active = links.find((link: any) => link.isActive && (!link.expiresAt || new Date(link.expiresAt) > new Date()));
-  return active ? publicAppUrl(`/candidate-pass/${active.token}`) : null;
+  return active ? publicAppUrl(externalPassLandingPath("candidate", active.token)) : null;
 }
 
 async function enqueueCandidateActionEmail(input: {
@@ -127,7 +136,7 @@ async function enqueueStakeholderPassIssuedEmail(pass: any, link: any, managerId
       to: stakeholder?.email,
       recipientName: stakeholder?.name,
       subject: `Stakeholder Pass: ${pass.positionTitle}`,
-      bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(`/manager-pass/${link.token}`) || "Ask the hiring team for your Stakeholder Pass link."}`,
+      bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(externalPassLandingPath("stakeholder", link.token)) || "Ask the hiring team for your Stakeholder Pass link."}`,
     });
   } catch (error) {
     console.warn("Stakeholder Pass email enqueue skipped", { reason: error instanceof Error ? error.message : "unknown" });
@@ -146,7 +155,7 @@ async function enqueueCandidatePassIssuedEmail(passCandidate: any, link: any, pa
       to: candidate?.email,
       recipientName: candidate?.name,
       subject: `Candidate Pass${resolvedPass?.positionTitle ? `: ${resolvedPass.positionTitle}` : ""}`,
-      bodyText: `A Candidate Pass is available for your application${resolvedPass?.positionTitle ? ` for ${resolvedPass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${link.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
+      bodyText: `A Candidate Pass is available for your application${resolvedPass?.positionTitle ? ` for ${resolvedPass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(externalPassLandingPath("candidate", link.token)) || "Ask the hiring team for your Candidate Pass link."}`,
     });
   } catch (error) {
     console.warn("Candidate Pass email enqueue skipped", { reason: error instanceof Error ? error.message : "unknown" });
@@ -204,21 +213,7 @@ export async function registerRoutes(
       expiresAt: defaultExpiry(),
       isActive: true,
     });
-    return publicAppUrl(`/candidate-pass/${link.token}`);
-  }
-
-  async function getValidCandidateLink(token: string, res: Response) {
-    const candidateLink = await storage.getCandidateLinkByToken(token);
-    const access = resolvePassAccess(candidateLink, {
-      inactive: "Invalid or inactive link",
-      expired: "Link has expired",
-    });
-    if (!access.allowed) {
-      res.status(access.status).json({ error: access.error });
-      return null;
-    }
-
-    return access.link;
+    return publicAppUrl(externalPassLandingPath("candidate", link.token));
   }
 
   async function buildPassControl(passId: number) {
@@ -281,6 +276,12 @@ export async function registerRoutes(
     } catch (error) {
       res.status(503).json({ ok: false, ready: false });
     }
+  });
+
+  app.use(["/candidate-pass", "/manager-pass", "/api/external"], (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
   });
 
   app.use(disableOutOfScopeProductionRoutes);
@@ -1902,31 +1903,12 @@ export async function registerRoutes(
         to: stakeholder?.email,
         recipientName: stakeholder?.name,
         subject: `Stakeholder Pass: ${pass.positionTitle}`,
-        bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(`/manager-pass/${shareLink.token}`) || "Ask the hiring team for your Stakeholder Pass link."}`,
+        bodyText: `You have hiring input requested for ${pass.positionTitle}.\n\nOpen your Stakeholder Pass: ${publicAppUrl(externalPassLandingPath("stakeholder", shareLink.token)) || "Ask the hiring team for your Stakeholder Pass link."}`,
       });
       res.status(201).json(shareLink);
     } catch (error) {
       console.error("Error creating share link:", error);
       res.status(500).json({ error: "Failed to create share link" });
-    }
-  });
-
-  app.get("/api/share-links/:token", async (req, res) => {
-    try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      if (!shareLink) {
-        return res.status(404).json({ error: "Share link not found or expired" });
-      }
-      
-      if (shareLink.expiresAt && new Date(shareLink.expiresAt) < new Date()) {
-        return res.status(410).json({ error: "Share link has expired" });
-      }
-
-      const pass = await storage.getPassWithDetails(shareLink.passId);
-      res.json({ shareLink, pass });
-    } catch (error) {
-      console.error("Error fetching share link:", error);
-      res.status(500).json({ error: "Failed to fetch share link" });
     }
   });
 
@@ -1962,7 +1944,7 @@ export async function registerRoutes(
         to: candidate?.email,
         recipientName: candidate?.name,
         subject: `Candidate Pass${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
-        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${candidateLink.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
+        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(externalPassLandingPath("candidate", candidateLink.token)) || "Ask the hiring team for your Candidate Pass link."}`,
       });
       
       res.status(201).json(candidateLink);
@@ -1972,20 +1954,23 @@ export async function registerRoutes(
     }
   });
 
-  // ============ MANAGER PASS ROUTES (Token-based access) ============
-  
-  // Get manager pass data by token
-  app.get("/api/manager-pass/:token", async (req, res) => {
+  // ============ STAKEHOLDER PASS ROUTES (scoped external session) ============
+
+  app.post("/api/external/stakeholder-pass/session", requireSameOrigin, async (req, res) => {
+    const token = req.body?.token;
+    if (!isExternalPassToken("stakeholder", token)) return res.status(404).json({ error: "Invalid share link" });
+    const shareLink = await storage.getShareLinkByToken(token);
+    const access = resolvePassAccess(shareLink, { inactive: "Invalid share link", expired: "Share link has expired" });
+    if (!access.allowed) return res.status(access.status).json({ error: access.error });
+    setExternalPassSession(res, "stakeholder", access.link);
+    res.status(204).end();
+  });
+  app.use("/api/external/stakeholder-pass", requireExternalStakeholderSession());
+
+  // Get Stakeholder Pass data from the scoped session.
+  app.get("/api/external/stakeholder-pass", async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid or inactive share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       
       // Update access tracking
       await storage.updateShareLink(activeShareLink.id, {
@@ -2021,17 +2006,9 @@ export async function registerRoutes(
   });
   
   // Manager approves JD
-  app.post("/api/manager-pass/:token/approve-jd", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/approve-jd", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const pass = await storage.updatePass(activeShareLink.passId, {
@@ -2057,17 +2034,9 @@ export async function registerRoutes(
   });
   
   // Manager requests JD changes
-  app.post("/api/manager-pass/:token/request-jd-changes", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/request-jd-changes", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const { feedback } = req.body;
@@ -2100,17 +2069,9 @@ export async function registerRoutes(
   });
   
   // Manager updates salary range
-  app.patch("/api/manager-pass/:token/salary-range", async (req, res) => {
+  app.patch("/api/external/stakeholder-pass/salary-range", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       
       const { salaryRangeMin, salaryRangeMax } = req.body;
@@ -2128,17 +2089,9 @@ export async function registerRoutes(
   });
   
   // Manager sets interview availability
-  app.post("/api/manager-pass/:token/interview-setup", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/interview-setup", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const interviewer = await validInterviewer(activeShareLink.managerId);
       if (!interviewer) return res.status(403).json({ error: "Interview availability requires an active interview-eligible stakeholder" });
@@ -2218,17 +2171,9 @@ export async function registerRoutes(
   });
   
   // Manager shortlists candidate
-  app.post("/api/manager-pass/:token/candidates/:candidateId/shortlist", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/candidates/:candidateId/shortlist", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const passCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
       if (!isPassScopedCandidate(activeShareLink.passId, passCandidate)) {
@@ -2260,17 +2205,9 @@ export async function registerRoutes(
   });
   
   // Manager rejects candidate
-  app.post("/api/manager-pass/:token/candidates/:candidateId/reject", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/candidates/:candidateId/reject", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const existingPassCandidate = await storage.getPassCandidateById(parseInt(req.params.candidateId));
       if (!isPassScopedCandidate(activeShareLink.passId, existingPassCandidate)) {
@@ -2303,17 +2240,9 @@ export async function registerRoutes(
   });
   
   // Manager submits interview evaluation
-  app.post("/api/manager-pass/:token/evaluations", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/evaluations", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const interview = await storage.getInterview(req.body.interviewId);
       if (!isPassScopedInterview(activeShareLink.passId, interview)) {
@@ -2347,17 +2276,9 @@ export async function registerRoutes(
   });
   
   // Manager makes final decision on candidates
-  app.post("/api/manager-pass/:token/final-decisions", async (req, res) => {
+  app.post("/api/external/stakeholder-pass/final-decisions", requireSameOrigin, async (req, res) => {
     try {
-      const shareLink = await storage.getShareLinkByToken(req.params.token);
-      const access = resolvePassAccess(shareLink, {
-        inactive: "Invalid share link",
-        expired: "Share link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeShareLink = access.link;
+      const activeShareLink = stakeholderSessionLink(res);
       if (!activeShareLink.managerId) return res.status(403).json({ error: "This actionable Stakeholder Pass is not assigned" });
       const pass = await storage.getPass(activeShareLink.passId);
       if (!pass) return res.status(404).json({ error: "Pass not found" });
@@ -2408,20 +2329,23 @@ export async function registerRoutes(
     }
   });
   
-  // ============ CANDIDATE PASS ROUTES (Token-based access) ============
-  
-  // Get candidate pass data by token
-  app.get("/api/candidate-pass/:token", async (req, res) => {
+  // ============ CANDIDATE PASS ROUTES (scoped external session) ============
+
+  app.post("/api/external/candidate-pass/session", requireSameOrigin, async (req, res) => {
+    const token = req.body?.token;
+    if (!isExternalPassToken("candidate", token)) return res.status(404).json({ error: "Invalid or inactive link" });
+    const candidateLink = await storage.getCandidateLinkByToken(token);
+    const access = resolvePassAccess(candidateLink, { inactive: "Invalid or inactive link", expired: "Link has expired" });
+    if (!access.allowed) return res.status(access.status).json({ error: access.error });
+    setExternalPassSession(res, "candidate", access.link);
+    res.status(204).end();
+  });
+  app.use("/api/external/candidate-pass", requireExternalCandidateSession());
+
+  // Get Candidate Pass data from the scoped session.
+  app.get("/api/external/candidate-pass", async (req, res) => {
     try {
-      const candidateLink = await storage.getCandidateLinkByToken(req.params.token);
-      const access = resolvePassAccess(candidateLink, {
-        inactive: "Invalid or inactive link",
-        expired: "Link has expired",
-      });
-      if (!access.allowed) {
-        return res.status(access.status).json({ error: access.error });
-      }
-      const activeCandidateLink = access.link;
+      const activeCandidateLink = candidateSessionLink(res);
       
       const passCandidate = await storage.getPassCandidateById(activeCandidateLink.passCandidateId);
       if (!passCandidate) {
@@ -2476,10 +2400,9 @@ export async function registerRoutes(
   });
   
   // Candidate selects interview slot
-  app.post("/api/candidate-pass/:token/interview-slot", async (req, res) => {
+  app.post("/api/external/candidate-pass/interview-slot", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
       
       const { slotId } = req.body;
       const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
@@ -2526,10 +2449,9 @@ export async function registerRoutes(
   });
   
   // Candidate uploads document
-  app.post("/api/candidate-pass/:token/documents", async (req, res) => {
+  app.post("/api/external/candidate-pass/documents", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
       
       const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
       if (!passCandidate) {
@@ -2647,10 +2569,9 @@ export async function registerRoutes(
   });
   
   // Candidate sends message
-  app.post("/api/candidate-pass/:token/messages", async (req, res) => {
+  app.post("/api/external/candidate-pass/messages", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
       
       const passCandidate = await storage.getPassCandidateById(candidateLink.passCandidateId);
       const candidate = passCandidate ? await storage.getCandidate(passCandidate.candidateId) : null;
@@ -2684,10 +2605,9 @@ export async function registerRoutes(
   });
   
   // Candidate marks message as read
-  app.patch("/api/candidate-pass/:token/messages/:messageId/read", async (req, res) => {
+  app.patch("/api/external/candidate-pass/messages/:messageId/read", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
       
       const messageId = parseInt(req.params.messageId);
       const messages = await storage.getCandidateMessages(candidateLink.passCandidateId);
@@ -2710,10 +2630,9 @@ export async function registerRoutes(
     reason: z.string().trim().max(2000).optional(),
     message: z.string().trim().max(2000).optional(),
   }).strict();
-  app.post("/api/candidate-pass/:token/offer-response", async (req, res) => {
+  app.post("/api/external/candidate-pass/offer-response", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
 
       const { response, reason, message } = candidateOfferResponseSchema.parse(req.body);
       
@@ -2739,10 +2658,9 @@ export async function registerRoutes(
   });
   
   // Candidate confirms assessment completion
-  app.post("/api/candidate-pass/:token/assessment-complete", async (req, res) => {
+  app.post("/api/external/candidate-pass/assessment-complete", requireSameOrigin, async (req, res) => {
     try {
-      const candidateLink = await getValidCandidateLink(req.params.token, res);
-      if (!candidateLink) return;
+      const candidateLink = candidateSessionLink(res);
       
       const { assessmentType } = req.body; // 'softSkills' | 'technical'
       
@@ -2873,7 +2791,7 @@ export async function registerRoutes(
         to: candidate?.email,
         recipientName: candidate?.name,
         subject: `Candidate Pass${pass?.positionTitle ? `: ${pass.positionTitle}` : ""}`,
-        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(`/candidate-pass/${link.token}`) || "Ask the hiring team for your Candidate Pass link."}`,
+        bodyText: `A Candidate Pass is available for your application${pass?.positionTitle ? ` for ${pass.positionTitle}` : ""}.\n\nOpen your Candidate Pass: ${publicAppUrl(externalPassLandingPath("candidate", link.token)) || "Ask the hiring team for your Candidate Pass link."}`,
       });
       
       res.status(201).json(link);
