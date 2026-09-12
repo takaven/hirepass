@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,9 @@ import type { CandidatePassViewState } from "@shared/pass-state";
 import { validateClientUpload } from "@/lib/upload-preflight";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
 import type { PublicConfig } from "./public-apply";
+import { bootstrapExternalPassSession, externalPassFetch, externalPassRequest } from "@/lib/external-pass-session";
+
+const CANDIDATE_PASS_API = "/api/external/candidate-pass";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -65,10 +68,6 @@ interface CandidatePassData {
   passState: CandidatePassViewState;
 }
 
-interface CandidatePortalPassProps {
-  token: string;
-}
-
 export function candidatePassStatusEyebrow(
   passState: Pick<CandidatePassViewState, "actionState" | "stateLabel" | "nextAction">,
 ) {
@@ -91,8 +90,8 @@ function formatCandidateDate(value: string | Date | null | undefined) {
   }).format(date);
 }
 
-async function fetchCandidatePass(token: string): Promise<CandidatePassData> {
-  const response = await fetch(`/api/candidate-pass/${token}`);
+async function fetchCandidatePass(): Promise<CandidatePassData> {
+  const response = await externalPassFetch("candidate");
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -183,17 +182,34 @@ function PassJourney({ state }: { state: CandidatePassViewState }) {
   );
 }
 
-export default function CandidatePortalPass({ token }: CandidatePortalPassProps) {
+export default function CandidatePortalPass() {
   const { toast } = useToast();
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState<(Error & { status?: number }) | null>(null);
   const [messageText, setMessageText] = useState("");
   const [showSlotDialog, setShowSlotDialog] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const [offerResponseMode, setOfferResponseMode] = useState<"negotiate" | "decline" | null>(null);
   const [offerResponseText, setOfferResponseText] = useState("");
 
+  useEffect(() => {
+    void bootstrapExternalPassSession("candidate").then((result) => {
+      if (!result.ok) {
+        const error = new Error(result.message) as Error & { status?: number };
+        error.status = result.status;
+        setSessionError(error);
+      }
+      setSessionReady(true);
+    }).catch(() => {
+      setSessionError(new Error("Unable to open this Candidate Pass"));
+      setSessionReady(true);
+    });
+  }, []);
+
   const { data, isLoading, error } = useQuery<CandidatePassData>({
-    queryKey: ["/api/candidate-pass", token],
-    queryFn: () => fetchCandidatePass(token),
+    queryKey: [CANDIDATE_PASS_API],
+    queryFn: fetchCandidatePass,
+    enabled: sessionReady && !sessionError,
     refetchInterval: (query) => {
       const state = query.state.data?.passState?.actionState;
       return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
@@ -202,50 +218,50 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const sendMessageMutation = useMutation({
-    mutationFn: (message: string) => apiRequest("POST", `/api/candidate-pass/${token}/messages`, { message }),
+    mutationFn: (message: string) => externalPassRequest("candidate", "POST", "/messages", { message }),
     onSuccess: () => {
       toast({ title: "Message sent" });
       setMessageText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
     },
     onError: () => toast({ title: "Message could not be sent", variant: "destructive" }),
   });
 
   const bookSlotMutation = useMutation({
-    mutationFn: (slotId: number) => apiRequest("POST", `/api/candidate-pass/${token}/interview-slot`, { slotId }),
+    mutationFn: (slotId: number) => externalPassRequest("candidate", "POST", "/interview-slot", { slotId }),
     onSuccess: () => {
       toast({ title: "Interview slot confirmed", description: "Your Candidate Pass has been updated." });
       setShowSlotDialog(false);
       setSelectedSlotId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
     },
     onError: () => toast({ title: "Interview slot could not be confirmed", variant: "destructive" }),
   });
 
   const respondOfferMutation = useMutation({
     mutationFn: (response: { response: string; reason?: string; message?: string }) =>
-      apiRequest("POST", `/api/candidate-pass/${token}/offer-response`, response),
+      externalPassRequest("candidate", "POST", "/offer-response", response),
     onSuccess: () => {
       toast({ title: "Offer response submitted", description: "Your Candidate Pass has been updated." });
       setOfferResponseMode(null);
       setOfferResponseText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
     },
     onError: () => toast({ title: "Offer response could not be submitted", variant: "destructive" }),
   });
 
   const confirmAssessmentMutation = useMutation({
-    mutationFn: (assessmentType: string) => apiRequest("POST", `/api/candidate-pass/${token}/assessment-complete`, { assessmentType }),
+    mutationFn: (assessmentType: string) => externalPassRequest("candidate", "POST", "/assessment-complete", { assessmentType }),
     onSuccess: () => {
       toast({ title: "Assessment completion recorded", description: "Your Candidate Pass has been updated." });
-      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
     },
     onError: () => toast({ title: "Assessment completion could not be recorded", variant: "destructive" }),
   });
 
   const submitDocumentMutation = useMutation({
     mutationFn: async ({ documentId, file }: { documentId: number; file: File }) =>
-      apiRequest("POST", `/api/candidate-pass/${token}/documents`, {
+      externalPassRequest("candidate", "POST", "/documents", {
         documentId,
         fileName: file.name,
         mimeType: file.type,
@@ -253,12 +269,12 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
       }),
     onSuccess: () => {
       toast({ title: "Document received", description: "Your Candidate Pass has been updated." });
-      queryClient.invalidateQueries({ queryKey: ["/api/candidate-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [CANDIDATE_PASS_API] });
     },
     onError: () => toast({ title: "Document could not be submitted", variant: "destructive" }),
   });
 
-  if (isLoading) {
+  if (!sessionReady || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] px-4 text-[#20242B]">
         <div className="text-center">
@@ -269,8 +285,8 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
     );
   }
 
-  if (error || !data?.passCandidate) {
-    const typedError = error as Error & { status?: number };
+  if (sessionError || error || !data?.passCandidate) {
+    const typedError = sessionError || error as Error & { status?: number };
     return <AccessState status={typedError?.status} message={typedError?.message} />;
   }
 

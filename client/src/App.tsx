@@ -226,10 +226,9 @@ function App() {
   const isPrivacyRoute = location === "/privacy";
   const isTalentPoolRoute = location === "/talent-pool" || location === "/submit-cv";
   const isRetiredPublicPassRoute = location.startsWith("/pass/");
-  // Token-based manager pass: /manager-pass/mgr_xxxxx
-  const isManagerPassRoute = location.startsWith("/manager-pass/");
-  // Token-based candidate portal: /candidate-pass/cand_xxxxx
-  const isCandidatePortalRoute = location.startsWith("/candidate-pass/");
+  const isRetiredBearerPathRoute = location.startsWith("/candidate-pass/") || location.startsWith("/manager-pass/");
+  const isManagerPassRoute = location === "/manager-pass";
+  const isCandidatePortalRoute = location === "/candidate-pass";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -244,22 +243,12 @@ function App() {
             <PublicTalentPool />
           ) : isApplyRoute ? (
             <PublicApply passIdParam={location.split("/")[2]} />
-          ) : isRetiredPublicPassRoute ? (
+          ) : isRetiredPublicPassRoute || isRetiredBearerPathRoute ? (
             <NotFound />
           ) : isManagerPassRoute ? (
-            <Switch>
-              <Route path="/manager-pass/:token">{(params) => {
-                const token = params.token || "";
-                return <ManagerRecruitmentPass token={token} />;
-              }}</Route>
-            </Switch>
+            <ManagerRecruitmentPass />
           ) : isCandidatePortalRoute ? (
-            <Switch>
-              <Route path="/candidate-pass/:token">{(params) => {
-                const token = params.token || "";
-                return <CandidatePortalPass token={token} />;
-              }}</Route>
-            </Switch>
+            <CandidatePortalPass />
           ) : (
             <InternalAuthGate />
           )}

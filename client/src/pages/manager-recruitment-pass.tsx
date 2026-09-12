@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,9 @@ import type { Candidate, Interview, Manager, Pass, PassCandidate } from "@shared
 import type { ManagerPassViewState } from "@shared/pass-state";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
 import type { PublicConfig } from "./public-apply";
+import { bootstrapExternalPassSession, externalPassFetch, externalPassRequest } from "@/lib/external-pass-session";
+
+const STAKEHOLDER_PASS_API = "/api/external/stakeholder-pass";
 
 type ManagerPassCandidate = Pick<PassCandidate, "id" | "passId" | "candidateId" | "status" | "shortlistedAt"> & {
   candidate: Pick<Candidate, "id" | "name" | "currentTitle" | "experienceYears" | "skills" | "cvSummary"> | null;
@@ -40,10 +43,6 @@ interface ManagerPassData {
   managerPassState: ManagerPassViewState;
 }
 
-interface ManagerRecruitmentPassProps {
-  token: string;
-}
-
 function formatManagerDate(value: string | Date | null | undefined) {
   if (!value) return "Date to be confirmed";
   const date = value instanceof Date ? value : new Date(value);
@@ -57,8 +56,8 @@ function formatManagerDate(value: string | Date | null | undefined) {
   }).format(date);
 }
 
-async function fetchManagerPass(token: string): Promise<ManagerPassData> {
-  const response = await fetch(`/api/manager-pass/${token}`);
+async function fetchManagerPass(): Promise<ManagerPassData> {
+  const response = await externalPassFetch("stakeholder");
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -94,8 +93,10 @@ function statusLabel(status?: string | null) {
   return (status || "new").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPassProps) {
+export default function ManagerRecruitmentPass() {
   const { toast } = useToast();
+  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionError, setSessionError] = useState<(Error & { status?: number }) | null>(null);
   const [decisionNotes, setDecisionNotes] = useState("");
   const [showRequestDialog, setShowRequestDialog] = useState(false);
   const [showInterviewDialog, setShowInterviewDialog] = useState(false);
@@ -110,9 +111,24 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const [interviewLocation, setInterviewLocation] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
 
+  useEffect(() => {
+    void bootstrapExternalPassSession("stakeholder").then((result) => {
+      if (!result.ok) {
+        const error = new Error(result.message) as Error & { status?: number };
+        error.status = result.status;
+        setSessionError(error);
+      }
+      setSessionReady(true);
+    }).catch(() => {
+      setSessionError(new Error("Unable to open this Stakeholder Pass"));
+      setSessionReady(true);
+    });
+  }, []);
+
   const { data, isLoading, error } = useQuery<ManagerPassData>({
-    queryKey: ["/api/manager-pass", token],
-    queryFn: () => fetchManagerPass(token),
+    queryKey: [STAKEHOLDER_PASS_API],
+    queryFn: fetchManagerPass,
+    enabled: sessionReady && !sessionError,
     refetchInterval: (query) => {
       const state = query.state.data?.managerPassState?.actionState;
       return state === "EXPIRED" || state === "REVOKED" || state === "COMPLETED" ? false : 30000;
@@ -121,48 +137,48 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
   const { data: publicConfig } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   const approveRequestMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/approve-jd`, {}),
+    mutationFn: () => externalPassRequest("stakeholder", "POST", "/approve-jd", {}),
     onSuccess: () => {
       toast({ title: "Hiring request approved", description: "The hiring team has your decision." });
       setShowRequestDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Decision could not be submitted", variant: "destructive" }),
   });
 
   const requestChangesMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/manager-pass/${token}/request-jd-changes`, { feedback: decisionNotes }),
+    mutationFn: () => externalPassRequest("stakeholder", "POST", "/request-jd-changes", { feedback: decisionNotes }),
     onSuccess: () => {
       toast({ title: "Changes requested", description: "The hiring team has your feedback." });
       setDecisionNotes("");
       setShowRequestDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Feedback could not be submitted", variant: "destructive" }),
   });
 
   const shortlistMutation = useMutation({
-    mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/shortlist`),
+    mutationFn: (candidateId: number) => externalPassRequest("stakeholder", "POST", `/candidates/${candidateId}/shortlist`),
     onSuccess: () => {
       toast({ title: "Candidate advanced", description: "Your Stakeholder Pass has been updated." });
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Candidate decision could not be submitted", variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (candidateId: number) => apiRequest("POST", `/api/manager-pass/${token}/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
+    mutationFn: (candidateId: number) => externalPassRequest("stakeholder", "POST", `/candidates/${candidateId}/reject`, { reason: "Manager decision", notes: decisionNotes }),
     onSuccess: () => {
       toast({ title: "Candidate rejected", description: "Your Stakeholder Pass has been updated." });
       setDecisionNotes("");
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Candidate decision could not be submitted", variant: "destructive" }),
   });
 
   const interviewSetupMutation = useMutation({
     mutationFn: () =>
-      apiRequest("POST", `/api/manager-pass/${token}/interview-setup`, {
+      externalPassRequest("stakeholder", "POST", "/interview-setup", {
         technicalAssessmentRequired: false,
         interviewFormat,
         interviewRounds: 1,
@@ -176,14 +192,14 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
     onSuccess: () => {
       toast({ title: "Interview availability submitted", description: "The hiring team can now continue the next step." });
       setShowInterviewDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Interview setup could not be submitted", variant: "destructive" }),
   });
 
   const evaluationMutation = useMutation({
     mutationFn: (interviewId: number) =>
-      apiRequest("POST", `/api/manager-pass/${token}/evaluations`, {
+      externalPassRequest("stakeholder", "POST", "/evaluations", {
         interviewId,
         recommendation: evaluationRecommendation,
         notesObservations: decisionNotes,
@@ -193,26 +209,26 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
       toast({ title: "Evaluation submitted", description: "The hiring team has your feedback." });
       setDecisionNotes("");
       setShowEvaluationDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Evaluation could not be submitted", variant: "destructive" }),
   });
 
   const finalDecisionMutation = useMutation({
     mutationFn: ({ candidateId, decision }: { candidateId: number; decision: string }) =>
-      apiRequest("POST", `/api/manager-pass/${token}/final-decisions`, {
+      externalPassRequest("stakeholder", "POST", "/final-decisions", {
         decisions: [{ passCandidateId: candidateId, decision, notes: decisionNotes }],
       }),
     onSuccess: () => {
       toast({ title: "Final decision submitted", description: "You're done for now. The hiring team has your decision." });
       setDecisionNotes("");
       setShowFinalDecisionDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/manager-pass", token] });
+      queryClient.invalidateQueries({ queryKey: [STAKEHOLDER_PASS_API] });
     },
     onError: () => toast({ title: "Final decision could not be submitted", variant: "destructive" }),
   });
 
-  if (isLoading) {
+  if (!sessionReady || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] text-[#20242B]">
         <div className="text-center">
@@ -223,8 +239,8 @@ export default function ManagerRecruitmentPass({ token }: ManagerRecruitmentPass
     );
   }
 
-  if (error || !data?.managerPassState) {
-    const typedError = error as Error & { status?: number };
+  if (sessionError || error || !data?.managerPassState) {
+    const typedError = sessionError || error as Error & { status?: number };
     return <AccessState status={typedError?.status} message={typedError?.message} />;
   }
 
