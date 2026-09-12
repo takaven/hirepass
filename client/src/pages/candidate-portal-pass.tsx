@@ -69,6 +69,15 @@ interface CandidatePortalPassProps {
   token: string;
 }
 
+export function candidatePassStatusEyebrow(
+  passState: Pick<CandidatePassViewState, "actionState" | "stateLabel" | "nextAction">,
+) {
+  if (passState.nextAction.kind !== "NONE") return "Your next step";
+  if (passState.stateLabel === "PROCESS CLOSED") return "Application closed";
+  if (passState.actionState === "COMPLETED") return "Application complete";
+  return "Current status";
+}
+
 function formatCandidateDate(value: string | Date | null | undefined) {
   if (!value) return "Date to be confirmed";
   const date = value instanceof Date ? value : new Date(value);
@@ -349,7 +358,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
           <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
           <div className="p-5 pl-7 sm:p-8 sm:pl-10">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#68707D]">
-              {hasPrimaryAction ? "Your next step" : passState.actionState === "COMPLETED" ? "Application complete" : "Current status"}
+              {candidatePassStatusEyebrow(passState)}
             </p>
             <div className="mt-3 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
               <div className="max-w-2xl">

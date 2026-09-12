@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
+import { candidatePassStatusEyebrow } from "@/pages/candidate-portal-pass";
 import {
   DEFAULT_COMPANY_ACCENT_COLOR,
   resolveCompanyAccentColor,
@@ -65,5 +66,15 @@ describe("external Pass customer branding", () => {
     assert.match(candidatePass, /currentStep \? `\$\{currentStep\.stage\} · Current` : state\.stateLabel/);
     assert.doesNotMatch(candidatePass, /fit score|match percentage|candidate rank/i);
     assert.doesNotMatch(stakeholderPass, /<nav|<aside/);
+  });
+
+  it("distinguishes closed applications from genuinely completed applications", () => {
+    const noAction = { kind: "NONE", label: "No action required", description: "", target: "none" } as const;
+
+    for (const outcome of ["rejected", "withdrawn"]) {
+      assert.equal(candidatePassStatusEyebrow({ actionState: "COMPLETED", stateLabel: "PROCESS CLOSED", nextAction: noAction }), "Application closed", outcome);
+    }
+
+    assert.equal(candidatePassStatusEyebrow({ actionState: "COMPLETED", stateLabel: "COMPLETED", nextAction: noAction }), "Application complete");
   });
 });
