@@ -63,6 +63,125 @@ describe("Manager Pass token access", () => {
 describe("Candidate Pass action state", () => {
   const activeLink = { isActive: true, expiresAt: futureExpiry };
 
+  it("uses the configured canonical journey with Interview enabled", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "screening" },
+      pass: { enabledStages: ["new", "screening", "shortlisted", "interview", "offer", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Review", "Interview", "Decision"]);
+  });
+
+  it("removes Interview from the configured canonical journey when it is disabled", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "screening" },
+      pass: { enabledStages: ["new", "screening", "shortlisted", "offer", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Review", "Decision"]);
+    assert.equal(state.journey.some((step) => step.stage === "Interview"), false);
+  });
+
+  it("shows only compatible visible phases for reduced legacy workflows", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "interview" },
+      pass: { enabledStages: ["new", "interview", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Interview"]);
+    assert.deepEqual(state.journey.map((step) => step.status), ["completed", "current"]);
+  });
+
+  it("presents a shortlisted-only legacy review without raw backend labels", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "shortlisted" },
+      pass: { enabledStages: ["new", "shortlisted", "interview", "hired"] },
+      now,
+    });
+    const labels = state.journey.map((step) => step.stage);
+
+    assert.deepEqual(labels, ["Applied", "Review", "Interview"]);
+    assert.equal(state.journey.find((step) => step.stage === "Review")?.status, "current");
+    assert.equal(labels.some((label) => ["Screening", "Shortlisted", "Offer", "Handoff"].includes(label)), false);
+  });
+
+  it("marks every configured phase completed only for a hired candidate", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "hired" },
+      pass: { enabledStages: ["new", "screening", "shortlisted", "interview", "offer", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Review", "Interview", "Decision"]);
+    assert.equal(state.journey.every((step) => step.status === "completed"), true);
+    assert.equal(state.journey.some((step) => step.status === "current"), false);
+  });
+
+  it("keeps rejected and withdrawn canonical journeys neutral", () => {
+    for (const status of ["rejected", "withdrawn"]) {
+      const state = resolveCandidatePassState({
+        link: activeLink,
+        passCandidate: { status },
+        pass: { enabledStages: ["new", "screening", "shortlisted", "interview", "offer", "hired"] },
+        now,
+      });
+
+      assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Review", "Interview", "Decision"]);
+      assert.equal(state.journey.every((step) => step.status === "neutral"), true);
+      assert.equal(state.journey.some((step) => ["Hired", "Not selected", "Withdrawn"].includes(step.stage)), false);
+    }
+  });
+
+  it("keeps a rejected no-Interview journey configured and neutral", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "rejected" },
+      pass: { enabledStages: ["new", "screening", "shortlisted", "offer", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Review", "Decision"]);
+    assert.equal(state.journey.some((step) => step.stage === "Interview"), false);
+    assert.equal(state.journey.every((step) => step.status === "neutral"), true);
+  });
+
+  it("keeps a withdrawn reduced legacy journey configured and neutral", () => {
+    const state = resolveCandidatePassState({
+      link: activeLink,
+      passCandidate: { status: "withdrawn" },
+      pass: { enabledStages: ["new", "interview", "hired"] },
+      now,
+    });
+
+    assert.deepEqual(state.journey.map((step) => step.stage), ["Applied", "Interview"]);
+    assert.equal(state.journey.every((step) => step.status === "neutral"), true);
+  });
+
+  it("does not claim a current journey phase for expired or revoked Pass access", () => {
+    for (const link of [
+      { isActive: false, expiresAt: futureExpiry },
+      { isActive: true, expiresAt: pastExpiry },
+    ]) {
+      const state = resolveCandidatePassState({
+        link,
+        passCandidate: { status: "offer" },
+        pass: { enabledStages: ["new", "screening", "shortlisted", "offer", "hired"] },
+        now,
+      });
+
+      assert.equal(state.journey.some((step) => step.status === "current"), false);
+      assert.equal(state.journey.every((step) => step.status === "neutral"), true);
+    }
+  });
+
   it("marks an actionable candidate as ACTION_REQUIRED", () => {
     const state = resolveCandidatePassState({
       link: activeLink,

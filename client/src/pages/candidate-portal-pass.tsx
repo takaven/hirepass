@@ -5,15 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Building2,
   Calendar,
+  Check,
   CheckCircle,
-  Clock,
   FileCheck,
   FileText,
   Inbox,
@@ -24,9 +22,10 @@ import {
   User,
 } from "lucide-react";
 import type { Candidate, CandidateDocument, CandidateMessage, Interview, Offer, Pass, PassCandidate } from "@shared/schema";
-import type { CandidatePassActionState, CandidatePassViewState } from "@shared/pass-state";
+import type { CandidatePassViewState } from "@shared/pass-state";
 import { validateClientUpload } from "@/lib/upload-preflight";
-import { PublicBrand, type PublicConfig } from "./public-apply";
+import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
+import type { PublicConfig } from "./public-apply";
 
 async function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -70,14 +69,14 @@ interface CandidatePortalPassProps {
   token: string;
 }
 
-const stateStyles: Record<CandidatePassActionState, string> = {
-  ACTION_REQUIRED: "border-[#01FF22]/70 bg-[#01FF22]/10 text-[#20242B]",
-  WAITING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  UPCOMING: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  COMPLETED: "border-[#20242B] bg-[#20242B] text-white",
-  EXPIRED: "border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D]",
-  REVOKED: "border-red-300 bg-red-50 text-red-700",
-};
+export function candidatePassStatusEyebrow(
+  passState: Pick<CandidatePassViewState, "actionState" | "stateLabel" | "nextAction">,
+) {
+  if (passState.nextAction.kind !== "NONE") return "Your next step";
+  if (passState.stateLabel === "PROCESS CLOSED") return "Application closed";
+  if (passState.actionState === "COMPLETED") return "Application complete";
+  return "Current status";
+}
 
 function formatCandidateDate(value: string | Date | null | undefined) {
   if (!value) return "Date to be confirmed";
@@ -126,35 +125,61 @@ function AccessState({ status, message }: { status?: number; message?: string })
 }
 
 function PassJourney({ state }: { state: CandidatePassViewState }) {
-  const currentIndex = state.journey.findIndex((step) => step.status === "current");
-  const progress = Math.max(8, ((currentIndex + 1) / state.journey.length) * 100);
+  const currentStep = state.journey.find((step) => step.status === "current");
 
   return (
-    <Card className="border-[#D8DEE5] bg-white">
-      <CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-[#20242B]">Your journey</span>
-          <Badge className="bg-[#20242B] text-white">{state.hiringStage}</Badge>
-        </div>
-        <Progress value={progress} className="h-2 bg-[#E7EBEF]" />
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          {state.journey.map((step) => (
-            <div key={step.stage} className="min-w-0">
-              <div
-                className={`mb-1 h-2 rounded-full ${
-                  step.status === "completed"
-                    ? "bg-[#20242B]"
-                    : step.status === "current"
-                    ? "bg-[#01FF22]"
-                    : "bg-[#D8DEE5]"
-                }`}
+    <section className="rounded-[1.75rem] border border-[#D8DEE5] bg-white px-4 py-5 shadow-[0_12px_40px_rgba(32,36,43,0.05)] sm:px-6" aria-labelledby="candidate-journey-title">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h2 id="candidate-journey-title" className="text-sm font-semibold text-[#20242B]">Your journey</h2>
+        <span className="rounded-full border border-[#D8DEE5] bg-[#F4F6F8] px-3 py-1 text-xs font-medium text-[#42494D]">
+          {currentStep ? `${currentStep.stage} · Current` : state.stateLabel}
+        </span>
+      </div>
+      <ol
+        className="grid min-w-0"
+        style={{ gridTemplateColumns: `repeat(${state.journey.length}, minmax(0, 1fr))` }}
+        aria-label="Hiring journey"
+      >
+        {state.journey.map((step, index) => (
+          <li key={step.stage} className="relative min-w-0 text-center" aria-current={step.status === "current" ? "step" : undefined}>
+            {index > 0 && (
+              <span
+                className={`absolute left-0 top-3 h-px w-1/2 ${["completed", "current"].includes(step.status) ? "bg-[#42494D]" : "bg-[#D8DEE5]"}`}
+                aria-hidden="true"
               />
-              <p className={`truncate text-xs ${step.status === "upcoming" ? "text-[#68707D]" : "text-[#20242B]"}`}>{step.stage}</p>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            )}
+            {index < state.journey.length - 1 && (
+              <span
+                className={`absolute right-0 top-3 h-px w-1/2 ${step.status === "completed" ? "bg-[#42494D]" : "bg-[#D8DEE5]"}`}
+                aria-hidden="true"
+              />
+            )}
+            <span
+              className={`relative z-10 mx-auto flex h-6 w-6 items-center justify-center rounded-full border-2 bg-white ${
+                step.status === "completed"
+                  ? "border-[#42494D] bg-[#42494D] text-white"
+                  : step.status === "current"
+                    ? "text-[#20242B]"
+                    : "border-[#C8CED5] text-[#68707D]"
+              }`}
+              style={step.status === "current" ? { borderColor: "var(--customer-accent)" } : undefined}
+              aria-hidden="true"
+            >
+              {step.status === "completed"
+                ? <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                : step.status === "current"
+                  ? <span className="h-2 w-2 rounded-full bg-[#20242B]" />
+                  : step.status === "upcoming"
+                    ? <span className="h-1.5 w-1.5 rounded-full bg-[#C8CED5]" />
+                    : null}
+            </span>
+            <span className={`mt-2 block px-0.5 text-[12px] leading-4 sm:text-sm ${["upcoming", "neutral"].includes(step.status) ? "text-[#68707D]" : "font-medium text-[#20242B]"}`}>
+              {step.stage}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -254,6 +279,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   const unreadMessages = messages.filter((message) => !message.isRead && message.senderType === "hr").length;
   const needsSoftAssessment = Boolean(pass.softSkillsAssessmentUrl && !passCandidate.softSkillsCompletedAt);
   const needsTechnicalAssessment = Boolean(pass.technicalAssessmentUrl && !passCandidate.technicalCompletedAt);
+  const hasPrimaryAction = passState.nextAction.kind !== "NONE";
 
   const runPrimaryAction = () => {
     switch (passState.nextAction.target) {
@@ -278,85 +304,89 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#20242B]">
-      <header className="sticky top-0 z-40 border-b border-[#D8DEE5] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-[#68707D]">Candidate Pass</p>
-              <h1 className="truncate text-base font-semibold text-[#20242B]">{pass.positionTitle}</h1>
+    <div
+      className="min-h-screen bg-[#F1F3F5] text-[#20242B] [color-scheme:light]"
+      style={externalPassAccentStyle(publicConfig)}
+      data-testid="candidate-pass-root"
+    >
+      <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:space-y-6 sm:px-6 sm:py-10">
+        <header className="flex min-w-0 items-center justify-between gap-4">
+          <ExternalPassBrand config={publicConfig} descriptor="Candidate Pass" />
+          <span className="hidden shrink-0 items-center gap-2 rounded-full border border-[#D8DEE5] bg-white px-3 py-1.5 text-xs font-medium text-[#42494D] shadow-sm sm:inline-flex">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+            {passState.stateLabel}
+          </span>
+        </header>
+
+        <section
+          className="relative overflow-hidden rounded-[2rem] border border-[#CFD5DB] bg-white shadow-[0_18px_55px_rgba(32,36,43,0.08)]"
+          data-testid="candidate-pass-identity"
+          aria-labelledby="candidate-pass-name"
+        >
+          <div className="h-1.5 w-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+          <div className="flex flex-col gap-6 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-8">
+            <div className="flex min-w-0 items-start gap-4 sm:items-center">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[#D8DEE5] bg-[#F4F6F8] text-[#42494D] sm:h-16 sm:w-16">
+                <User className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#68707D]">Candidate</p>
+                <h1 id="candidate-pass-name" className="mt-1 break-words text-2xl font-semibold tracking-[-0.025em] text-[#20242B] sm:text-3xl">{candidate.name}</h1>
+                <p className="mt-1 break-words text-base font-medium text-[#42494D] sm:text-lg">{pass.positionTitle}</p>
+              </div>
             </div>
-          </div>
-          <Badge className={`shrink-0 border ${stateStyles[passState.actionState]}`}>{passState.stateLabel}</Badge>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl space-y-5 px-4 py-5 sm:py-8">
-        <PublicBrand config={publicConfig} />
-        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className={`border ${stateStyles[passState.actionState]} bg-white`}>
-            <CardContent className="space-y-5 p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-[#68707D]">
-                <span className="inline-flex items-center gap-1">
-                  <User className="h-4 w-4" />
-                  {candidate.name}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Building2 className="h-4 w-4" />
-                  {pass.department || "Hiring team"}
-                </span>
-              </div>
-
-              <div className="grid gap-3">
-                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4">
-                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Current stage</p>
-                  <h2 className="mt-1 text-2xl font-semibold text-[#20242B] sm:text-3xl">{passState.hiringStage}</h2>
-                  <p className="mt-2 text-sm leading-6 text-[#42494D]">{passState.summary}</p>
-                </div>
-                <div className="rounded-lg border border-[#01FF22]/60 bg-[#01FF22]/10 p-4">
-                  <p className="text-xs uppercase tracking-wide text-[#42494D]">Your action</p>
-                  <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-[#20242B]">{passState.nextAction.label}</h3>
-                      <p className="mt-1 text-sm text-[#42494D]">{passState.nextAction.description}</p>
-                    </div>
-                    <Button
-                      className="min-h-11 shrink-0 bg-[#20242B] text-white hover:bg-[#42494D]"
-                      onClick={runPrimaryAction}
-                      disabled={passState.nextAction.kind === "NONE" && passState.actionState === "COMPLETED"}
-                      data-testid="candidate-pass-primary-action"
-                    >
-                      {passState.nextAction.label}
-                    </Button>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-[#D8DEE5] bg-[#F4F6F8] p-4">
-                  <p className="text-xs uppercase tracking-wide text-[#68707D]">Next</p>
-                  <p className="mt-1 text-sm font-medium text-[#20242B]">{passState.next}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-5">
-            <PassJourney state={passState} />
-            {passState.actionState === "WAITING" && (
-              <Card className="border-[#D8DEE5] bg-white">
-                <CardContent className="flex items-start gap-4 p-5">
-                  <Clock className="mt-1 h-6 w-6 shrink-0 text-[#68707D]" />
-                  <div>
-                    <h3 className="font-semibold text-[#20242B]">You're all set</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#42494D]">
-                      This Pass will show a clear action when the hiring team needs something from you.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-[#E2E6EA] pt-4 text-sm text-[#68707D] sm:max-w-xs sm:justify-end sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
+              {pass.department && <span>{pass.department}</span>}
+              {pass.location && <span>{pass.location}</span>}
+              {pass.passId && <span>Reference {pass.passId}</span>}
+              <span className="inline-flex items-center gap-2 font-medium text-[#42494D] sm:hidden">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+                {passState.stateLabel}
+              </span>
+            </div>
           </div>
         </section>
 
-        <h2 className="text-lg font-semibold text-[#20242B]">Your journey</h2>
+        <PassJourney state={passState} />
+
+        <section
+          className="relative overflow-hidden rounded-[2rem] border border-[#CFD5DB] bg-white shadow-[0_18px_55px_rgba(32,36,43,0.07)]"
+          data-testid="candidate-pass-current-action"
+          aria-labelledby="candidate-current-status"
+          aria-live="polite"
+        >
+          <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: "var(--customer-accent)" }} aria-hidden="true" />
+          <div className="p-5 pl-7 sm:p-8 sm:pl-10">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#68707D]">
+              {candidatePassStatusEyebrow(passState)}
+            </p>
+            <div className="mt-3 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div className="max-w-2xl">
+                <h2 id="candidate-current-status" className="text-2xl font-semibold tracking-[-0.02em] text-[#20242B] sm:text-3xl">
+                  {hasPrimaryAction ? passState.nextAction.label : passState.headline}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-[#42494D] sm:text-base">
+                  {hasPrimaryAction ? passState.nextAction.description : passState.summary}
+                </p>
+              </div>
+              {hasPrimaryAction && (
+                <Button
+                  className="min-h-11 w-full shrink-0 bg-[#20242B] px-5 text-white hover:bg-[#42494D] sm:w-auto"
+                  onClick={runPrimaryAction}
+                  data-testid="candidate-pass-primary-action"
+                >
+                  {passState.nextAction.label}
+                </Button>
+              )}
+            </div>
+            <div className="mt-6 border-t border-[#E2E6EA] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#68707D]">What happens next</p>
+              <p className="mt-1 text-sm leading-6 text-[#42494D]">{passState.next}</p>
+            </div>
+          </div>
+        </section>
+
+        <h2 className="pt-2 text-lg font-semibold text-[#20242B]">Your Pass details</h2>
 
         <section className="grid gap-5 lg:grid-cols-2">
           {(interviewSlots.length > 0 || interviews.length > 0) && (
@@ -474,7 +504,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               <Textarea value={offerResponseText} onChange={(event) => setOfferResponseText(event.target.value)} maxLength={2000} placeholder={offerResponseMode === "negotiate" ? "Your message (optional)" : "Reason (optional)"} />
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setOfferResponseMode(null); setOfferResponseText(""); }}>Cancel</Button>
-                <Button variant={offerResponseMode === "decline" ? "destructive" : "default"} disabled={respondOfferMutation.isPending} onClick={() => {
+                <Button className={offerResponseMode === "decline" ? undefined : "bg-[#20242B] text-white hover:bg-[#42494D]"} variant={offerResponseMode === "decline" ? "destructive" : "default"} disabled={respondOfferMutation.isPending} onClick={() => {
                   if (offerResponseMode === "negotiate") respondOfferMutation.mutate({ response: "negotiate", message: offerResponseText.trim() || undefined });
                   if (offerResponseMode === "decline") respondOfferMutation.mutate({ response: "decline", reason: offerResponseText.trim() || undefined });
                 }}>{offerResponseMode === "negotiate" ? "Send response" : "Decline offer"}</Button>
@@ -569,7 +599,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
                   data-testid="input-message"
                 />
                 <Button
-                  className="min-h-11"
+                  className="min-h-11 bg-[#20242B] text-white hover:bg-[#42494D]"
                   onClick={() => sendMessageMutation.mutate(messageText)}
                   disabled={sendMessageMutation.isPending || !messageText.trim()}
                   data-testid="btn-send-message"
@@ -599,6 +629,8 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
             </CardContent>
           </Card>
         )}
+
+        <ExternalPassFooter config={publicConfig} />
       </main>
 
       <Dialog open={showSlotDialog} onOpenChange={setShowSlotDialog}>
@@ -632,6 +664,7 @@ export default function CandidatePortalPass({ token }: CandidatePortalPassProps)
               Cancel
             </Button>
             <Button
+              className="bg-[#20242B] text-white hover:bg-[#42494D]"
               onClick={() => selectedSlotId && bookSlotMutation.mutate(selectedSlotId)}
               disabled={!selectedSlotId || bookSlotMutation.isPending}
               data-testid="btn-confirm-slot"

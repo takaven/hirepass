@@ -132,6 +132,7 @@ async function withServer(overrides: StorageOverrides, callback: (baseUrl: strin
   process.env.HIREPASS_COMPANY_NAME = "Test Company";
   process.env.HIREPASS_COMPANY_LOCATION = "Dubai";
   process.env.HIREPASS_CAREERS_CONTACT_EMAIL = "careers@example.test";
+  process.env.HIREPASS_COMPANY_ACCENT_COLOR = "#8a6a2f";
   process.env.HIREPASS_PRIVACY_NOTICE_URL = "https://example.test/privacy";
   process.env.HIREPASS_PRIVACY_NOTICE_VERSION = "test-v1";
   let mutableDocument: any = {
@@ -241,10 +242,16 @@ describe("HirePass production envelope", () => {
         companyLocation: "Dubai",
         careersContactEmail: "careers@example.test",
         companyLogoUrl: "",
+        companyAccentColor: "#8A6A2F",
         privacyNoticeUrl: "https://example.test/privacy",
         privacyNoticeVersion: "test-v1",
         aiEnabled: false,
       });
+      process.env.HIREPASS_COMPANY_ACCENT_COLOR = "linear-gradient(red, blue)";
+      const invalidAccentConfig = await (await fetch(`${baseUrl}/api/public/config`)).json() as any;
+      assert.equal(invalidAccentConfig.companyAccentColor, "#01FF22");
+      assert.doesNotMatch(JSON.stringify(invalidAccentConfig), /linear-gradient/);
+      process.env.HIREPASS_COMPANY_ACCENT_COLOR = "#8a6a2f";
       assert.equal((await fetch(`${baseUrl}/api/candidates/201/library`)).status, 401);
       const cookie = await login(baseUrl);
       const library = await fetch(`${baseUrl}/api/candidates/201/library`, { headers: { cookie } });
@@ -597,11 +604,12 @@ describe("HirePass production envelope", () => {
 
     const candidateSource = await readFile(path.join(process.cwd(), "client/src/pages/candidate-portal-pass.tsx"), "utf8");
     const candidateStateSource = await readFile(path.join(process.cwd(), "server/candidate-pass-state.ts"), "utf8");
-    assert.match(candidateSource, /Current stage/);
-    assert.match(candidateSource, /Your action/);
+    assert.match(candidateSource, />Candidate<\/p>/);
+    assert.match(candidateSource, /Your next step/);
     assert.match(candidateSource, /Your journey/);
-    assert.match(candidateSource, /<PublicBrand config=\{publicConfig\} \/>/);
-    assert.match(candidateSource, /grid grid-cols-4 gap-2/);
+    assert.match(candidateSource, /<ExternalPassBrand config=\{publicConfig\} descriptor="Candidate Pass" \/>/);
+    assert.match(candidateSource, /candidate-pass-current-action/);
+    assert.match(candidateSource, /state\.journey\.map/);
     assert.match(candidateSource, /\{documents\.length > 0 && \(/);
     assert.match(candidateSource, /\{timeline\.length > 0 && \(/);
     assert.match(candidateSource, /id="pass-messages"/);
@@ -610,14 +618,16 @@ describe("HirePass production envelope", () => {
     assert.doesNotMatch(candidateSource, /Dominant next action/);
     assert.doesNotMatch(candidateSource, /\["Now", passState\.now\]/);
     assert.doesNotMatch(candidateSource, /Latest update/);
-    assert.match(candidateStateSource, /const stageOrder: CandidateHiringStage\[\] = \["Applied", "Review", "Interview", "Decision"\]/);
+    assert.match(candidateStateSource, /uniqueVisibleHiringPhases\(enabledStages\)/);
+    assert.doesNotMatch(candidateStateSource, /const stageOrder/);
     assert.doesNotMatch(candidateStateSource, /"Handoff"/);
 
     const stakeholderSource = await readFile(path.join(process.cwd(), "client/src/pages/manager-recruitment-pass.tsx"), "utf8");
     assert.match(stakeholderSource, /What needs your input\?/);
-    assert.match(stakeholderSource, /Candidate \/ vacancy context/);
+    assert.match(stakeholderSource, /Your hiring assignment/);
     assert.match(stakeholderSource, /Relevant evidence/);
-    assert.match(stakeholderSource, /<PublicBrand config=\{publicConfig\} \/>/);
+    assert.match(stakeholderSource, /<ExternalPassBrand config=\{publicConfig\} descriptor="Stakeholder Pass" \/>/);
+    assert.match(stakeholderSource, /stakeholder-pass-primary-action/);
     assert.doesNotMatch(stakeholderSource, /bg-slate-950/);
     assert.doesNotMatch(stakeholderSource, /\["Now", managerPassState\.headline\]/);
   });
@@ -628,10 +638,14 @@ describe("HirePass production envelope", () => {
     const careersSource = await readFile(path.join(process.cwd(), "client/src/pages/public-careers.tsx"), "utf8");
     const talentPoolSource = await readFile(path.join(process.cwd(), "client/src/pages/public-talent-pool.tsx"), "utf8");
     const appSource = await readFile(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
+    const externalPassBrandSource = await readFile(path.join(process.cwd(), "client/src/components/external-pass-brand.tsx"), "utf8");
 
     assert.match(routesSource, /HIREPASS_COMPANY_LOGO_URL/);
+    assert.match(routesSource, /HIREPASS_COMPANY_ACCENT_COLOR/);
     assert.match(publicApplySource, /companyLogoUrl/);
     assert.match(publicApplySource, /Powered by HirePass/);
+    assert.match(externalPassBrandSource, /Powered by HirePass/);
+    assert.match(externalPassBrandSource, /--customer-accent/);
     assert.match(careersSource, /Explore current opportunities or share your profile for suitable future roles/);
     assert.doesNotMatch(careersSource, /HirePass keeps the process simple/);
     assert.match(talentPoolSource, /<PublicFooter config=\{config\}\/>/);

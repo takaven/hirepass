@@ -34,7 +34,7 @@ export type CandidateNextAction =
 
 export type CandidateJourneyStep = {
   stage: CandidateHiringStage;
-  status: "completed" | "current" | "upcoming";
+  status: "completed" | "current" | "upcoming" | "neutral";
 };
 
 export type CandidatePassViewState = {
