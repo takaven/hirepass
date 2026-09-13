@@ -81,7 +81,7 @@ export function NotificationsDropdown() {
           <Bell className="h-5 w-5 stroke-primary" strokeWidth={1.5} />
           {unreadCount > 0 && (
             <span
-              className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground flex items-center justify-center"
+              className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-medium text-destructive-foreground"
               data-testid="badge-unread-count"
             >
               {unreadCount > 9 ? "9+" : unreadCount}
@@ -91,7 +91,7 @@ export function NotificationsDropdown() {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-80 p-0 backdrop-blur-xl bg-white/90 dark:bg-black/80 border border-white/30 dark:border-white/10 shadow-lg rounded-2xl"
+        className="w-80 rounded-2xl border border-[#DCE1E7] bg-white p-0 shadow-lg"
         align="end"
         data-testid="notifications-dropdown"
       >

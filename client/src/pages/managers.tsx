@@ -85,7 +85,7 @@ export default function Managers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Hiring Stakeholders</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Hiring Team</h1>
           <p className="text-muted-foreground mt-1">
             People who can own vacancies, review candidates or conduct interviews
           </p>
@@ -93,7 +93,7 @@ export default function Managers() {
         <Link href="/hiring-team/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-manager">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            Add Stakeholder
+            Add team member
           </Button>
         </Link>
       </div>
@@ -105,7 +105,7 @@ export default function Managers() {
             placeholder="Search stakeholders..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 rounded-xl glass-input border-0"
+            className="rounded-xl pl-10"
             data-testid="input-search-managers"
           />
         </div>

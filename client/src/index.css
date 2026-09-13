@@ -55,12 +55,12 @@
   --input: 210 14% 88%;
   --ring: 220 15% 15%;
   
-  /* Charts - Navy-based with neutral variety */
+  /* Charts stay charcoal/graphite with one restrained signal and warning. */
   --chart-1: 220 15% 15%;
-  --chart-2: 127 100% 40%;
+  --chart-2: 195 8% 28%;
   --chart-3: 220 9% 45%;
   --chart-4: 35 80% 50%;
-  --chart-5: 190 60% 45%;
+  --chart-5: 210 14% 75%;
   
   /* Sidebar */
   --sidebar: 0 0% 100%;
@@ -83,11 +83,11 @@
   --font-mono: "SF Mono", Menlo, Monaco, "Courier New", monospace;
   --radius: .75rem;
   
-  /* Glass Effect Variables - 16px iOS-style frosted glass */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-  --glass-blur: 16px;
+  /* Legacy utility variables now resolve to opaque pilot surfaces. */
+  --glass-bg: #FFFFFF;
+  --glass-border: #DCE1E7;
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --glass-blur: 0px;
   
   /* Shadows - Subtle */
   --shadow-2xs: 0 1px 2px rgba(0, 0, 0, 0.03);
@@ -258,22 +258,18 @@
     inset: -1px;
   }
 
-  /* iOS Glass Effect Utilities */
+  /* Legacy class names retained for compatibility; treatment is opaque. */
   .glass {
     background: var(--glass-bg);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
   }
 
   .glass-card {
-    background: rgba(255, 255, 255, 0.75);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-    border-radius: 20px;
+    background: #FFFFFF;
+    border: 1px solid #DCE1E7;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-radius: 16px;
   }
 
   .dark .glass-card {
@@ -283,10 +279,8 @@
   }
 
   .glass-nav {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    background: #FFFFFF;
+    border-bottom: 1px solid #DCE1E7;
   }
 
   .dark .glass-nav {
@@ -295,10 +289,8 @@
   }
 
   .glass-sidebar {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border-right: 1px solid rgba(0, 0, 0, 0.05);
+    background: #FFFFFF;
+    border-right: 1px solid #DCE1E7;
   }
 
   .dark .glass-sidebar {
@@ -307,14 +299,14 @@
   }
 
   .glass-input {
-    background: rgba(255, 255, 255, 0.6);
-    border: 1.5px solid #E5E5EA;
+    background: #FFFFFF;
+    border: 1px solid #DCE1E7;
     border-radius: 12px;
   }
 
   .glass-input:focus {
-    border-color: #00C853;
-    box-shadow: 0 0 0 3px rgba(0, 200, 83, 0.15);
+    border-color: #01FF22;
+    box-shadow: 0 0 0 3px rgba(1, 255, 34, 0.16);
   }
 
   .dark .glass-input {
@@ -324,32 +316,32 @@
 
   /* Status badge colors */
   .status-applied {
-    @apply border-blue-400 bg-blue-50/50 text-blue-700;
+    @apply border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D];
   }
   .dark .status-applied {
-    @apply border-blue-500 bg-blue-900/30 text-blue-300;
+    @apply border-gray-600 bg-gray-900/30 text-gray-300;
   }
 
   .status-screening {
-    @apply border-amber-400 bg-amber-50/50 text-amber-700;
+    @apply border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D];
   }
   .dark .status-screening {
     @apply border-amber-500 bg-amber-900/30 text-amber-300;
   }
 
   .status-interview {
-    @apply border-purple-400 bg-purple-50/50 text-purple-700;
+    @apply border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D];
   }
   .dark .status-interview {
-    @apply border-purple-500 bg-purple-900/30 text-purple-300;
+    @apply border-gray-600 bg-gray-900/30 text-gray-300;
   }
 
   .status-offer {
-    @apply border-primary bg-primary/10 text-primary;
+    @apply border-[#DCE1E7] bg-[#F4F6F8] text-[#20242B];
   }
 
   .status-hired {
-    @apply border-primary bg-primary text-primary-foreground;
+    @apply border-[#DCE1E7] bg-white text-[#20242B];
   }
 
   .status-rejected {
@@ -371,7 +363,7 @@
     @apply border-gray-300 text-gray-600;
   }
   .priority-medium {
-    @apply border-blue-300 text-blue-600;
+    @apply border-[#DCE1E7] text-[#42494D];
   }
   .priority-high {
     @apply border-amber-400 text-amber-600;

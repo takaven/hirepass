@@ -51,7 +51,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-semibold tracking-tight">What needs your attention</h1>
           <p className="mt-1 text-sm text-muted-foreground">Open hiring work, interviews and next actions in one place.</p>
         </div>
-        <Button asChild className="bg-[#20242B] text-white hover:bg-[#42494D]" data-testid="button-new-vacancy">
+        <Button asChild data-testid="button-new-vacancy">
           <Link href="/vacancies/new"><FileText className="mr-2 h-4 w-4" />New vacancy</Link>
         </Button>
       </div>
@@ -80,7 +80,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="py-10 text-center" data-testid="home-up-to-date">
-            <CheckCircle className="mx-auto mb-3 h-9 w-9 text-[#01A31A]" />
+            <CheckCircle className="mx-auto mb-3 h-9 w-9 text-[#42494D]" />
             <h2 className="text-lg font-semibold">You're up to date</h2>
             <p className="mt-1 text-sm text-muted-foreground">No hiring action needs attention right now.</p>
           </div>

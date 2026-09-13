@@ -43,7 +43,7 @@ const secondaryNavItems = [
     icon: Calendar,
   },
   {
-    title: "Pass Control",
+    title: "Hiring Control",
     url: "/hiring-control",
     icon: ShieldCheck,
   },
@@ -58,7 +58,7 @@ export function AppSidebar() {
   const [location] = useLocation();
 
   return (
-    <Sidebar className="bg-white/60 dark:bg-black/40 backdrop-blur-xl border-r border-black/5 dark:border-white/10">
+    <Sidebar className="border-r border-[#DCE1E7] bg-white">
       <SidebarHeader className="p-3">
         <Link href="/" className="flex items-center gap-2">
           <img
@@ -82,10 +82,10 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       className={cn(
-                        "rounded-xl h-9 px-2.5 transition-all duration-150",
+                        "h-10 rounded-xl px-2.5 transition-all duration-150",
                         isActive 
-                          ? "bg-primary/10 shadow-sm" 
-                          : "hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                          ? "bg-[#F4F6F8] shadow-sm before:h-4 before:w-1 before:rounded-full before:bg-[#01FF22] before:content-['']"
+                          : "hover:bg-[#F4F6F8]"
                       )}
                     >
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase()}`}>
@@ -97,7 +97,7 @@ export function AppSidebar() {
                           strokeWidth={2} 
                         />
                         <span className={cn(
-                          "text-[12px]",
+                          "text-[13px]",
                           isActive ? "text-foreground font-medium" : "text-muted-foreground"
                         )}>
                           {item.title}
@@ -118,10 +118,10 @@ export function AppSidebar() {
                   (item.url !== "/" && location.startsWith(item.url));
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild className={cn("rounded-xl h-8 px-2.5 transition-all duration-150", isActive ? "bg-primary/10 shadow-sm" : "hover:bg-black/[0.03] dark:hover:bg-white/[0.05]")}>
+                    <SidebarMenuButton asChild className={cn("h-10 rounded-xl px-2.5 transition-all duration-150", isActive ? "bg-[#F4F6F8] shadow-sm before:h-4 before:w-1 before:rounded-full before:bg-[#01FF22] before:content-['']" : "hover:bg-[#F4F6F8]")}>
                       <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
                         <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-primary/60")} strokeWidth={2} />
-                        <span className={cn("text-[11px]", isActive ? "text-foreground font-medium" : "text-muted-foreground")}>{item.title}</span>
+                        <span className={cn("text-[13px]", isActive ? "text-foreground font-medium" : "text-muted-foreground")}>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -138,10 +138,10 @@ export function AppSidebar() {
             <SidebarMenuButton
               asChild
               className={cn(
-                "rounded-xl h-9 px-2.5 transition-all duration-150",
+                "h-10 rounded-xl px-2.5 transition-all duration-150",
                 location === "/settings" 
-                  ? "bg-primary/10 shadow-sm" 
-                  : "hover:bg-black/[0.03] dark:hover:bg-white/[0.05]"
+                  ? "bg-[#F4F6F8] shadow-sm before:h-4 before:w-1 before:rounded-full before:bg-[#01FF22] before:content-['']"
+                  : "hover:bg-[#F4F6F8]"
               )}
             >
               <Link href="/settings" data-testid="nav-settings">
@@ -153,7 +153,7 @@ export function AppSidebar() {
                   strokeWidth={2} 
                 />
                 <span className={cn(
-                  "text-[12px]",
+                  "text-[13px]",
                   location === "/settings" ? "text-foreground font-medium" : "text-muted-foreground"
                 )}>
                   Settings
@@ -162,8 +162,8 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="mt-2 mx-1 px-2.5 py-1.5 rounded-xl bg-black/[0.02] dark:bg-white/[0.05]">
-          <p className="text-[10px] text-muted-foreground text-center">
+        <div className="mx-1 mt-2 rounded-xl bg-[#F4F6F8] px-2.5 py-2">
+          <p className="text-center text-xs text-muted-foreground">
             Hiring without the chasing.
           </p>
         </div>

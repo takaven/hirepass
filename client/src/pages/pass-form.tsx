@@ -8,6 +8,7 @@ import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -508,13 +509,12 @@ export default function PassForm() {
                   ? true
                   : isInterviewEnabled(currentEnabledStages);
                 return (
-                  <label key={phase.step} className="flex items-start gap-3 rounded-xl border border-border bg-white/60 px-3 py-3 text-sm">
-                    <input
-                      type="checkbox"
+                  <label key={phase.step} className="flex items-start gap-3 rounded-xl border border-[#DCE1E7] bg-white px-3 py-3 text-sm">
+                    <Checkbox
                       checked={selected}
                       disabled={isLegacyWorkflow || phase.fixed}
-                      onChange={(event) => {
-                        form.setValue("enabledStages", stagesFromVisibleWorkflow({ interviewEnabled: event.target.checked }), { shouldDirty: true });
+                      onCheckedChange={(checked) => {
+                        form.setValue("enabledStages", stagesFromVisibleWorkflow({ interviewEnabled: checked === true }), { shouldDirty: true });
                       }}
                       aria-label={`${phase.label} phase`}
                     />
@@ -547,7 +547,7 @@ export default function PassForm() {
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-xl gap-2 border-[#20242B] text-[#20242B] hover:bg-[#F4F6F8]"
+                className="gap-2 rounded-xl"
                 onClick={addPosition}
                 data-testid="button-add-position"
               >
@@ -851,7 +851,7 @@ export default function PassForm() {
               ) : (
                 <Save className="w-4 h-4" strokeWidth={1.5} />
               )}
-              {isEditing ? "Update Vacancy" : "Create Vacancy"}
+              {isEditing ? "Update vacancy" : "Create vacancy"}
             </Button>
           </div>
         </form>

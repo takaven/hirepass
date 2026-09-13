@@ -66,11 +66,11 @@ const waitingLabels: Record<WaitingOn, string> = {
 const waitingStyles: Record<WaitingOn, string> = {
   candidate: "bg-amber-50 text-amber-700 border-amber-200",
   manager: "bg-[#F4F6F8] text-[#20242B] border-[#D8DEE4]",
-  hr: "bg-rose-50 text-rose-700 border-rose-200",
+  hr: "bg-amber-50 text-amber-700 border-amber-200",
   upcoming_event: "bg-[#F4F6F8] text-[#42494D] border-[#D8DEE4]",
-  no_action: "bg-slate-50 text-slate-700 border-slate-200",
-  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  expired_revoked: "bg-zinc-100 text-zinc-700 border-zinc-300",
+  no_action: "bg-[#F4F6F8] text-[#42494D] border-[#D8DEE4]",
+  completed: "bg-white text-[#20242B] border-[#D8DEE4]",
+  expired_revoked: "bg-[#F4F6F8] text-[#68707D] border-[#D8DEE4]",
 };
 
 function passUrl(type: "candidate" | "manager", token: string) {
@@ -81,6 +81,30 @@ function nextOwnerLabel(passHandoff: string | null) {
   if (!passHandoff) return null;
   const owner = passHandoff.split("->").at(-1)?.trim();
   return owner ? `Next owner: ${owner}` : `Next owner: ${passHandoff.replace(/^.*?:\s*/, "")}`;
+}
+
+const activityLabels: Record<string, string> = {
+  manager_pass_issued: "Stakeholder access created",
+  candidate_pass_issued: "Candidate access created",
+  manager_pass_revoked: "Stakeholder access withdrawn",
+  candidate_pass_revoked: "Candidate access withdrawn",
+  manager_pass_extended: "Stakeholder access extended",
+  candidate_pass_extended: "Candidate access extended",
+  pass_nudge_recorded: "Follow-up recorded",
+  created_pass: "Vacancy created",
+};
+
+function activityLabel(action: string) {
+  return activityLabels[action] || action.replaceAll("_", " ");
+}
+
+function hiringControlLabel(label: string) {
+  const labels: Record<string, string> = {
+    "Monitor Pass": "Monitor progress",
+    "PASS NOT ACTIVE": "Access not active",
+    "PASS EXPIRED": "Access expired",
+  };
+  return (labels[label] || label).replace(/\bPass\b/g, "application");
 }
 
 export default function HrPassControl() {
@@ -127,7 +151,7 @@ export default function HrPassControl() {
         </div>
         <div className="space-y-1">
           <label htmlFor="extend-access-until" className="text-sm font-medium">Extend access until</label>
-          <Input id="extend-access-until" className="h-9 w-40" type="date" value={extendDate} onChange={(event) => setExtendDate(event.target.value)} />
+          <Input id="extend-access-until" className="w-full sm:w-48" type="date" value={extendDate} onChange={(event) => setExtendDate(event.target.value)} />
           <p className="text-xs text-muted-foreground">Used when extending Candidate or Stakeholder access.</p>
         </div>
       </div>
@@ -155,21 +179,21 @@ export default function HrPassControl() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline" className={waitingStyles[item.waitingOn]}>{waitingLabels[item.waitingOn]}</Badge>
-                    {item.isStalled && <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700"><AlertTriangle className="mr-1 h-3 w-3" />Stalled</Badge>}
+                    {item.isStalled && <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800"><AlertTriangle className="mr-1 h-3 w-3" />Stalled</Badge>}
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
-                  <div className="rounded-md border p-3">
+                  <div className="border-b border-[#DCE1E7] pb-4 md:border-b-0 md:border-r md:pb-0 md:pr-4">
                     <div className="flex items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium">Next action</p>
-                        <p className="text-sm text-muted-foreground">{item.nextAction}</p>
+                        <p className="text-sm text-muted-foreground">{hiringControlLabel(item.nextAction)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {item.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${item.waitingAgeDays} day${item.waitingAgeDays === 1 ? "" : "s"}`}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">{item.expectedMovement}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{hiringControlLabel(item.expectedMovement)}</p>
                         {item.passHandoff && <p className="mt-2 text-xs font-medium text-[#42494D]">{nextOwnerLabel(item.passHandoff)}</p>}
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
@@ -194,7 +218,7 @@ export default function HrPassControl() {
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="destructive"
                               onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/manager-links/${item.activeManagerLink!.id}/revoke` })}
                             >
                               <ShieldOff className="mr-1 h-3.5 w-3.5" /> Revoke
@@ -203,7 +227,7 @@ export default function HrPassControl() {
                         )}
                         <Button
                           size="sm"
-                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: item.waitingOn === "manager" ? "manager" : "hr", reason: "Manual hiring-team follow-up recorded from Pass Control." } })}
+                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: item.waitingOn === "manager" ? "manager" : "hr", reason: "Manual hiring-team follow-up recorded from Hiring Control." } })}
                         >
                           <Bell className="mr-1 h-3.5 w-3.5" /> Nudge
                         </Button>
@@ -211,12 +235,12 @@ export default function HrPassControl() {
                     </div>
                   </div>
 
-                  <div className="rounded-md border p-3">
+                  <div className="md:pl-1">
                     <p className="text-sm font-medium">Recent activity</p>
                     <div className="mt-2 space-y-1">
                       {item.recentActivity.length ? item.recentActivity.map((activity) => (
                         <p key={activity.id} className="text-xs text-muted-foreground">
-                          {activity.action.replaceAll("_", " ")}
+                          {activityLabel(activity.action)}
                           {activity.createdAt ? ` · ${formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}` : ""}
                         </p>
                       )) : <p className="text-xs text-muted-foreground">No activity yet.</p>}
@@ -226,16 +250,16 @@ export default function HrPassControl() {
 
                 <div className="space-y-2">
                   {item.candidates.map((candidate) => (
-                    <div key={candidate.id} className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between">
+                    <div key={candidate.id} className="flex flex-col gap-2 border-t border-[#DCE1E7] px-1 py-3 first:border-t-0 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-medium">{candidate.candidateName}</p>
                           <Badge variant="outline" className={waitingStyles[candidate.waitingOn]}>{waitingLabels[candidate.waitingOn]}</Badge>
-                          {candidate.isStalled && <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Stalled</Badge>}
+                          {candidate.isStalled && <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">Stalled</Badge>}
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{candidate.stateLabel} · {candidate.nextAction}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{hiringControlLabel(candidate.stateLabel)} · {hiringControlLabel(candidate.nextAction)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {candidate.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${candidate.waitingAgeDays} day${candidate.waitingAgeDays === 1 ? "" : "s"}`} · {candidate.expectedMovement}
+                          {candidate.waitingAgeDays === null ? "Waiting age not available" : `Waiting for ${candidate.waitingAgeDays} day${candidate.waitingAgeDays === 1 ? "" : "s"}`} · {hiringControlLabel(candidate.expectedMovement)}
                         </p>
                         {candidate.passHandoff && <p className="mt-1 text-xs font-medium text-[#42494D]">{nextOwnerLabel(candidate.passHandoff)}</p>}
                       </div>
@@ -259,7 +283,7 @@ export default function HrPassControl() {
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="destructive"
                               onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/candidate-links/${candidate.activeCandidateLink!.id}/revoke` })}
                             >
                               Revoke
@@ -268,7 +292,7 @@ export default function HrPassControl() {
                         )}
                         <Button
                           size="sm"
-                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: "candidate", targetId: candidate.id, reason: "Manual candidate follow-up recorded from Pass Control." } })}
+                          onClick={() => actionMutation.mutate({ method: "POST", url: `/api/hr-pass-control/passes/${item.passId}/nudge`, body: { targetType: "candidate", targetId: candidate.id, reason: "Manual candidate follow-up recorded from Hiring Control." } })}
                         >
                           Nudge
                         </Button>

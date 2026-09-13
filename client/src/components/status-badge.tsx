@@ -40,32 +40,32 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusStyles: Record<string, string> = {
-  draft: "border-gray-400 bg-gray-50/50 text-gray-600 dark:border-gray-500 dark:bg-gray-800/30 dark:text-gray-400",
-  awaiting_jd_approval: "border-amber-400 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-900/30 dark:text-amber-300",
-  sourcing: "border-blue-400 bg-blue-50/50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300",
-  screening: "border-indigo-400 bg-indigo-50/50 text-indigo-700 dark:border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300",
-  interviewing: "border-purple-400 bg-purple-50/50 text-purple-700 dark:border-purple-500 dark:bg-purple-900/30 dark:text-purple-300",
-  decision: "border-orange-400 bg-orange-50/50 text-orange-700 dark:border-orange-500 dark:bg-orange-900/30 dark:text-orange-300",
-  offer_pending: "border-primary bg-primary/10 text-primary",
-  closed_hired: "border-green-400 bg-green-50/50 text-green-700 dark:border-green-500 dark:bg-green-900/30 dark:text-green-300",
-  closed_cancelled: "border-red-400 bg-red-50/50 text-red-700 dark:border-red-500 dark:bg-red-900/30 dark:text-red-300",
-  on_hold: "border-amber-400 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-900/30 dark:text-amber-300",
-  new: "border-blue-400 bg-blue-50/50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300",
-  shortlisted: "border-indigo-400 bg-indigo-50/50 text-indigo-700 dark:border-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300",
-  selected: "border-primary bg-primary/10 text-primary",
-  hired: "border-green-400 bg-green-50/50 text-green-700 dark:border-green-500 dark:bg-green-900/30 dark:text-green-300",
-  rejected: "border-red-400 bg-red-50/50 text-red-700 dark:border-red-500 dark:bg-red-900/30 dark:text-red-300",
+  draft: "border-[#DCE1E7] bg-[#F4F6F8] text-[#68707D]",
+  awaiting_jd_approval: "border-amber-300 bg-amber-50 text-amber-800",
+  sourcing: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  screening: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  interviewing: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  decision: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  offer_pending: "border-[#DCE1E7] bg-[#F4F6F8] text-[#20242B]",
+  closed_hired: "border-[#DCE1E7] bg-white text-[#20242B]",
+  closed_cancelled: "border-red-200 bg-red-50 text-red-700",
+  on_hold: "border-amber-300 bg-amber-50 text-amber-800",
+  new: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  shortlisted: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  selected: "border-[#01FF22] bg-[#01FF22]/10 text-[#20242B]",
+  hired: "border-[#DCE1E7] bg-white text-[#20242B]",
+  rejected: "border-red-200 bg-red-50 text-red-700",
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const label = statusLabels[status] || status;
-  const style = statusStyles[status] || "border-gray-400 bg-gray-50/50 text-gray-600";
+  const style = statusStyles[status] || "border-[#DCE1E7] bg-[#F4F6F8] text-[#68707D]";
   
   return (
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-3 py-1 font-medium border-2",
+        "rounded-full border px-3 py-1 font-medium",
         style,
         className
       )}
@@ -89,10 +89,10 @@ const priorityLabels: Record<Priority, string> = {
 };
 
 const priorityStyles: Record<Priority, string> = {
-  low: "border-gray-400 bg-gray-50/50 text-gray-600 dark:border-gray-500 dark:bg-gray-800/30 dark:text-gray-400",
-  medium: "border-blue-400 bg-blue-50/50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300",
-  high: "border-orange-400 bg-orange-50/50 text-orange-700 dark:border-orange-500 dark:bg-orange-900/30 dark:text-orange-300",
-  urgent: "border-red-400 bg-red-50/50 text-red-700 dark:border-red-500 dark:bg-red-900/30 dark:text-red-300",
+  low: "border-[#DCE1E7] bg-[#F4F6F8] text-[#68707D]",
+  medium: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  high: "border-amber-300 bg-amber-50 text-amber-800",
+  urgent: "border-red-200 bg-red-50 text-red-700",
 };
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
@@ -100,7 +100,7 @@ export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-3 py-1 font-medium border-2",
+        "rounded-full border px-3 py-1 font-medium",
         priorityStyles[priority],
         className
       )}
@@ -127,24 +127,24 @@ const stageLabels: Record<string, string> = {
 };
 
 const stageStyles: Record<string, string> = {
-  in_person: "border-blue-400 bg-blue-50/50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300",
-  virtual: "border-purple-400 bg-purple-50/50 text-purple-700 dark:border-purple-500 dark:bg-purple-900/30 dark:text-purple-300",
-  phone: "border-amber-400 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-900/30 dark:text-amber-300",
-  panel: "border-primary bg-primary/10 text-primary",
-  scheduled: "border-blue-400 bg-blue-50/50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300",
-  completed: "border-green-400 bg-green-50/50 text-green-700 dark:border-green-500 dark:bg-green-900/30 dark:text-green-300",
-  cancelled: "border-red-400 bg-red-50/50 text-red-700 dark:border-red-500 dark:bg-red-900/30 dark:text-red-300",
+  in_person: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  virtual: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  phone: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  panel: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  scheduled: "border-[#DCE1E7] bg-[#F4F6F8] text-[#42494D]",
+  completed: "border-[#DCE1E7] bg-white text-[#20242B]",
+  cancelled: "border-red-200 bg-red-50 text-red-700",
 };
 
 export function StageBadge({ stage, className }: StageBadgeProps) {
   const label = stageLabels[stage] || stage;
-  const style = stageStyles[stage] || "border-gray-400 bg-gray-50/50 text-gray-600";
+  const style = stageStyles[stage] || "border-[#DCE1E7] bg-[#F4F6F8] text-[#68707D]";
   
   return (
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-3 py-1 font-medium border-2",
+        "rounded-full border px-3 py-1 font-medium",
         style,
         className
       )}

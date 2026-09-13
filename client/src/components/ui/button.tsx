@@ -11,23 +11,23 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[#00C853] text-white border border-[#00B548] shadow-sm",
+          "border border-[#20242B] bg-[#20242B] text-white shadow-sm hover:bg-[#42494D] hover:border-[#42494D]",
         destructive:
           "bg-destructive text-destructive-foreground border border-destructive-border",
         outline:
-          "border border-input bg-white/50 dark:bg-white/5 hover:bg-white/70 dark:hover:bg-white/10 shadow-xs",
+          "border border-[#DCE1E7] bg-white text-[#20242B] hover:bg-[#F4F6F8] shadow-xs",
         secondary: 
-          "bg-white/60 dark:bg-white/10 backdrop-blur-sm border border-[#00C853]/30 text-foreground",
+          "border border-[#DCE1E7] bg-[#F4F6F8] text-[#20242B] hover:bg-white",
         ghost: 
-          "border border-transparent hover:bg-white/50 dark:hover:bg-white/10",
+          "border border-transparent text-[#42494D] hover:bg-[#F4F6F8] hover:text-[#20242B]",
         link: 
           "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "min-h-9 px-4 py-2",
-        sm: "min-h-8 rounded-xl px-3 text-xs",
-        lg: "min-h-10 rounded-xl px-8",
-        icon: "h-9 w-9",
+        default: "min-h-11 px-4 py-2 sm:min-h-9",
+        sm: "min-h-11 rounded-xl px-3 text-xs sm:min-h-8",
+        lg: "min-h-11 rounded-xl px-8 sm:min-h-10",
+        icon: "h-11 w-11 sm:h-9 sm:w-9",
       },
     },
     defaultVariants: {

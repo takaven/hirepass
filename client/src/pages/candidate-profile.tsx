@@ -123,7 +123,7 @@ export default function CandidateProfile() {
               <Badge variant="outline">{presentCandidateSource(candidate.source)}</Badge>
               {candidate.inTalentPool && presentCandidateSource(candidate.source) !== "Talent pool" && <Badge variant="secondary">Talent pool</Badge>}
               {candidate.isAnonymized && <Badge variant="destructive">Erased profile</Badge>}
-              {candidate.privacyNoticeVersion && <Badge variant="outline">Privacy notice {candidate.privacyNoticeVersion}</Badge>}
+              {candidate.privacyNoticeVersion && <Badge variant="outline" className="max-w-full whitespace-normal break-all text-left">Privacy notice {candidate.privacyNoticeVersion}</Badge>}
             </div>
             {candidate.cvSummary && <p className="mt-4 text-sm leading-6 text-muted-foreground">{candidate.cvSummary}</p>}
           </div>
