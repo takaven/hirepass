@@ -226,7 +226,7 @@ export default function InterviewForm() {
                   >
                     <FormControl>
                       <SelectTrigger className="rounded-xl" data-testid="select-candidate">
-                        <SelectValue placeholder={selectedPassId ? "Select candidate" : "Select a pass first"} />
+                        <SelectValue placeholder={selectedPassId ? "Select candidate" : "Select a vacancy first"} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -477,7 +477,7 @@ export default function InterviewForm() {
                 data-testid="button-submit"
               >
                 {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Schedule Interview
+                Schedule interview
               </Button>
             </div>
           </form>

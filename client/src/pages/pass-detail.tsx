@@ -209,7 +209,7 @@ export default function PassDetail() {
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-xl gap-2" data-testid="button-add-candidate">
                 <UserPlus className="w-4 h-4" strokeWidth={1.5} />
-                Add Candidate
+                Add candidate
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-2xl">

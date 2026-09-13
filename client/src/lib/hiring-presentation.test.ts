@@ -183,12 +183,22 @@ describe("hiring workflow presentation", () => {
     assert.match(source, /Extend access until/);
     assert.match(source, /Send stakeholder access/);
     assert.match(source, /Send candidate access/);
+    assert.match(source, /"Monitor Pass": "Monitor progress"/);
+    assert.match(source, /"PASS NOT ACTIVE": "Access not active"/);
+    assert.match(source, /variant="destructive"[\s\S]*Revoke/);
     assert.doesNotMatch(source, /Internal Pass Control/);
     assert.doesNotMatch(source, /Next Pass action/);
     assert.doesNotMatch(source, /Stalled Passes/);
     assert.doesNotMatch(source, /Pass Handoff:/);
     assert.doesNotMatch(source, /text-blue-700/);
     assert.doesNotMatch(source, /bg-cyan-50/);
+  });
+
+  it("keeps Hiring Control actions readable at mobile width", () => {
+    const source = readFileSync("client/src/pages/hr-pass-control.tsx", "utf8");
+    assert.match(source, /grid grid-cols-2 gap-3 md:grid-cols-4/);
+    assert.match(source, /flex flex-col items-stretch gap-3 md:flex-row md:items-start md:justify-between/);
+    assert.match(source, /grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 md:flex md:flex-wrap md:justify-end/);
   });
 
   it("preserves the application-scoped AI review surface", () => {
@@ -199,5 +209,45 @@ describe("hiring workflow presentation", () => {
     assert.match(source, /Material gaps:/);
     assert.match(source, /Clarify:/);
     assert.match(source, /Suggest questions/);
+  });
+
+  it("locks the internal action, signal and field tokens for the pilot", () => {
+    const button = readFileSync("client/src/components/ui/button.tsx", "utf8");
+    const input = readFileSync("client/src/components/ui/input.tsx", "utf8");
+    const select = readFileSync("client/src/components/ui/select.tsx", "utf8");
+    const checkbox = readFileSync("client/src/components/ui/checkbox.tsx", "utf8");
+
+    assert.match(button, /bg-\[#20242B\]/);
+    assert.match(button, /min-h-11/);
+    assert.doesNotMatch(button, /#00C853|#00B548/);
+    assert.match(input, /border-\[#DCE1E7\]/);
+    assert.match(input, /focus:border-\[#01FF22\]/);
+    assert.match(select, /focus:border-\[#01FF22\]/);
+    assert.match(checkbox, /data-\[state=checked\]:bg-\[#01FF22\]/);
+  });
+
+  it("uses opaque structural cards instead of translucent glass surfaces", () => {
+    const glassCard = readFileSync("client/src/components/glass-card.tsx", "utf8");
+    assert.match(glassCard, /border border-\[#DCE1E7\] bg-white/);
+    assert.doesNotMatch(glassCard, /backdrop-blur|bg-white\//);
+  });
+
+  it("keeps pilot navigation legible and light-only", () => {
+    const app = readFileSync("client/src/App.tsx", "utf8");
+    const sidebar = readFileSync("client/src/components/app-sidebar.tsx", "utf8");
+    const settings = readFileSync("client/src/pages/settings.tsx", "utf8");
+
+    assert.match(app, /forcedTheme="light"/);
+    assert.doesNotMatch(app, /ThemeToggle/);
+    assert.match(sidebar, /title: "Hiring Control"/);
+    assert.match(sidebar, /text-\[13px\]/);
+    assert.doesNotMatch(settings, /switch-dark-mode|Dark mode/);
+  });
+
+  it("keeps internal status presentation neutral except for attention and failure", () => {
+    const statuses = readFileSync("client/src/components/status-badge.tsx", "utf8");
+    assert.doesNotMatch(statuses, /(blue|purple|teal|cyan|green|emerald|rose)-/);
+    assert.match(statuses, /amber-50/);
+    assert.match(statuses, /red-50/);
   });
 });

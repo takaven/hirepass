@@ -136,7 +136,7 @@ export default function Candidates() {
         <Link href="/candidates/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-candidate">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            Add Candidate
+            Add candidate
           </Button>
         </Link>
       </div>
@@ -343,7 +343,7 @@ export default function Candidates() {
               <Link href="/candidates/new">
                 <Button className="mt-6 rounded-xl gap-2" data-testid="button-add-first-candidate">
                   <Plus className="w-4 h-4" strokeWidth={1.5} />
-                  Add First Candidate
+                  Add first candidate
                 </Button>
               </Link>
             )}

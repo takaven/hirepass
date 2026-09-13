@@ -4,13 +4,11 @@ import { cn } from "@/lib/utils"
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
-    // h-9 to match icon buttons and default buttons.
-    // Clean iOS-inspired input styling with green focus
     return (
       <input
         type={type}
         className={cn(
-          "flex h-9 w-full rounded-xl border-[1.5px] border-[#E5E5EA] bg-[rgba(255,255,255,0.6)] px-4 py-3 text-base file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground outline-none focus:border-[#00C853] focus:shadow-[0_0_0_3px_rgba(0,200,83,0.15)] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm transition-all duration-200",
+          "flex h-11 w-full rounded-xl border border-[#DCE1E7] bg-white px-3 py-2 text-base text-[#20242B] placeholder:text-[#68707D] outline-none transition-[border-color,box-shadow] duration-150 focus:border-[#01FF22] focus:shadow-[0_0_0_3px_rgba(1,255,34,0.16)] disabled:cursor-not-allowed disabled:bg-[#F4F6F8] disabled:opacity-60 sm:h-10 md:text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-[#20242B] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-[#42494D]",
           className
         )}
         ref={ref}

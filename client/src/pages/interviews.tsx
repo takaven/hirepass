@@ -140,7 +140,7 @@ export default function Interviews() {
         <Link href="/interviews/new">
           <Button className="rounded-xl gap-2" data-testid="button-schedule-interview">
             <Plus className="w-4 h-4" strokeWidth={1.5} />
-            Schedule Interview
+            Schedule interview
           </Button>
         </Link>
       </div>
@@ -307,7 +307,7 @@ export default function Interviews() {
                           variant="outline"
                           className={`rounded-full ${
                             interview.status === "completed" 
-                              ? "border-green-400 text-green-600" 
+                              ? "border-[#DCE1E7] text-[#20242B]"
                               : interview.status === "cancelled" 
                                 ? "border-red-400 text-red-600" 
                                 : ""
@@ -337,7 +337,7 @@ export default function Interviews() {
             <Link href="/interviews/new">
               <Button className="mt-6 rounded-xl gap-2" data-testid="button-schedule-first">
                 <Plus className="w-4 h-4" strokeWidth={1.5} />
-                Schedule Interview
+                Schedule interview
               </Button>
             </Link>
           </div>

@@ -120,8 +120,8 @@ type PipelineData = Record<string, PassCandidate[]>;
 const POSITION_COLORS = [
   "bg-[#F4F6F8] text-[#20242B] border-[#D8DEE4]",
   "bg-white text-[#20242B] border-[#D8DEE4]",
-  "bg-[#01FF22]/10 text-[#20242B] border-[#01FF22]/40",
-  "bg-zinc-50 text-zinc-700 border-zinc-200",
+  "bg-[#F4F6F8] text-[#42494D] border-[#D8DEE4]",
+  "bg-white text-[#68707D] border-[#D8DEE4]",
 ];
 
 const STAGE_DOT_COLORS: Record<string, string> = {
@@ -571,7 +571,7 @@ export default function PassCandidates() {
             data-testid="button-add-candidate"
           >
             <Plus className="w-4 h-4" strokeWidth={2} />
-            Add Candidate
+            Add candidate
           </Button>
         </div>
       </div>
@@ -592,7 +592,7 @@ export default function PassCandidates() {
               rounded-xl px-4 transition-all
               ${filterPositionId === "all" 
                 ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
-                : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
+                : "border border-[#DCE1E7] bg-white text-[#42494D]"}
             `}
             onClick={() => setFilterPositionId("all")}
             data-testid="filter-position-all"
@@ -608,7 +608,7 @@ export default function PassCandidates() {
                 rounded-xl px-4 transition-all
                 ${filterPositionId === String(position.id) 
                   ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
-                  : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
+                  : "border border-[#DCE1E7] bg-white text-[#42494D]"}
               `}
               onClick={() => setFilterPositionId(String(position.id))}
               data-testid={`filter-position-${position.id}`}
@@ -629,7 +629,7 @@ export default function PassCandidates() {
               rounded-xl px-4 transition-all
               ${filterPositionId === "unassigned" 
                 ? "bg-[#01FF22]/10 text-[#20242B] border border-[#01FF22]/40" 
-                : "bg-white/50 dark:bg-[rgba(40,40,40,0.5)] backdrop-blur-lg border border-white/30 dark:border-white/10"}
+                : "border border-[#DCE1E7] bg-white text-[#42494D]"}
             `}
             onClick={() => setFilterPositionId("unassigned")}
             data-testid="filter-position-unassigned"
@@ -738,8 +738,7 @@ export default function PassCandidates() {
                           onClick={() => setDetailCandidate(pc)}
                           className={`
                             p-3 rounded-xl cursor-pointer transition-all
-                            bg-white/60 dark:bg-[rgba(40,40,40,0.7)] backdrop-blur-lg
-                            border border-white/40 dark:border-white/10
+                            border border-[#DCE1E7] bg-white
                             hover:shadow-md hover:scale-[1.02]
                             ${selectedCandidates.includes(pc.id) ? "ring-2 ring-primary" : ""}
                           `}
@@ -774,7 +773,7 @@ export default function PassCandidates() {
                               {position && (
                                 <Badge 
                                   variant="outline" 
-                                  className={`mt-2 text-[10px] px-1.5 py-0.5 ${positionColor}`}
+                                  className={`mt-2 px-1.5 py-0.5 text-xs ${positionColor}`}
                                   data-testid={`badge-position-${pc.id}`}
                                 >
                                   {position.positionTitle}
@@ -782,20 +781,20 @@ export default function PassCandidates() {
                               )}
                               <div className="flex items-center gap-2 mt-2 flex-wrap">
                                 {pc.candidate?.experienceYears && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                                     {pc.candidate.experienceYears}y exp
                                   </span>
                                 )}
                               </div>
                               {pc.addedAt && (
-                                <p className="text-[10px] text-muted-foreground mt-2">
+                                <p className="mt-2 text-xs text-muted-foreground">
                                   Applied {format(new Date(pc.addedAt), "MMM d, yyyy")}
                                 </p>
                               )}
-                              <Badge variant="secondary" className="mt-2 text-[10px]">
+                              <Badge variant="secondary" className="mt-2 text-xs">
                                 {reviewLabel(pc.id)}
                               </Badge>
-                              <Badge variant="outline" className="ml-1 mt-2 text-[10px]">
+                              <Badge variant="outline" className="ml-1 mt-2 text-xs">
                                 {presentHiringStatusLabel(pc.status)}
                               </Badge>
                             </div>
@@ -1052,14 +1051,14 @@ export default function PassCandidates() {
                 <div className="flex gap-3 pt-4">
                   <Link href={`/candidates/${detailCandidate.candidateId}`} className="flex-1">
                     <Button variant="outline" className="w-full rounded-xl gap-2" data-testid="button-view-full-profile">
-                      View Full Profile
+                      View full profile
                       <ChevronRight className="w-4 h-4" strokeWidth={2} />
                     </Button>
                   </Link>
                   <Link href={`/interviews/new?passId=${passId}&candidateId=${detailCandidate.id}`} className="flex-1">
                     <Button className="w-full rounded-xl gap-2" data-testid="button-schedule-interview">
                       <Calendar className="w-4 h-4" strokeWidth={2} />
-                      Schedule Interview
+                      Schedule interview
                     </Button>
                   </Link>
                 </div>

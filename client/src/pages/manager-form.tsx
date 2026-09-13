@@ -302,7 +302,7 @@ export default function ManagerForm() {
                 data-testid="button-submit"
               >
                 {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isEditing ? "Update Stakeholder" : "Add Stakeholder"}
+                {isEditing ? "Update team member" : "Add team member"}
               </Button>
             </div>
           </form>

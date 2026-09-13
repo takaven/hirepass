@@ -623,7 +623,7 @@ export default function CandidateForm() {
                 ) : (
                   <Save className="w-4 h-4" strokeWidth={1.5} />
                 )}
-                {savedCandidateId && resumeFile ? "Retry CV Upload" : isEditing ? "Update Candidate" : "Add Candidate"}
+                {savedCandidateId && resumeFile ? "Retry CV upload" : isEditing ? "Update candidate" : "Add candidate"}
               </Button>
             </div>
           </form>

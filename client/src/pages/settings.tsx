@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Building2, ExternalLink, Moon, Shield, Sun } from "lucide-react";
+import { Building2, ExternalLink, Shield } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { useTheme } from "@/components/theme-provider";
 
 type PublicConfig = {
   companyName: string;
@@ -20,7 +17,7 @@ function ReadinessValue({ label, value, optional = false }: { label: string; val
     <div className="rounded-xl bg-muted/30 p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">{label}</p>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ready ? "bg-[#01FF22]/10 text-[#20242B]" : optional ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-800"}`}>
+        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${ready ? "border-[#DCE1E7] bg-[#F4F6F8] text-[#20242B]" : optional ? "border-[#DCE1E7] bg-white text-[#68707D]" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
           {ready ? "Ready" : optional ? "Optional" : "Needs setup"}
         </span>
       </div>
@@ -30,7 +27,6 @@ function ReadinessValue({ label, value, optional = false }: { label: string; val
 }
 
 export default function Settings() {
-  const { theme, setTheme } = useTheme();
   const { data: config, isLoading } = useQuery<PublicConfig>({ queryKey: ["/api/public/config"] });
 
   return (
@@ -47,7 +43,7 @@ export default function Settings() {
           <div className="rounded-xl bg-muted/30 p-4 sm:col-span-2">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">Candidate privacy notice</p>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${config?.privacyNoticeUrl ? "bg-[#01FF22]/10 text-[#20242B]" : "bg-amber-100 text-amber-800"}`}>
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${config?.privacyNoticeUrl ? "border-[#DCE1E7] bg-[#F4F6F8] text-[#20242B]" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
                 {config?.privacyNoticeUrl ? "Ready" : "Needs setup"}
               </span>
             </div>
@@ -55,10 +51,6 @@ export default function Settings() {
           </div>
         </div>}
         <p className="mt-4 text-sm text-muted-foreground">Managed by your HirePass administrator.</p>
-      </GlassCard>
-      <GlassCard>
-        <div className="mb-5 flex items-center gap-3"><div className="rounded-xl bg-primary/10 p-2">{theme === "dark" ? <Moon className="h-5 w-5 text-primary" /> : <Sun className="h-5 w-5 text-primary" />}</div><div><h2 className="font-semibold">Appearance</h2><p className="text-sm text-muted-foreground">A preference stored in this browser</p></div></div>
-        <div className="flex items-center justify-between rounded-xl bg-muted/30 p-4"><div><Label htmlFor="dark-mode">Dark mode</Label><p className="text-sm text-muted-foreground">Switch between light and dark themes</p></div><Switch id="dark-mode" checked={theme === "dark"} onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")} data-testid="switch-dark-mode" /></div>
       </GlassCard>
       <GlassCard><div className="flex items-center gap-3"><div className="rounded-xl bg-primary/10 p-2"><Shield className="h-5 w-5 text-primary" /></div><div><h2 className="font-semibold">HirePass by TAKAVEN</h2><p className="text-sm text-muted-foreground">Core launch configuration is managed per isolated customer deployment.</p></div></div></GlassCard>
     </div>

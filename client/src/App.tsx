@@ -5,8 +5,9 @@ import { QueryClientProvider, useMutation, useQuery } from "@tanstack/react-quer
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationsDropdown } from "@/components/notifications-dropdown";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 
@@ -42,9 +43,9 @@ function InternalLogin() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#20242B] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#F4F6F8] px-4">
       <form
-        className="w-full max-w-sm space-y-4 rounded-lg border border-slate-800 bg-slate-900 p-6 text-slate-100"
+        className="w-full max-w-sm space-y-5 rounded-2xl border border-[#DCE1E7] bg-white p-6 text-[#20242B] shadow-sm"
         onSubmit={(event) => {
           event.preventDefault();
           loginMutation.mutate();
@@ -52,16 +53,15 @@ function InternalLogin() {
       >
         <div>
           <img
-            src="/brand/hirepass-endorsed-dark.svg"
+            src="/brand/hirepass-endorsed-light.svg"
             alt="HirePass by TAKAVEN"
             className="h-auto w-40"
           />
-          <h1 className="mt-1 text-xl font-semibold text-white">Internal sign in</h1>
+          <h1 className="mt-3 text-xl font-semibold">Internal sign in</h1>
         </div>
         <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Username</span>
-          <input
-            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-white"
+          <span className="text-[#42494D]">Username</span>
+          <Input
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"
@@ -69,9 +69,8 @@ function InternalLogin() {
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Password</span>
-          <input
-            className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-white outline-none focus:border-white"
+          <span className="text-[#42494D]">Password</span>
+          <Input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -79,15 +78,15 @@ function InternalLogin() {
             data-testid="input-internal-password"
           />
         </label>
-        {loginMutation.isError && <p className="text-sm text-red-300">Sign in failed. Check the configured owner/admin credentials.</p>}
-        <button
-          className="h-10 w-full rounded-md bg-white text-sm font-medium text-[#20242B] hover:bg-slate-100 disabled:opacity-60"
+        {loginMutation.isError && <p className="text-sm text-red-700">Sign in failed. Check the configured owner/admin credentials.</p>}
+        <Button
+          className="w-full"
           type="submit"
           disabled={loginMutation.isPending}
           data-testid="button-internal-login"
         >
           {loginMutation.isPending ? "Signing in..." : "Sign in"}
-        </button>
+        </Button>
       </form>
     </div>
   );
@@ -196,15 +195,16 @@ function MainLayout() {
             </div>
             <div className="flex items-center gap-2">
               <NotificationsDropdown />
-              <ThemeToggle />
-              <button
-                className="h-7 rounded-md border border-slate-300 px-2 text-xs text-slate-700 hover:bg-slate-100"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-sm"
                 onClick={() => logoutMutation.mutate()}
                 disabled={logoutMutation.isPending}
                 data-testid="button-internal-logout"
               >
                 Sign out
-              </button>
+              </Button>
             </div>
           </header>
           <main className="flex-1 overflow-y-auto">
@@ -232,7 +232,7 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="hirepass-theme">
+      <ThemeProvider defaultTheme="light" forcedTheme="light" storageKey="hirepass-theme">
         <TooltipProvider>
           <Suspense fallback={<RouteFallback />}>
           {isCareersRoute ? (
