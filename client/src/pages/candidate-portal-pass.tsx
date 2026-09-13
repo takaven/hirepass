@@ -26,7 +26,12 @@ import type { CandidatePassViewState } from "@shared/pass-state";
 import { validateClientUpload } from "@/lib/upload-preflight";
 import { ExternalPassBrand, ExternalPassFooter, externalPassAccentStyle } from "@/components/external-pass-brand";
 import type { PublicConfig } from "./public-apply";
-import { bootstrapExternalPassSession, externalPassFetch, externalPassRequest } from "@/lib/external-pass-session";
+import {
+  bootstrapExternalPassSession,
+  externalPassFetch,
+  externalPassRequest,
+  installExternalPassFragmentReload,
+} from "@/lib/external-pass-session";
 
 const CANDIDATE_PASS_API = "/api/external/candidate-pass";
 
@@ -193,6 +198,7 @@ export default function CandidatePortalPass() {
   const [offerResponseText, setOfferResponseText] = useState("");
 
   useEffect(() => {
+    const removeFragmentReload = installExternalPassFragmentReload("candidate");
     void bootstrapExternalPassSession("candidate").then((result) => {
       if (!result.ok) {
         const error = new Error(result.message) as Error & { status?: number };
@@ -204,6 +210,7 @@ export default function CandidatePortalPass() {
       setSessionError(new Error("Unable to open this Candidate Pass"));
       setSessionReady(true);
     });
+    return removeFragmentReload;
   }, []);
 
   const { data, isLoading, error } = useQuery<CandidatePassData>({

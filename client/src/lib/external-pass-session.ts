@@ -8,6 +8,12 @@ import {
 
 export type ExternalPassBootstrapResult = { ok: true } | { ok: false; status?: number; message: string };
 
+type ExternalPassNavigationWindow = {
+  location: { hash: string };
+  addEventListener(type: "hashchange", listener: EventListener): void;
+  removeEventListener(type: "hashchange", listener: EventListener): void;
+};
+
 function contextStorageKey(kind: ExternalPassKind) {
   return `hirepass-${kind}-pass-context`;
 }
@@ -21,6 +27,27 @@ function newContextId() {
 function storedContextId(kind: ExternalPassKind) {
   const value = window.sessionStorage.getItem(contextStorageKey(kind));
   return isExternalPassContextId(value) ? value : null;
+}
+
+function validFragmentToken(kind: ExternalPassKind, hash: string) {
+  if (!hash.startsWith("#") || hash.length < 2) return false;
+  try {
+    return isExternalPassToken(kind, decodeURIComponent(hash.slice(1)));
+  } catch {
+    return false;
+  }
+}
+
+export function installExternalPassFragmentReload(
+  kind: ExternalPassKind,
+  browser: ExternalPassNavigationWindow = window,
+  reload: () => void = () => window.location.reload(),
+) {
+  const handleHashChange: EventListener = () => {
+    if (validFragmentToken(kind, browser.location.hash)) reload();
+  };
+  browser.addEventListener("hashchange", handleHashChange);
+  return () => browser.removeEventListener("hashchange", handleHashChange);
 }
 
 export async function externalPassFetch(
