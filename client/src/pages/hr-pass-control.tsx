@@ -156,11 +156,11 @@ export default function HrPassControl() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Candidate actions</p><p className="text-2xl font-semibold">{counts.candidate}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stakeholder decisions</p><p className="text-2xl font-semibold">{counts.manager}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Stalled actions</p><p className="text-2xl font-semibold">{counts.stalled}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Expired / revoked</p><p className="text-2xl font-semibold">{counts.expired}</p></CardContent></Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Card><CardContent className="p-3 md:p-4"><p className="text-xs text-muted-foreground">Candidate actions</p><p className="text-2xl font-semibold">{counts.candidate}</p></CardContent></Card>
+        <Card><CardContent className="p-3 md:p-4"><p className="text-xs text-muted-foreground">Stakeholder decisions</p><p className="text-2xl font-semibold">{counts.manager}</p></CardContent></Card>
+        <Card><CardContent className="p-3 md:p-4"><p className="text-xs text-muted-foreground">Stalled actions</p><p className="text-2xl font-semibold">{counts.stalled}</p></CardContent></Card>
+        <Card><CardContent className="p-3 md:p-4"><p className="text-xs text-muted-foreground">Expired / revoked</p><p className="text-2xl font-semibold">{counts.expired}</p></CardContent></Card>
       </div>
 
       {isLoading ? (
@@ -186,8 +186,8 @@ export default function HrPassControl() {
               <CardContent className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
                   <div className="border-b border-[#DCE1E7] pb-4 md:border-b-0 md:border-r md:pb-0 md:pr-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
+                    <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">Next action</p>
                         <p className="text-sm text-muted-foreground">{hiringControlLabel(item.nextAction)}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -196,7 +196,7 @@ export default function HrPassControl() {
                         <p className="mt-1 text-xs text-muted-foreground">{hiringControlLabel(item.expectedMovement)}</p>
                         {item.passHandoff && <p className="mt-2 text-xs font-medium text-[#42494D]">{nextOwnerLabel(item.passHandoff)}</p>}
                       </div>
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 md:flex md:flex-wrap md:justify-end">
                         <Button
                           size="sm"
                           variant="outline"
@@ -263,7 +263,7 @@ export default function HrPassControl() {
                         </p>
                         {candidate.passHandoff && <p className="mt-1 text-xs font-medium text-[#42494D]">{nextOwnerLabel(candidate.passHandoff)}</p>}
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 md:flex md:flex-wrap">
                         <Button
                           size="sm"
                           variant="outline"

@@ -194,6 +194,13 @@ describe("hiring workflow presentation", () => {
     assert.doesNotMatch(source, /bg-cyan-50/);
   });
 
+  it("keeps Hiring Control actions readable at mobile width", () => {
+    const source = readFileSync("client/src/pages/hr-pass-control.tsx", "utf8");
+    assert.match(source, /grid grid-cols-2 gap-3 md:grid-cols-4/);
+    assert.match(source, /flex flex-col items-stretch gap-3 md:flex-row md:items-start md:justify-between/);
+    assert.match(source, /grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 md:flex md:flex-wrap md:justify-end/);
+  });
+
   it("preserves the application-scoped AI review surface", () => {
     const source = readFileSync("client/src/pages/pass-candidates.tsx", "utf8");
     assert.match(source, /AI-assisted review/);
