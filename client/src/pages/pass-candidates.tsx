@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { externalPassLandingPath } from "@shared/external-pass-links";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import {
@@ -391,7 +392,7 @@ export default function PassCandidates() {
       return res.json();
     },
     onSuccess: (data) => {
-      const link = `${window.location.origin}/manager-pass/${data.token}`;
+      const link = `${window.location.origin}${externalPassLandingPath("stakeholder", data.token)}`;
       setGeneratedManagerLink(link);
       toast({ title: "Stakeholder Pass link created" });
     },
@@ -408,7 +409,7 @@ export default function PassCandidates() {
       return res.json();
     },
     onSuccess: (data) => {
-      const link = `${window.location.origin}/candidate-pass/${data.token}`;
+      const link = `${window.location.origin}${externalPassLandingPath("candidate", data.token)}`;
       setGeneratedCandidateLink(link);
       toast({ title: "Candidate link created!" });
     },

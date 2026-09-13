@@ -81,7 +81,7 @@ describe("Phase 1 public intake and Candidate Library persistence", () => {
       assert.equal(created.response.status, 201);
       assert.equal(created.body.duplicateApplication, false);
       assert.equal(created.body.reusedCandidate, false);
-      assert.match(created.body.candidatePassUrl, /^https:\/\/careers\.example\.test\/candidate-pass\//);
+      assert.match(created.body.candidatePassUrl, /^https:\/\/careers\.example\.test\/candidate-pass#cand_/);
       const createdLinks = await pool.query<{ count: number; expires_at: Date; token: string }>(
         `select count(*)::int count, max(expires_at) expires_at, max(token) token
          from candidate_links where pass_candidate_id=$1`,

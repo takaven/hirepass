@@ -13,7 +13,10 @@ const policies: Record<LimitGroup, { limit: number; windowMs: number }> = {
 function classify(req: Request): LimitGroup | null {
   if (req.method === "POST" && req.path === "/api/auth/login") return "login";
   if (req.method === "POST" && req.path.startsWith("/api/public/")) return "public-intake";
-  if (req.method !== "GET" && (req.path.startsWith("/api/candidate-pass/") || req.path.startsWith("/api/manager-pass/"))) {
+  if (req.method !== "GET" && (
+    req.path.startsWith("/api/external/candidate-pass") ||
+    req.path.startsWith("/api/external/stakeholder-pass")
+  )) {
     return "external-pass-mutation";
   }
   return null;

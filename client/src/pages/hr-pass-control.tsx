@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { externalPassLandingPath } from "@shared/external-pass-links";
 
 type WaitingOn = "candidate" | "manager" | "hr" | "upcoming_event" | "no_action" | "completed" | "expired_revoked";
 
@@ -73,7 +74,7 @@ const waitingStyles: Record<WaitingOn, string> = {
 };
 
 function passUrl(type: "candidate" | "manager", token: string) {
-  return type === "candidate" ? `/candidate-pass/${token}` : `/manager-pass/${token}`;
+  return externalPassLandingPath(type === "candidate" ? "candidate" : "stakeholder", token);
 }
 
 function nextOwnerLabel(passHandoff: string | null) {

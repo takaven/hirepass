@@ -18,12 +18,14 @@ const MIN_SECRET_LENGTH = 32;
 const INTENDED_PUBLIC_API_PREFIXES = [
   "/api/auth/",
   "/api/public/",
-  "/api/candidate-pass/",
-  "/api/manager-pass/",
+  "/api/external/candidate-pass",
+  "/api/external/stakeholder-pass",
 ];
 const PRODUCTION_DISABLED_LEGACY_PREFIXES = [
   "/api/ai/",
   "/api/onboarding-portal/",
+  "/api/candidate-pass/",
+  "/api/manager-pass/",
 ];
 
 function isProduction() {
