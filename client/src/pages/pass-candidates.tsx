@@ -25,6 +25,7 @@ import {
   Link as LinkIcon,
   Copy,
   ExternalLink,
+  Bot,
 } from "lucide-react";
 import { GlassCard } from "@/components/glass-card";
 import { StatusBadge } from "@/components/status-badge";
@@ -925,7 +926,10 @@ export default function PassCandidates() {
                 <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4" data-testid="ai-review-detail">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-medium">AI-assisted review</h4>
+                      <h4 className="flex items-center gap-2 text-sm font-medium">
+                        <Bot className="h-4 w-4 text-[#01FF22]" aria-hidden="true" />
+                        AI-assisted review
+                      </h4>
                       <p className="text-xs text-muted-foreground">Human decision required.</p>
                     </div>
                     <Badge variant="outline">{detailReview ? reviewLabel(detailCandidate.id) : "Waiting for criteria"}</Badge>
@@ -1057,7 +1061,7 @@ export default function PassCandidates() {
                   </Link>
                   <Link href={`/interviews/new?passId=${passId}&candidateId=${detailCandidate.id}`} className="flex-1">
                     <Button className="w-full rounded-xl gap-2" data-testid="button-schedule-interview">
-                      <Calendar className="w-4 h-4" strokeWidth={2} />
+                      <Calendar className="w-4 h-4 text-[#01FF22]" strokeWidth={2} />
                       Schedule interview
                     </Button>
                   </Link>

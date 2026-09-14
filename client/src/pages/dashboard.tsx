@@ -52,11 +52,11 @@ export default function Dashboard() {
           <p className="mt-1 text-sm text-muted-foreground">Open hiring work, interviews and next actions in one place.</p>
         </div>
         <Button asChild data-testid="button-new-vacancy">
-          <Link href="/vacancies/new"><FileText className="mr-2 h-4 w-4" />New vacancy</Link>
+          <Link href="/vacancies/new"><FileText className="mr-2 h-4 w-4 text-[#01FF22]" />New vacancy</Link>
         </Button>
       </div>
 
-      <GlassCard className="p-5">
+      <GlassCard className="border-l-2 border-l-[#01FF22] p-5">
         {loading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, index) => <Skeleton key={index} className="h-16 rounded-2xl" />)}
@@ -67,7 +67,7 @@ export default function Dashboard() {
               <Link key={item.key} href={item.href}>
                 <div className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-border bg-white p-4 transition-colors hover:bg-[#F4F6F8]" data-testid={`attention-${item.key}`}>
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="rounded-xl bg-[#01FF22]/10 p-2 text-[#20242B]"><item.icon className="h-5 w-5" /></div>
+                    <div className="rounded-xl bg-[#F4F6F8] p-2 text-[#42494D]"><item.icon className="h-5 w-5" /></div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-[#20242B]">{item.title}</p>
                       <p className="truncate text-sm text-[#68707D]">{item.detail}</p>

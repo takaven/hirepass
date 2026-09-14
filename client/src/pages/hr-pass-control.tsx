@@ -144,7 +144,7 @@ export default function HrPassControl() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Hiring Control</h1>
+          <h1 className="text-2xl font-semibold tracking-tight after:ml-2 after:inline-block after:h-2 after:w-2 after:rounded-full after:bg-[#01FF22] after:align-middle after:content-['']">Hiring Control</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             See what is waiting, who needs to act, and manage secure candidate or stakeholder access.
           </p>

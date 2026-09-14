@@ -135,7 +135,7 @@ export default function Candidates() {
         </div>
         <Link href="/candidates/new">
           <Button className="rounded-xl gap-2" data-testid="button-add-candidate">
-            <Plus className="w-4 h-4" strokeWidth={1.5} />
+            <Plus className="w-4 h-4 text-[#01FF22]" strokeWidth={1.5} />
             Add candidate
           </Button>
         </Link>

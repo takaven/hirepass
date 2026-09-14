@@ -85,7 +85,7 @@ export default function Passes() {
         </div>
         <Link href="/vacancies/new">
           <Button className="rounded-xl gap-2" data-testid="button-new-pass">
-            <Plus className="w-4 h-4" strokeWidth={1.5} />
+            <Plus className="w-4 h-4 text-[#01FF22]" strokeWidth={1.5} />
             New vacancy
           </Button>
         </Link>
@@ -230,7 +230,7 @@ export default function Passes() {
           {!searchQuery && statusFilter === "all" && (
             <Link href="/vacancies/new">
               <Button className="mt-6 rounded-xl gap-2">
-                <Plus className="w-4 h-4" strokeWidth={1.5} />
+                <Plus className="w-4 h-4 text-[#01FF22]" strokeWidth={1.5} />
                 Create vacancy
               </Button>
             </Link>
