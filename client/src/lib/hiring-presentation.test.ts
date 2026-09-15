@@ -217,13 +217,35 @@ describe("hiring workflow presentation", () => {
     const select = readFileSync("client/src/components/ui/select.tsx", "utf8");
     const checkbox = readFileSync("client/src/components/ui/checkbox.tsx", "utf8");
 
-    assert.match(button, /bg-\[#20242B\]/);
+    assert.match(button, /bg-\[#42494D\]/);
+    assert.match(button, /hover:bg-\[#20242B\]/);
     assert.match(button, /min-h-11/);
     assert.doesNotMatch(button, /#00C853|#00B548/);
     assert.match(input, /border-\[#DCE1E7\]/);
     assert.match(input, /focus:border-\[#01FF22\]/);
     assert.match(select, /focus:border-\[#01FF22\]/);
     assert.match(checkbox, /data-\[state=checked\]:bg-\[#01FF22\]/);
+  });
+
+  it("calibrates internal brand signals without creating large lime surfaces", () => {
+    const button = readFileSync("client/src/components/ui/button.tsx", "utf8");
+    const dashboard = readFileSync("client/src/pages/dashboard.tsx", "utf8");
+    const candidates = readFileSync("client/src/pages/candidates.tsx", "utf8");
+    const vacancies = readFileSync("client/src/pages/passes.tsx", "utf8");
+    const pipeline = readFileSync("client/src/pages/pass-candidates.tsx", "utf8");
+    const hiringControl = readFileSync("client/src/pages/hr-pass-control.tsx", "utf8");
+    assert.match(dashboard, /button-new-vacancy[\s\S]*text-\[#01FF22\]/);
+    assert.match(dashboard, /border-l-\[#01FF22\]/);
+    assert.match(candidates, /button-add-candidate[\s\S]*text-\[#01FF22\]/);
+    assert.match(vacancies, /button-new-pass[\s\S]*text-\[#01FF22\]/);
+    assert.match(pipeline, /AI-assisted review/);
+    assert.match(pipeline, /Bot className="h-4 w-4 text-\[#01FF22\]"/);
+    assert.match(hiringControl, /after:bg-\[#01FF22\]/);
+    assert.doesNotMatch(button, /#01FF22/);
+    for (const source of [dashboard, candidates, vacancies, pipeline, hiringControl]) {
+      assert.doesNotMatch(source, /(?:Button|GlassCard)[^>]*className="[^"]*bg-\[#01FF22\]/);
+      assert.doesNotMatch(source, /#00C853|#00B548/);
+    }
   });
 
   it("uses opaque structural cards instead of translucent glass surfaces", () => {
